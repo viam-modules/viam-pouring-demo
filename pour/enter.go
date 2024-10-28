@@ -3,7 +3,6 @@ package pour
 
 import (
 	"context"
-	"fmt"
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
@@ -18,20 +17,19 @@ import (
 	"go.viam.com/rdk/spatialmath"
 )
 
-var Name = resource.NewModel("viam", "viam-pouring-demo", "pour")
+var (
+	GenericServiceName = resource.NewModel("viam", "viam-pouring-demo", "pour")
+)
 
 func init() {
-	// resource.RegisterComponent(generic.API, Name, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
-	resource.RegisterService(generic.API, Name, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
+	resource.RegisterService(generic.API, GenericServiceName, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
 }
 
 func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
-	logger.Info("WE MAKE IT TO THIS LINE")
 	g := &gen{
 		logger: logger,
 	}
 	if err := g.Reconfigure(ctx, deps, conf); err != nil {
-		logger.Infof("THIS IS THE ERROR WE ARE LOGGING: %v", err)
 		return nil, err
 	}
 	return g, nil
@@ -39,13 +37,15 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 }
 
 func (cfg *Config) Validate(path string) ([]string, error) {
-	return []string{}, nil
+	// todo: make this function check that these fields actually exist
+	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, cfg.MotionServiceName}, nil
 }
 
 type Config struct {
-	ArmName          string `json:"arm_name"`
-	CameraName       string `json:"camera_name"`
-	WeightSensorName string `json:"weight_sensor_name"`
+	ArmName           string `json:"arm_name"`
+	CameraName        string `json:"camera_name"`
+	WeightSensorName  string `json:"weight_sensor_name"`
+	MotionServiceName string `json:"motion_service_name"`
 }
 
 // gen is a fake Generic service that always echos input back to the caller.
@@ -59,13 +59,17 @@ type gen struct {
 	c      camera.Camera
 	s      sensor.Sensor
 	m      motion.Service
+	// fs     framesystem.Service
+	deps resource.Dependencies
 }
 
 func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
+	g.logger.Infof("deps: %v", deps)
 	config, err := resource.NativeConfig[*Config](conf)
 	if err != nil {
 		return err
 	}
+
 	a, err := arm.FromDependencies(deps, config.ArmName)
 	if err != nil {
 		return err
@@ -84,11 +88,13 @@ func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf 
 	}
 	g.s = s
 
-	m, err := motion.FromDependencies(deps, "builtin")
+	m, err := motion.FromDependencies(deps, config.MotionServiceName)
 	if err != nil {
 		return err
 	}
 	g.m = m
+
+	g.deps = deps
 
 	return nil
 }
@@ -120,19 +126,21 @@ func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("endPos: ", spatialmath.PoseToProtobuf(endPos))
+	g.logger.Infof("endPos: %v", spatialmath.PoseToProtobuf(endPos))
 
 	props, err := g.c.Properties(ctx)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("props: ", props)
+	g.logger.Infof("props: %v", props)
 
 	readings, err := g.s.Readings(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("readings: ", readings)
+	g.logger.Infof("readings: %v", readings)
+
+	g.calibrate()
 
 	return cmd, nil
 }

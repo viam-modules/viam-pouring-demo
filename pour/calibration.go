@@ -37,18 +37,18 @@ func (g *gen) calibrate() {
 	for _, c := range clusters {
 		cupLocations = append(cupLocations, spatialmath.NewPoseFromPoint(c.mean()))
 	}
-	fmt.Println(" ")
-	fmt.Println(" ")
-	fmt.Println("LOCATIONS IN THE FRAME OF THE CAMERA")
+	g.logger.Info(" ")
+	g.logger.Info(" ")
+	g.logger.Info("LOCATIONS IN THE FRAME OF THE CAMERA")
 	for i := 0; i < numOfCupsToDetect; i++ {
 		fmt.Printf("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
 	}
 
 	motionService := g.m
-	fmt.Println(" ")
-	fmt.Println(" ")
-	fmt.Println(" ")
-	fmt.Println(" ")
+	g.logger.Info(" ")
+	g.logger.Info(" ")
+	g.logger.Info(" ")
+	g.logger.Info(" ")
 
 	// get the transform from camera frame to the world frame
 	tf, _ := motionService.GetPose(ctx, realsense.Name(), referenceframe.World, nil, nil)
@@ -57,24 +57,24 @@ func (g *gen) calibrate() {
 		cupLocations[i] = calculateThePoseTheArmShouldGoTo(tf.Pose(), cupLocations[i])
 	}
 
-	fmt.Println("LOCATIONS IN THE FRAME OF THE ARM")
+	g.logger.Info("LOCATIONS IN THE FRAME OF THE ARM")
 	for i := 0; i < numOfCupsToDetect; i++ {
 		fmt.Printf("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
 	}
-	fmt.Println(" ")
-	fmt.Println(" ")
+	g.logger.Info(" ")
+	g.logger.Info(" ")
 
 	cupDemoPoints := []r3.Vector{}
 	for i := 0; i < numOfCupsToDetect; i++ {
 		cupDemoPoints = append(cupDemoPoints, r3.Vector{X: cupLocations[i].Point().X, Y: cupLocations[i].Point().Y, Z: 230})
 	}
 
-	fmt.Println("LOCATIONS IN THE FRAME OF THE ARM WITH PROPER HEIGHT")
+	g.logger.Info("LOCATIONS IN THE FRAME OF THE ARM WITH PROPER HEIGHT")
 	for i := 0; i < numOfCupsToDetect; i++ {
 		fmt.Printf("cupDemoPoints[%d]: %v\n", i, cupDemoPoints[i])
 	}
-	fmt.Println(" ")
-	fmt.Println(" ")
+	g.logger.Info(" ")
+	g.logger.Info(" ")
 
 	// fmt.Print("Validate that the positions are valid, press 'Enter' to continue...")
 	// bufio.NewReader(os.Stdin).ReadBytes('\n')
@@ -84,8 +84,7 @@ func (g *gen) calibrate() {
 	_ = wineBottlePoint
 
 	// execute the demo
-	// demo(robot, wineBottlePoint, cupDemoPoints)
-	// demoPlanMovements(robot, wineBottlePoint, cupDemoPoints)
+	g.demoPlanMovements(wineBottlePoint, cupDemoPoints)
 }
 
 func getCalibrationDataPoint(ctx context.Context, cam camera.Camera) ([]Circle, error) {
@@ -119,7 +118,7 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 	}
 
 	clusters := make([]*cluster, amountOfClusters)
-	fmt.Println("len(clusters): ", len(clusters))
+	logger.Infof("len(clusters): %d", len(clusters))
 	for i := range len(clusters) {
 		clusters[i] = newCluster()
 	}
@@ -156,8 +155,8 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 
 	checkLength := len(clusters[0].poses)
 	for i := range len(clusters) {
-		fmt.Println("len(clusters[i].poses): ", len(clusters[i].poses))
-		fmt.Println("checkLength: ", checkLength)
+		logger.Infof("len(clusters[i].poses): %v", len(clusters[i].poses))
+		logger.Infof("checkLength: %v", checkLength)
 		if len(clusters[i].poses) != checkLength {
 			logger.Fatal("clusters not of equal length")
 		}

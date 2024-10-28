@@ -2,7 +2,6 @@ package pour
 
 import (
 	"context"
-	"fmt"
 	"math"
 
 	"time"
@@ -15,7 +14,7 @@ import (
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
-	"go.viam.com/rdk/robot/client"
+	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/motion/builtin"
 	"go.viam.com/rdk/spatialmath"
@@ -30,12 +29,9 @@ var (
 	armName = "arm"
 )
 
-func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, cupLocations []r3.Vector) {
+func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vector) {
 	logger := logging.NewLogger("client")
-	motionService, err := motion.FromRobot(machine, "builtin")
-	if err != nil {
-		logger.Fatal(err)
-	}
+	motionService := g.m
 
 	// Compute orientation to approach bottle. We may also just want to hardcode rather than depending on the start position
 	vectorArmToBottle := r3.Vector{X: -1, Y: 0, Z: 0}
@@ -89,19 +85,15 @@ func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, c
 		logger.Fatal(err)
 	}
 
-	xArmComponent, err := arm.FromRobot(machine, armName)
-	if err != nil {
-		logger.Fatal(err)
-		return
-	}
+	xArmComponent := g.a
 
 	// get the weight of the bottle
-	bottleWeight, err := getWeight(machine)
+	bottleWeight, err := getWeight(g.s)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	// bottleWeight += 500
-	fmt.Println("bottleWeight: ", bottleWeight)
+	bottleWeight += 500
+	g.logger.Infof("bottleWeight: %d", bottleWeight)
 
 	bottleLocation := bottleGrabPoint
 	approachgoal := spatialmath.NewPose(
@@ -119,25 +111,25 @@ func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, c
 	// ---------------------------------------------------------------------------------
 	// HERE WE CONSTRUCT THE FIRST PLAN
 	// THE FIRST PLAN IS MOVING THE ARM TO BE IN THE NEUTRAL POSITION
-	fmt.Println("PLANNING FOR THE 1st MOVEMENT")
+	g.logger.Info("PLANNING FOR THE 1st MOVEMENT")
 	armCurrentInputs, err := xArmComponent.CurrentInputs(context.Background())
 	if err != nil {
 		logger.Fatal(err)
 	}
 
-	approachGoalPlan, err := getPlan(context.Background(), logger, machine, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0)
+	approachGoalPlan, err := getPlan(context.Background(), logger, g.deps, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	fmt.Println("DONE PLANNING THE 1st MOVEMENT")
-	fmt.Println(" ")
+	g.logger.Info("DONE PLANNING THE 1st MOVEMENT")
+	g.logger.Info(" ")
 	// ---------------------------------------------------------------------------------
 
 	// ---------------------------------------------------------------------------------
 	// HERE WE CONSTRUCT THE SECOND PLAN
 	// THE SECOND PLAN MOVES THE GRIPPER TO A POSITION WHERE IT CAN GRASP THE BOTTLE
 	// ENGAGE BOTTLE
-	fmt.Println("PLANNING FOR THE 2nd MOVEMENT")
+	g.logger.Info("PLANNING FOR THE 2nd MOVEMENT")
 	bottleLocation = bottleGrabPoint
 	bottlegoal := spatialmath.NewPose(
 		bottleLocation,
@@ -150,11 +142,11 @@ func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, c
 		logger.Fatal(err)
 	}
 
-	bottlePlan, err := getPlan(context.Background(), logger, machine, armFrameApproachGoalInputs[len(armFrameApproachGoalInputs)-1], gripperResource, bottlegoal, worldState, &linearAndBottleConstraint, 0)
+	bottlePlan, err := getPlan(context.Background(), logger, g.deps, armFrameApproachGoalInputs[len(armFrameApproachGoalInputs)-1], gripperResource, bottlegoal, worldState, &linearAndBottleConstraint, 0)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	fmt.Println("DONE PLANNING THE 2nd MOVEMENT")
+	g.logger.Info("DONE PLANNING THE 2nd MOVEMENT")
 	// ---------------------------------------------------------------------------------
 
 	// ---------------------------------------------------------------------------------
@@ -174,12 +166,12 @@ func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, c
 	}
 
 	// LIFT
-	fmt.Println("PLANNING FOR THE 3rd MOVEMENT")
-	liftedPlan, err := getPlan(context.Background(), logger, machine, armFrameBottlePlanInputs[len(armFrameBottlePlanInputs)-1], gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0)
+	g.logger.Info("PLANNING FOR THE 3rd MOVEMENT")
+	liftedPlan, err := getPlan(context.Background(), logger, g.deps, armFrameBottlePlanInputs[len(armFrameBottlePlanInputs)-1], gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	fmt.Println("DONE PLANNING THE 3rd MOVEMENT")
+	g.logger.Info("DONE PLANNING THE 3rd MOVEMENT")
 	// ---------------------------------------------------------------------------------
 
 	// AT THIS POINT IN THE PLAN GENERATION, WE'VE LIFTED THE BOTTLE INTO THE ARM AND ARE NOW READY TO
@@ -194,7 +186,7 @@ func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, c
 	for i, cupLoc := range cupLocations {
 		minus := i * 150
 		currentBottleWeight := bottleWeight - minus
-		fmt.Println("currentBottleWeight: ", currentBottleWeight)
+		g.logger.Infof("currentBottleWeight: %d", currentBottleWeight)
 		pourParameters := getAngleAndSleep(currentBottleWeight)
 		pourParams[i] = pourParameters
 		pourVec := cupLoc
@@ -215,14 +207,14 @@ func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, c
 			if err != nil {
 				logger.Fatal(err)
 			}
-			plan, err = getPlan(context.Background(), logger, machine, armFrameLiftedPlanInputs[len(armFrameLiftedPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0)
+			plan, err = getPlan(context.Background(), logger, g.deps, armFrameLiftedPlanInputs[len(armFrameLiftedPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0)
 			if err != nil {
 				logger.Fatal(err)
 			}
 			if getBackHomeCachedPlan == nil {
 				j := 1
 				for {
-					fmt.Println("plan.Trajectory(): ", plan.Trajectory())
+					g.logger.Infof("plan.Trajectory(): %v", plan.Trajectory())
 					armInputs, err := plan.Trajectory().GetFrameInputs(armName)
 					if err != nil {
 						logger.Fatal(err)
@@ -236,12 +228,12 @@ func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, c
 						break
 					}
 					// the plan's traj had length not equal to 2 so we know it was not what we are looking for
-					fmt.Println(" ")
-					fmt.Println(" ")
-					fmt.Println("WE ARE NOW GOING TO ASK FOR A NEW PATH SINCE WE DID NOT GET THE PATH WE WANTED!")
-					fmt.Println(" ")
-					fmt.Println(" ")
-					plan, err = getPlan(context.Background(), logger, machine, armFrameLiftedPlanInputs[len(armFrameLiftedPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, j)
+					g.logger.Info(" ")
+					g.logger.Info(" ")
+					g.logger.Info("WE ARE NOW GOING TO ASK FOR A NEW PATH SINCE WE DID NOT GET THE PATH WE WANTED!")
+					g.logger.Info(" ")
+					g.logger.Info(" ")
+					plan, err = getPlan(context.Background(), logger, g.deps, armFrameLiftedPlanInputs[len(armFrameLiftedPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, j)
 					if err != nil {
 						logger.Fatal(err)
 					}
@@ -255,7 +247,7 @@ func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, c
 			if err != nil {
 				logger.Fatal(err)
 			}
-			plan, err = getPlan(context.Background(), logger, machine, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0)
+			plan, err = getPlan(context.Background(), logger, g.deps, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0)
 			if err != nil {
 				logger.Fatal(err)
 			}
@@ -274,7 +266,7 @@ func demoPlanMovements(machine *client.RobotClient, bottleGrabPoint r3.Vector, c
 			r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z - 100},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
-		plan, err = getPlan(context.Background(), logger, machine, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, 0)
+		plan, err = getPlan(context.Background(), logger, g.deps, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, 0)
 		if err != nil {
 			logger.Fatal(err)
 		}
@@ -330,9 +322,9 @@ func executeDemo(motionService motion.Service, logger logging.Logger, xArmCompon
 	// move the bottle such that is is no longer pouring liquid
 	for i, plan := range pouringPlans {
 		if (i+1)%3 == 0 {
-			fmt.Println("pourParams: ", pourParams)
+			logger.Infof("pourParams: %v", pourParams)
 			sleep := pourParams[i%2][1]
-			fmt.Println("sleep: ", sleep)
+			logger.Infof("sleep: %f", sleep)
 			time.Sleep(time.Millisecond * time.Duration(sleep))
 			// NOW WE SET THE SPEED AND ACCEL OF THE XARM TO 180 and 180*20
 			_, err := xArmComponent.DoCommand(context.Background(), map[string]interface{}{
@@ -457,10 +449,21 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 	return obstaclesInFrame
 }
 
-func getPlan(ctx context.Context, logger logging.Logger, machine *client.RobotClient, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed int) (motionplan.Plan, error) {
-	fsCfg, _ := machine.FrameSystemConfig(ctx)
-	parts := fsCfg.Parts
-	fs, _ := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
+func getPlan(ctx context.Context, logger logging.Logger, deps resource.Dependencies, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed int) (motionplan.Plan, error) {
+	logger.Infof("deps: %v", deps)
+	fsSvc, err := framesystem.New(ctx, deps, logger)
+	// fsSvc, err := framesystem.FromDependencies(deps)
+	if err != nil {
+		return nil, err
+	}
+	fs, err := fsSvc.FrameSystem(ctx, worldState.Transforms())
+	if err != nil {
+		return nil, err
+	}
+
+	// fsCfg, _ := machine.FrameSystemConfig(ctx)
+	// parts := fsCfg.Parts
+	// fs, _ := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
 
 	fsInputs := referenceframe.StartPositions(fs)
 	fsInputs[armName] = armCurrentInputs
@@ -493,9 +496,8 @@ func reversePlan(originalPlan motionplan.Plan) motionplan.Plan {
 	return motionplan.NewSimplePlan(path, traj)
 }
 
-func getWeight(machine *client.RobotClient) (int, error) {
-	wSensor1, _ := sensor.FromRobot(machine, "sensor-1")
-	readings1, _ := wSensor1.Readings(context.Background(), nil)
+func getWeight(weightSensor sensor.Sensor) (int, error) {
+	readings1, _ := weightSensor.Readings(context.Background(), nil)
 	mass1 := readings1["mass_kg"].(float64)
 	massInGrams1 := math.Round(mass1 * 1000)
 	time.Sleep(time.Millisecond * 500)
