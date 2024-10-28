@@ -451,8 +451,9 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 
 func getPlan(ctx context.Context, logger logging.Logger, deps resource.Dependencies, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed int) (motionplan.Plan, error) {
 	logger.Infof("deps: %v", deps)
-	fsSvc, err := framesystem.New(ctx, deps, logger)
-	// fsSvc, err := framesystem.FromDependencies(deps)
+	// fsSvc, err := framesystem.New(ctx, deps, logger)
+	// framesystem.New()
+	fsSvc, err := framesystem.FromDependencies(deps)
 	if err != nil {
 		return nil, err
 	}
