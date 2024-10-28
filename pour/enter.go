@@ -7,27 +7,33 @@ import (
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
+
+	// "go.viam.com/rdk/components/generic"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
+
 	"go.viam.com/rdk/services/generic"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
 )
 
-var Name = resource.NewModel("viam", "motion", "pour")
+var Name = resource.NewModel("viam", "viam-pouring-demo", "pour")
 
 func init() {
-	resource.RegisterService(generic.API, Name, resource.Registration[*gen, *Config]{
-		Constructor: newPour,
-	})
+	// resource.RegisterComponent(generic.API, Name, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
+	resource.RegisterService(generic.API, Name, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
 }
 
-func newPour(
-	ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger,
-) (*gen, error) {
-	g := &gen{}
-	g.Reconfigure(ctx, deps, conf)
+func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
+	logger.Info("WE MAKE IT TO THIS LINE")
+	g := &gen{
+		logger: logger,
+	}
+	if err := g.Reconfigure(ctx, deps, conf); err != nil {
+		logger.Infof("THIS IS THE ERROR WE ARE LOGGING: %v", err)
+		return nil, err
+	}
 	return g, nil
 
 }
@@ -47,39 +53,12 @@ type gen struct {
 	resource.Resource
 	resource.Named
 	resource.TriviallyReconfigurable
+	resource.TriviallyCloseable
 	logger logging.Logger
 	a      arm.Arm
 	c      camera.Camera
 	s      sensor.Sensor
 	m      motion.Service
-}
-
-// DoCommand echos input back to the caller.
-func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
-	// here I want to validate that I actually have access the weight-sensor, arm, and camera
-	endPos, err := g.a.EndPosition(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println("endPos: ", spatialmath.PoseToProtobuf(endPos))
-
-	props, err := g.c.Properties(ctx)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println("props: ", props)
-
-	readings, err := g.s.Readings(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println("readings: ", readings)
-
-	return cmd, nil
-}
-
-func (g *gen) Name() resource.Name {
-	return resource.NewName(generic.API, "liquid-pouring-demo")
 }
 
 func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
@@ -114,6 +93,10 @@ func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf 
 	return nil
 }
 
+func (g *gen) Name() resource.Name {
+	return g.Name()
+}
+
 func (g *gen) Close(ctx context.Context) error {
 	if err := g.a.Close(ctx); err != nil {
 		return err
@@ -128,4 +111,28 @@ func (g *gen) Close(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// DoCommand echos input back to the caller.
+func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+	// here I want to validate that I actually have access the weight-sensor, arm, and camera
+	endPos, err := g.a.EndPosition(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("endPos: ", spatialmath.PoseToProtobuf(endPos))
+
+	props, err := g.c.Properties(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("props: ", props)
+
+	readings, err := g.s.Readings(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("readings: ", readings)
+
+	return cmd, nil
 }

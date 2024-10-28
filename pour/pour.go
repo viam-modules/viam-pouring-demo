@@ -389,7 +389,7 @@ func GenerateTransforms(parent string, pose spatialmath.Pose, bottleGrabPoint r3
 
 	bottleLinkLen := r3.Vector{X: 0, Y: 0, Z: bottleHeight - bottleGrabPoint.Z}
 
-	bottleGeom, _ := spatialmath.NewCapsule(spatialmath.NewPoseFromPoint(r3.Vector{0, 0, -bottleCenterZ}), 35, 260, "bottle")
+	bottleGeom, _ := spatialmath.NewCapsule(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -bottleCenterZ}), 35, 260, "bottle")
 
 	bottleFrame := referenceframe.NewLinkInFrame(
 		"bottle_offset",
@@ -399,10 +399,10 @@ func GenerateTransforms(parent string, pose spatialmath.Pose, bottleGrabPoint r3
 	)
 	transforms = append(transforms, bottleFrame)
 
-	gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{0, 0, -80}), r3.Vector{50, 170, 160}, "gripper")
+	gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 160}, "gripper")
 	gripperFrame := referenceframe.NewLinkInFrame(
 		armName,
-		spatialmath.NewPoseFromPoint(r3.Vector{0, 0, 150}),
+		spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 150}),
 		"gripper",
 		gripperGeom,
 	)
@@ -437,12 +437,12 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 	protectPowerObj, _ := spatialmath.NewBox(protectPowerOrigin, protectPowerDims, "protectPowerImaginaryBox")
 	obstacles = append(obstacles, protectPowerObj)
 
-	wallOrigin := spatialmath.NewPoseFromPoint(r3.Vector{300, 0, 0})
+	wallOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: 300, Y: 0, Z: 0})
 	wallDims := r3.Vector{X: 10, Y: 2000, Z: 2000.0}
 	wallObj, _ := spatialmath.NewBox(wallOrigin, wallDims, "wall")
 	obstacles = append(obstacles, wallObj)
 
-	ceilingOrigin := spatialmath.NewPoseFromPoint(r3.Vector{-400, 0, 900})
+	ceilingOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -400, Y: 0, Z: 900})
 	ceilingDims := r3.Vector{X: 2000, Y: 2000, Z: 10.0}
 	ceilingObj, _ := spatialmath.NewBox(ceilingOrigin, ceilingDims, "ceiling")
 	obstacles = append(obstacles, ceilingObj)
