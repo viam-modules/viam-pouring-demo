@@ -3,7 +3,6 @@ package pour
 
 import (
 	"context"
-	"fmt"
 	"runtime/debug"
 
 	"go.viam.com/rdk/components/arm"
@@ -38,9 +37,7 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 }
 
 func (cfg *Config) Validate(path string) ([]string, error) {
-	fmt.Println("I VALIDATED THE CONFIG")
-	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName}, nil
-	// return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, framesystem.InternalServiceName.String()}, nil
+	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, framesystem.ServiceName.String()}, nil
 }
 
 type Config struct {
