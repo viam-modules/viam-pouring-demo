@@ -3,11 +3,13 @@ package pour
 
 import (
 	"context"
-	"runtime/debug"
+	"fmt"
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
+	"go.viam.com/rdk/robot/client"
 	"go.viam.com/rdk/robot/framesystem"
+	"go.viam.com/utils/rpc"
 
 	// "go.viam.com/rdk/components/generic"
 	"go.viam.com/rdk/components/sensor"
@@ -26,7 +28,9 @@ func init() {
 }
 
 func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
-	debug.PrintStack()
+	// debug.PrintStack()
+	logger.Info("I make it to this point in time?")
+	logger.Info("conf: %v", conf)
 	g := &gen{
 		logger: logger,
 	}
@@ -37,13 +41,19 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 }
 
 func (cfg *Config) Validate(path string) ([]string, error) {
-	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, framesystem.ServiceName.String()}, nil
+	fmt.Println("HELLO THERE WE ARE INSIDE THE VALIDATE FUNCTION")
+	fmt.Println(cfg)
+	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, cfg.Address, cfg.Entity, cfg.Payload}, nil
+	// return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName}, nil
 }
 
 type Config struct {
 	ArmName          string `json:"arm_name"`
 	CameraName       string `json:"camera_name"`
 	WeightSensorName string `json:"weight_sensor_name"`
+	Address          string `json:"address"`
+	Entity           string `json:"entity"`
+	Payload          string `json:"payload"`
 }
 
 // gen is a fake Generic service that always echos input back to the caller.
@@ -57,8 +67,7 @@ type gen struct {
 	c      camera.Camera
 	s      sensor.Sensor
 	m      motion.Service
-	fsSvc  framesystem.Service
-	deps   resource.Dependencies
+	fsCfg  *framesystem.Config
 }
 
 func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
@@ -86,21 +95,39 @@ func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf 
 	}
 	g.s = s
 
-	fsSvc, err := framesystem.FromDependencies(deps)
+	// m, err := motion.FromDependencies(deps, "builtin")
+	// if err != nil {
+	// 	g.logger.Infof("THIS IS THE ERROR I HAVE RETURNED111: %v", err)
+	// 	return err
+	// }
+	// g.m = m
+
+	robot, err := client.New(
+		ctx,
+		config.Address,
+		g.logger,
+		client.WithDialOptions(rpc.WithEntityCredentials(
+			config.Entity,
+			rpc.Credentials{
+				Type:    rpc.CredentialsTypeAPIKey,
+				Payload: config.Payload,
+			})),
+	)
 	if err != nil {
-		g.logger.Infof("THIS IS THE ERROR I HAVE RETURNED222: %v", err)
 		return err
 	}
-	g.fsSvc = fsSvc
-
-	m, err := motion.FromDependencies(deps, "builtin")
+	fsCfg, err := robot.FrameSystemConfig(ctx)
 	if err != nil {
-		g.logger.Infof("THIS IS THE ERROR I HAVE RETURNED111: %v", err)
+		return err
+	}
+	g.fsCfg = fsCfg
+
+	m, err := motion.FromRobot(robot, "builtin")
+	if err != nil {
 		return err
 	}
 	g.m = m
-
-	g.deps = deps
+	// g.deps = deps
 
 	return nil
 }

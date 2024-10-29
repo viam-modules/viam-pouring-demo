@@ -7,6 +7,7 @@ toolchain go1.23.2
 require (
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	go.viam.com/rdk v0.47.2
+	go.viam.com/utils v0.1.110
 	gocv.io/x/gocv v0.39.0
 )
 
@@ -145,7 +146,6 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	go.viam.com/api v0.1.350 // indirect
 	go.viam.com/test v1.1.1-0.20220913152726-5da9916c08a2 // indirect
-	go.viam.com/utils v0.1.110 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
@@ -178,4 +178,4 @@ require (
 	periph.io/x/host/v3 v3.8.1-0.20230331112814-9f0d9f7d76db // indirect
 )
 
-replace go.viam.com/rdk => ../rdk-fork
+// replace go.viam.com/rdk => ../rdk-fxork
