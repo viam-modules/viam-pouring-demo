@@ -6,6 +6,8 @@ import (
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
+	"go.viam.com/rdk/robot"
+	"go.viam.com/rdk/utils"
 
 	// "go.viam.com/rdk/components/generic"
 	"go.viam.com/rdk/components/sensor"
@@ -22,30 +24,47 @@ var (
 )
 
 func init() {
-	resource.RegisterService(generic.API, GenericServiceName, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
+	// resource.RegisterService(generic.API, GenericServiceName, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
+	resource.RegisterService(generic.API, GenericServiceName, resource.Registration[resource.Resource, *Config]{DeprecatedRobotConstructor: newPour})
 }
 
-func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
-	g := &gen{
-		logger: logger,
-	}
-	if err := g.Reconfigure(ctx, deps, conf); err != nil {
+// func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
+// 	g := &gen{
+// 		logger: logger,
+// 	}
+// 	if err := g.Reconfigure(ctx, deps, conf); err != nil {
+// 		return nil, err
+// 	}
+// 	return g, nil
+// }
+
+func newPour(ctx context.Context, r any, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
+	logger.Info("I GET HERE 1")
+	robot, err := utils.AssertType[robot.Robot](r)
+	if err != nil {
 		return nil, err
 	}
+	logger.Info("I GET HERE 2")
+	g := &gen{
+		logger: logger,
+		r:      robot,
+	}
+	if err := g.Reconfigure(ctx, nil, conf); err != nil {
+		return nil, err
+	}
+	logger.Info("I GET HERE 3")
 	return g, nil
-
 }
 
 func (cfg *Config) Validate(path string) ([]string, error) {
-	// todo: make this function check that these fields actually exist
-	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, cfg.MotionServiceName}, nil
+	// return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName}, nil
+	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String()}, nil
 }
 
 type Config struct {
-	ArmName           string `json:"arm_name"`
-	CameraName        string `json:"camera_name"`
-	WeightSensorName  string `json:"weight_sensor_name"`
-	MotionServiceName string `json:"motion_service_name"`
+	ArmName          string `json:"arm_name"`
+	CameraName       string `json:"camera_name"`
+	WeightSensorName string `json:"weight_sensor_name"`
 }
 
 // gen is a fake Generic service that always echos input back to the caller.
@@ -55,68 +74,103 @@ type gen struct {
 	resource.TriviallyReconfigurable
 	resource.TriviallyCloseable
 	logger logging.Logger
+	r      robot.Robot
 	a      arm.Arm
 	c      camera.Camera
 	s      sensor.Sensor
 	m      motion.Service
-	// fs     framesystem.Service
-	deps resource.Dependencies
+	// deps resource.Dependencies
 }
 
-func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
-	g.logger.Infof("deps: %v", deps)
+func (g *gen) Reconfigure(ctx context.Context, _ resource.Dependencies, conf resource.Config) error {
 	config, err := resource.NativeConfig[*Config](conf)
 	if err != nil {
 		return err
 	}
 
-	a, err := arm.FromDependencies(deps, config.ArmName)
+	a, err := arm.FromRobot(g.r, config.ArmName)
 	if err != nil {
 		return err
 	}
 	g.a = a
 
-	c, err := camera.FromDependencies(deps, config.CameraName)
+	c, err := camera.FromRobot(g.r, config.CameraName)
 	if err != nil {
 		return err
 	}
 	g.c = c
 
-	s, err := sensor.FromDependencies(deps, config.WeightSensorName)
+	s, err := sensor.FromRobot(g.r, config.WeightSensorName)
 	if err != nil {
 		return err
 	}
 	g.s = s
 
-	m, err := motion.FromDependencies(deps, config.MotionServiceName)
+	m, err := motion.FromRobot(g.r, "builtin")
 	if err != nil {
 		return err
 	}
 	g.m = m
 
-	g.deps = deps
-
 	return nil
 }
+
+// func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
+// 	g.logger.Infof("deps: %v", deps)
+// 	config, err := resource.NativeConfig[*Config](conf)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	a, err := arm.FromDependencies(deps, config.ArmName)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	g.a = a
+
+// 	c, err := camera.FromDependencies(deps, config.CameraName)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	g.c = c
+
+// 	s, err := sensor.FromDependencies(deps, config.WeightSensorName)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	g.s = s
+
+// 	m, err := motion.FromDependencies(deps, "builtin")
+// 	if err != nil {
+// 		g.logger.Infof("THIS IS THE ERROR I HAVE RETURNED: %v", err)
+// 		return err
+// 	}
+// 	g.m = m
+
+// 	g.deps = deps
+
+// 	return nil
+// }
 
 func (g *gen) Name() resource.Name {
 	return g.Name()
 }
 
 func (g *gen) Close(ctx context.Context) error {
-	if err := g.a.Close(ctx); err != nil {
-		return err
-	}
-	if err := g.c.Close(ctx); err != nil {
-		return err
-	}
-	if err := g.s.Close(ctx); err != nil {
-		return err
-	}
-	if err := g.m.Close(ctx); err != nil {
-		return err
-	}
-	return nil
+	// if err := g.a.Close(ctx); err != nil {
+	// 	return err
+	// }
+	// if err := g.c.Close(ctx); err != nil {
+	// 	return err
+	// }
+	// if err := g.s.Close(ctx); err != nil {
+	// 	return err
+	// }
+	// if err := g.m.Close(ctx); err != nil {
+	// 	return err
+	// }
+	// return nil
+	return g.r.Close(ctx)
 }
 
 // DoCommand echos input back to the caller.

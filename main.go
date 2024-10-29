@@ -15,5 +15,4 @@ func main() {
 		moduleName,
 		resource.APIModel{API: generic.API, Model: pour.GenericServiceName},
 	)
-
 }

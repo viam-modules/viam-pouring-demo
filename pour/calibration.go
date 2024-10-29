@@ -41,7 +41,7 @@ func (g *gen) calibrate() {
 	g.logger.Info(" ")
 	g.logger.Info("LOCATIONS IN THE FRAME OF THE CAMERA")
 	for i := 0; i < numOfCupsToDetect; i++ {
-		fmt.Printf("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
+		g.logger.Infof("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
 	}
 
 	motionService := g.m
