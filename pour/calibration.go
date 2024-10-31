@@ -28,7 +28,34 @@ func (g *gen) calibrate() {
 	realsense := g.c
 
 	// get the data
-	numOfCupsToDetect := 1
+	// here I need to figure out how many cups there are on the table before I proceed to figure out how many cups to look for and their positions
+
+	// numOfCupsToDetect := 1
+	b := true
+	var numOfCupsToDetect int
+	for b {
+		num, err := determineAmountOfCups(context.Background(), realsense)
+		// if err != nil {
+		// 	fmt.Println("error is not nil")
+		// }
+		fmt.Println("err: ", err)
+		if errors.Is(err, errors.New("we detected a different amount of circles")) && err != nil {
+			fmt.Println("we are erroring out here")
+			logger.Error(err)
+			return
+		}
+		if err != nil {
+			fmt.Println("ERROR WAS NOT NIL -- RETRYING")
+		}
+		if err == nil {
+			numOfCupsToDetect = num
+			b = false
+		}
+	}
+	fmt.Println(" ")
+	fmt.Println(" ")
+	fmt.Println(" ")
+	fmt.Println("WE FOUND THIS MANY CUPS: ", numOfCupsToDetect)
 	clusters := getTheDetections(ctx, realsense, logger, numOfCupsToDetect)
 
 	// figure out which of the detections are the cups and which is the wine bottle
@@ -66,7 +93,7 @@ func (g *gen) calibrate() {
 
 	cupDemoPoints := []r3.Vector{}
 	for i := 0; i < numOfCupsToDetect; i++ {
-		cupDemoPoints = append(cupDemoPoints, r3.Vector{X: cupLocations[i].Point().X, Y: cupLocations[i].Point().Y, Z: 230})
+		cupDemoPoints = append(cupDemoPoints, r3.Vector{X: cupLocations[i].Point().X, Y: cupLocations[i].Point().Y, Z: 200})
 	}
 
 	g.logger.Info("LOCATIONS IN THE FRAME OF THE ARM WITH PROPER HEIGHT")
@@ -81,7 +108,6 @@ func (g *gen) calibrate() {
 
 	// HARDCODE FOR NOW
 	wineBottlePoint := r3.Vector{X: -255, Y: 334, Z: 108}
-	_ = wineBottlePoint
 
 	// execute the demo
 	g.demoPlanMovements(wineBottlePoint, cupDemoPoints)
@@ -158,9 +184,32 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 		logger.Infof("len(clusters[i].poses): %v", len(clusters[i].poses))
 		logger.Infof("checkLength: %v", checkLength)
 		if len(clusters[i].poses) != checkLength {
-			logger.Fatal("clusters not of equal length")
+			logger.Info("clusters not of equal length")
 		}
 	}
 
 	return clusters
+}
+
+func determineAmountOfCups(ctx context.Context, cam camera.Camera) (int, error) {
+	l := make([]int, 5)
+	for i := 0; i < 5; i++ {
+		fmt.Println("ON ITERATION: ", i)
+		circ, err := getCalibrationDataPoint(ctx, cam)
+		if err != nil {
+			return -1, err
+		}
+		fmt.Println("len(circ): ", len(circ))
+		fmt.Println(" ")
+
+		l[i] = len(circ)
+	}
+
+	check := l[0]
+	for _, num := range l {
+		if num != check {
+			return -1, errors.New("we detected a different amount of circles")
+		}
+	}
+	return check, nil
 }

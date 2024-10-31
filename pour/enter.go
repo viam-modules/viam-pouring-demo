@@ -173,7 +173,7 @@ func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 	}
 	g.logger.Infof("fsCfg: %v", fsCfg)
 
-	// g.calibrate()
+	g.calibrate()
 
 	return cmd, nil
 }

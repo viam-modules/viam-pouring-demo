@@ -14,14 +14,16 @@ import (
 )
 
 // for normalizing
-const minDepth uint32 = 550 //mm
-const maxDepth uint32 = 700 //mm
+// const minDepth uint32 = 550 //mm
+// const maxDepth uint32 = 700 //mm
+const minDepth uint32 = 300 //mm
+const maxDepth uint32 = 675 //mm
 
 // for cropping (original image is size 640x480)
 var crop = image.Rectangle{Min: image.Pt(40, 150), Max: image.Pt(600, 400)}
 
 // circles with radii smaller than this will be ignored
-const circleRThreshold = 18
+const circleRThreshold = 25
 
 type Circle struct {
 	center image.Point

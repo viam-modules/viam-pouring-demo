@@ -118,7 +118,6 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	}
 
 	approachGoalPlan, err := getPlan(context.Background(), logger, g.robotClient, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0)
-	// approachGoalPlan, err := getPlan(context.Background(), logger, g.r, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -264,7 +263,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 
 		pourPt := cupLoc
 		pourGoal := spatialmath.NewPose(
-			r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z - 100},
+			r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z - 50},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
 		plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, 0)
