@@ -16,7 +16,6 @@ import (
 
 	"go.viam.com/rdk/services/generic"
 	"go.viam.com/rdk/services/motion"
-	"go.viam.com/rdk/spatialmath"
 	rutils "go.viam.com/rdk/utils"
 )
 
@@ -148,32 +147,5 @@ func (g *gen) Close(ctx context.Context) error {
 
 // DoCommand echos input back to the caller.
 func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
-	// here I want to validate that I actually have access the weight-sensor, arm, and camera
-	endPos, err := g.a.EndPosition(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	g.logger.Infof("endPos: %v", spatialmath.PoseToProtobuf(endPos))
-
-	props, err := g.c.Properties(ctx)
-	if err != nil {
-		return nil, err
-	}
-	g.logger.Infof("props: %v", props)
-
-	readings, err := g.s.Readings(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	g.logger.Infof("readings: %v", readings)
-
-	fsCfg, err := g.robotClient.FrameSystemConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	g.logger.Infof("fsCfg: %v", fsCfg)
-
-	g.calibrate()
-
-	return cmd, nil
+	return cmd, g.calibrate()
 }

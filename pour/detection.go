@@ -20,10 +20,10 @@ const minDepth uint32 = 300 //mm
 const maxDepth uint32 = 675 //mm
 
 // for cropping (original image is size 640x480)
-var crop = image.Rectangle{Min: image.Pt(40, 150), Max: image.Pt(600, 400)}
+var crop = image.Rectangle{Min: image.Pt(10, 50), Max: image.Pt(600, 400)}
 
 // circles with radii smaller than this will be ignored
-const circleRThreshold = 25
+const circleRThreshold = 35
 
 type Circle struct {
 	center image.Point
@@ -45,7 +45,7 @@ func vesselCircles(img image.Image) ([]Circle, error) {
 	}
 	defer outFile.Close()
 
-	if err = jpeg.Encode(outFile, grayImg, nil); err != nil {
+	if err = jpeg.Encode(outFile, croppedImg, nil); err != nil {
 		panic(err)
 	}
 
@@ -83,12 +83,12 @@ func vesselCircles(img image.Image) ([]Circle, error) {
 		gray,                   // src
 		&circles,               // circles
 		gocv.HoughGradient,     // method - only HoughGradient is supported
-		1,                      // dp: inverse ratio of the accumulator  resolution to the image resolution
-		float64(gray.Rows()/8), // minDist: minimum distance between the centers of detected circles (Question: how is distance calculated here?)
-		100,                    // param1: the higher threshold for the canny edge detector
-		15,                     // param2: the accumulator threshold for circle detection
-		30,                     // minRadius of bounding circle
-		60,                     // maxRadius of bouding circle
+		0.5,                    // dp: inverse ratio of the accumulator resolution to the image resolution
+		float64(gray.Rows()/3), // minDist: minimum distance between the centers of detected circles (Question: how is distance calculated here?)
+		30,                     // param1: the higher threshold for the canny edge detector
+		7,                      // param2: the accumulator threshold for circle detection
+		35,                     // minRadius of bounding circle
+		45,                     // maxRadius of bouding circle
 	)
 
 	// consider adjusting param2 to a higher value, which makes the detector stricter
@@ -105,7 +105,7 @@ func vesselCircles(img image.Image) ([]Circle, error) {
 		}
 		gocv.Circle(&mat, center, radius, color.RGBA{255, 0, 0, 0}, 2)
 		// need to add the offset back so circle is returned with respect to original image
-		goodCircles = append(goodCircles, Circle{center, radius})
+		goodCircles = append(goodCircles, Circle{center.Add(crop.Min), radius})
 	}
 
 	// Save the output image with circles

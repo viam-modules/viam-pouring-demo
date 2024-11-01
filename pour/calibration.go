@@ -20,29 +20,23 @@ func calculateThePoseTheArmShouldGoTo(transformBy, clusterPose spatialmath.Pose)
 	return spatialmath.Compose(transformBy, clusterPose)
 }
 
-func (g *gen) calibrate() {
+func (g *gen) calibrate() error {
 	ctx := context.Background()
 	logger := logging.NewLogger("client")
 
 	// Get the camera from the robot
 	realsense := g.c
 
-	// get the data
 	// here I need to figure out how many cups there are on the table before I proceed to figure out how many cups to look for and their positions
-
-	// numOfCupsToDetect := 1
 	b := true
 	var numOfCupsToDetect int
 	for b {
 		num, err := determineAmountOfCups(context.Background(), realsense)
-		// if err != nil {
-		// 	fmt.Println("error is not nil")
-		// }
 		fmt.Println("err: ", err)
 		if errors.Is(err, errors.New("we detected a different amount of circles")) && err != nil {
 			fmt.Println("we are erroring out here")
 			logger.Error(err)
-			return
+			return err
 		}
 		if err != nil {
 			fmt.Println("ERROR WAS NOT NIL -- RETRYING")
@@ -93,7 +87,7 @@ func (g *gen) calibrate() {
 
 	cupDemoPoints := []r3.Vector{}
 	for i := 0; i < numOfCupsToDetect; i++ {
-		cupDemoPoints = append(cupDemoPoints, r3.Vector{X: cupLocations[i].Point().X, Y: cupLocations[i].Point().Y, Z: 200})
+		cupDemoPoints = append(cupDemoPoints, r3.Vector{X: cupLocations[i].Point().X, Y: cupLocations[i].Point().Y, Z: 170})
 	}
 
 	g.logger.Info("LOCATIONS IN THE FRAME OF THE ARM WITH PROPER HEIGHT")
@@ -110,7 +104,7 @@ func (g *gen) calibrate() {
 	wineBottlePoint := r3.Vector{X: -255, Y: 334, Z: 108}
 
 	// execute the demo
-	g.demoPlanMovements(wineBottlePoint, cupDemoPoints)
+	return g.demoPlanMovements(wineBottlePoint, cupDemoPoints)
 }
 
 func getCalibrationDataPoint(ctx context.Context, cam camera.Camera) ([]Circle, error) {
