@@ -30,7 +30,7 @@ var (
 )
 
 func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vector) error {
-	logger := logging.NewLogger("client")
+	logger := g.logger
 	motionService := g.m
 
 	// Compute orientation to approach bottle. We may also just want to hardcode rather than depending on the start position

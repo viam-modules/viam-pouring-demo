@@ -3,7 +3,6 @@ package pour
 import (
 	"context"
 	"errors"
-	"fmt"
 	"image"
 	"image/draw"
 	"math"
@@ -32,24 +31,16 @@ func (g *gen) calibrate() error {
 	var numOfCupsToDetect int
 	for b {
 		num, err := determineAmountOfCups(context.Background(), realsense)
-		fmt.Println("err: ", err)
 		if errors.Is(err, errors.New("we detected a different amount of circles")) && err != nil {
-			fmt.Println("we are erroring out here")
 			logger.Error(err)
 			return err
-		}
-		if err != nil {
-			fmt.Println("ERROR WAS NOT NIL -- RETRYING")
 		}
 		if err == nil {
 			numOfCupsToDetect = num
 			b = false
 		}
 	}
-	fmt.Println(" ")
-	fmt.Println(" ")
-	fmt.Println(" ")
-	fmt.Println("WE FOUND THIS MANY CUPS: ", numOfCupsToDetect)
+	g.logger.Infof("WE FOUND THIS MANY CUPS: %d", numOfCupsToDetect)
 	clusters := getTheDetections(ctx, realsense, logger, numOfCupsToDetect)
 
 	// figure out which of the detections are the cups and which is the wine bottle
@@ -80,7 +71,7 @@ func (g *gen) calibrate() error {
 
 	g.logger.Info("LOCATIONS IN THE FRAME OF THE ARM")
 	for i := 0; i < numOfCupsToDetect; i++ {
-		fmt.Printf("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
+		g.logger.Infof("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
 	}
 	g.logger.Info(" ")
 	g.logger.Info(" ")
@@ -92,13 +83,10 @@ func (g *gen) calibrate() error {
 
 	g.logger.Info("LOCATIONS IN THE FRAME OF THE ARM WITH PROPER HEIGHT")
 	for i := 0; i < numOfCupsToDetect; i++ {
-		fmt.Printf("cupDemoPoints[%d]: %v\n", i, cupDemoPoints[i])
+		g.logger.Infof("cupDemoPoints[%d]: %v\n", i, cupDemoPoints[i])
 	}
 	g.logger.Info(" ")
 	g.logger.Info(" ")
-
-	// fmt.Print("Validate that the positions are valid, press 'Enter' to continue...")
-	// bufio.NewReader(os.Stdin).ReadBytes('\n')
 
 	// HARDCODE FOR NOW
 	wineBottlePoint := r3.Vector{X: -255, Y: 334, Z: 108}
@@ -188,14 +176,10 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 func determineAmountOfCups(ctx context.Context, cam camera.Camera) (int, error) {
 	l := make([]int, 5)
 	for i := 0; i < 5; i++ {
-		fmt.Println("ON ITERATION: ", i)
 		circ, err := getCalibrationDataPoint(ctx, cam)
 		if err != nil {
 			return -1, err
 		}
-		fmt.Println("len(circ): ", len(circ))
-		fmt.Println(" ")
-
 		l[i] = len(circ)
 	}
 
