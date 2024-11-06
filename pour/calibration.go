@@ -21,7 +21,7 @@ func calculateThePoseTheArmShouldGoTo(transformBy, clusterPose spatialmath.Pose)
 
 func (g *gen) calibrate() error {
 	ctx := context.Background()
-	logger := logging.NewLogger("client")
+	logger := g.logger
 
 	// Get the camera from the robot
 	realsense := g.c
@@ -29,8 +29,9 @@ func (g *gen) calibrate() error {
 	// here I need to figure out how many cups there are on the table before I proceed to figure out how many cups to look for and their positions
 	b := true
 	var numOfCupsToDetect int
+	g.logger.Info("detecting how many cups there are on the table now")
 	for b {
-		num, err := determineAmountOfCups(context.Background(), realsense)
+		num, err := g.determineAmountOfCups(context.Background())
 		if errors.Is(err, errors.New("we detected a different amount of circles")) && err != nil {
 			logger.Error(err)
 			return err
@@ -41,6 +42,7 @@ func (g *gen) calibrate() error {
 		}
 	}
 	g.logger.Infof("WE FOUND THIS MANY CUPS: %d", numOfCupsToDetect)
+	g.logger.Info("determining the positions of the cups now")
 	clusters := getTheDetections(ctx, realsense, logger, numOfCupsToDetect)
 
 	// figure out which of the detections are the cups and which is the wine bottle
@@ -78,7 +80,7 @@ func (g *gen) calibrate() error {
 
 	cupDemoPoints := []r3.Vector{}
 	for i := 0; i < numOfCupsToDetect; i++ {
-		cupDemoPoints = append(cupDemoPoints, r3.Vector{X: cupLocations[i].Point().X, Y: cupLocations[i].Point().Y, Z: 170})
+		cupDemoPoints = append(cupDemoPoints, r3.Vector{X: cupLocations[i].Point().X, Y: cupLocations[i].Point().Y, Z: 180})
 	}
 
 	g.logger.Info("LOCATIONS IN THE FRAME OF THE ARM WITH PROPER HEIGHT")
@@ -130,7 +132,9 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 	for i := range len(clusters) {
 		clusters[i] = newCluster()
 	}
-	for successes := 0; successes < 10; {
+	x := []float64{}
+	y := []float64{}
+	for successes := 0; successes < 20; {
 		logger.Infof("attempting calibration iteration: %d", successes)
 		circles, err := getCalibrationDataPoint(ctx, realsense)
 		if err != nil {
@@ -141,11 +145,23 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 		}
 		if successes == 0 {
 			for i := range len(clusters) {
-				clusters[i].include(circleToPt(*properties.IntrinsicParams, circles[0], float64(maxDepth)))
+				logger.Infof("circles[0].center: %v", circles[0].center)
+				x = append(x, float64(circles[0].center.X))
+				y = append(y, float64(circles[0].center.Y))
+				logger.Infof(" ")
+				xAdj, yAdj := determineAdjustment(float64(circles[0].center.X), float64(circles[0].center.Y))
+				pt := circleToPt(*properties.IntrinsicParams, circles[0], 715, xAdj, yAdj)
+				clusters[i].include(pt)
 			}
 		} else {
 			for _, circle := range circles {
-				pt := circleToPt(*properties.IntrinsicParams, circle, float64(maxDepth))
+				logger.Infof("circle.center: %v", circle.center)
+				logger.Infof(" ")
+				x = append(x, float64(circle.center.X))
+				y = append(y, float64(circle.center.Y))
+				xAdj, yAdj := determineAdjustment(float64(circle.center.X), float64(circle.center.Y))
+				pt := circleToPt(*properties.IntrinsicParams, circle, 715, xAdj, yAdj)
+
 				min := math.Inf(1)
 				minIdx := 0
 				for i, cluster := range clusters {
@@ -161,6 +177,11 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 		successes++
 	}
 
+	xAvg := calculateAverage(x)
+	yAvg := calculateAverage(y)
+	logger.Infof("xAvg: %f", xAvg)
+	logger.Infof("yAvg: %f", yAvg)
+
 	checkLength := len(clusters[0].poses)
 	for i := range len(clusters) {
 		logger.Infof("len(clusters[i].poses): %v", len(clusters[i].poses))
@@ -173,13 +194,15 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 	return clusters
 }
 
-func determineAmountOfCups(ctx context.Context, cam camera.Camera) (int, error) {
+func (g *gen) determineAmountOfCups(ctx context.Context) (int, error) {
 	l := make([]int, 5)
 	for i := 0; i < 5; i++ {
-		circ, err := getCalibrationDataPoint(ctx, cam)
+		g.logger.Infof("on iteration %d", i)
+		circ, err := getCalibrationDataPoint(ctx, g.c)
 		if err != nil {
 			return -1, err
 		}
+		g.logger.Infof("len(circ): %d", len(circ))
 		l[i] = len(circ)
 	}
 
@@ -190,4 +213,34 @@ func determineAmountOfCups(ctx context.Context, cam camera.Camera) (int, error) 
 		}
 	}
 	return check, nil
+}
+
+func calculateAverage(numbers []float64) float64 {
+	if len(numbers) == 0 {
+		return 0 // Return 0 if the slice is empty to avoid division by zero
+	}
+
+	var sum float64
+	for _, num := range numbers {
+		sum += num
+	}
+
+	return sum / float64(len(numbers))
+}
+
+func determineAdjustment(inputX, inputY float64) (float64, float64) {
+	deltaXPos := 0.375
+	deltaXNeg := 0.07
+	deltaYPos := 0.2
+	deltaYNeg := 0.15
+	deltaX := 340.05 - inputX
+	deltaY := 222.7 - inputY
+	if deltaX > 0 && deltaY > 0 {
+		return deltaX * deltaXPos, deltaY * deltaYPos
+	} else if deltaX > 0 && deltaY < 0 {
+		return deltaX * deltaXPos, deltaY * deltaYNeg
+	} else if deltaX < 0 && deltaY < 0 {
+		return deltaX * deltaXNeg, deltaY * deltaYNeg
+	}
+	return deltaX * deltaXNeg, deltaY * deltaYPos
 }

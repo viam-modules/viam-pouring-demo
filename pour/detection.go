@@ -14,16 +14,15 @@ import (
 )
 
 // for normalizing
-// const minDepth uint32 = 550 //mm
-// const maxDepth uint32 = 700 //mm
 const minDepth uint32 = 300 //mm
 const maxDepth uint32 = 675 //mm
 
 // for cropping (original image is size 640x480)
-var crop = image.Rectangle{Min: image.Pt(10, 50), Max: image.Pt(600, 400)}
+// var crop = image.Rectangle{Min: image.Pt(0, 0), Max: image.Pt(600, 410)}
+var crop = image.Rectangle{Min: image.Pt(115, 0), Max: image.Pt(600, 410)}
 
 // circles with radii smaller than this will be ignored
-const circleRThreshold = 35
+const circleRThreshold = 18
 
 type Circle struct {
 	center image.Point
@@ -79,20 +78,31 @@ func vesselCircles(img image.Image) ([]Circle, error) {
 
 	// READ MORE ABOUT THIS HERE:
 	// https://docs.opencv.org/4.x/dd/d1a/group__imgproc__feature.html#ga47849c3be0d0406ad3ca45db65a25d2d
+	// THESE ARE PARAMS FOR CLEAR CUPS
+	// gocv.HoughCirclesWithParams(
+	// 	gray,                   // src
+	// 	&circles,               // circles
+	// 	gocv.HoughGradient,     // method - only HoughGradient is supported
+	// 	0.5,                    // dp: inverse ratio of the accumulator resolution to the image resolution
+	// 	float64(gray.Rows()/4), // minDist: minimum distance between the centers of detected circles (Question: how is distance calculated here?)
+	// 	30,                     // param1: the higher threshold for the canny edge detector
+	// 	20,                     // param2: the accumulator threshold for circle detection
+	// 	5,                      // minRadius of bounding circle
+	// 	40,                     // maxRadius of bouding circle
+	// )
+
+	// THESE ARE PARAMETERS FOR RED SOLO CUPS
 	gocv.HoughCirclesWithParams(
 		gray,                   // src
 		&circles,               // circles
 		gocv.HoughGradient,     // method - only HoughGradient is supported
-		0.5,                    // dp: inverse ratio of the accumulator resolution to the image resolution
-		float64(gray.Rows()/3), // minDist: minimum distance between the centers of detected circles (Question: how is distance calculated here?)
-		30,                     // param1: the higher threshold for the canny edge detector
-		7,                      // param2: the accumulator threshold for circle detection
-		35,                     // minRadius of bounding circle
-		45,                     // maxRadius of bouding circle
+		1,                      // dp: inverse ratio of the accumulator resolution to the image resolution
+		float64(gray.Rows()/8), // minDist: minimum distance between the centers of detected circles (Question: how is distance calculated here?)
+		100,                    // param1: the higher threshold for the canny edge detector
+		15,                     // param2: the accumulator threshold for circle detection
+		30,                     // minRadius of bounding circle
+		60,                     // maxRadius of bouding circle
 	)
-
-	// consider adjusting param2 to a higher value, which makes the detector stricter
-	// consider limiting the mix/maxRadius once we determine the expected circle size
 
 	// Draw the circles on the original image
 	goodCircles := make([]Circle, 0)
@@ -138,8 +148,10 @@ func normalizeDepth(img image.Image, min, max uint32) *image.Gray {
 	return grayImg
 }
 
-func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z float64) r3.Vector {
+func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, xAdjustment, yAdjustment float64) r3.Vector {
 	xmm := (float64(circle.center.X) - intrinsics.Ppx) * (z / intrinsics.Fx)
 	ymm := (float64(circle.center.Y) - intrinsics.Ppy) * (z / intrinsics.Fy)
+	xmm = xmm + xAdjustment
+	ymm = ymm + yAdjustment
 	return r3.Vector{X: xmm, Y: ymm, Z: z}
 }

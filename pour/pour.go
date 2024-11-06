@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang/geo/r3"
 
+	pb "go.viam.com/api/component/arm/v1"
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
@@ -92,7 +93,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	if err != nil {
 		return err
 	}
-	bottleWeight += 500
+	// bottleWeight += 1200
 	g.logger.Infof("bottleWeight: %d", bottleWeight)
 
 	bottleLocation := bottleGrabPoint
@@ -108,6 +109,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		grabVectorOrient,
 	)
 
+	now := time.Now()
 	// ---------------------------------------------------------------------------------
 	// HERE WE CONSTRUCT THE FIRST PLAN
 	// THE FIRST PLAN IS MOVING THE ARM TO BE IN THE NEUTRAL POSITION
@@ -171,6 +173,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	if err != nil {
 		return err
 	}
+	g.logger.Infof("liftedPlan: %v", liftedPlan.Trajectory())
 	g.logger.Info("DONE PLANNING THE 3rd MOVEMENT")
 	// ---------------------------------------------------------------------------------
 
@@ -181,7 +184,6 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	// NOTE: THIS WILL NEED TO BE UPDATED TO WORK FOR N CUPS AND NOT JUST ONE
 	cupPouringPlans := make([]motionplan.Plan, len(cupLocations)*3)
 	pourParams := make([][]float64, len(cupLocations))
-	var getBackHomeCachedPlan motionplan.Plan
 
 	for i, cupLoc := range cupLocations {
 		minus := i * 150
@@ -203,43 +205,27 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		// need to get the currentInputs for the arm
 		var plan motionplan.Plan
 		if i == 0 {
-			armFrameLiftedPlanInputs, err := liftedPlan.Trajectory().GetFrameInputs(armName)
+			intermediateInputs := referenceframe.FloatsToInputs([]float64{
+				3.9929597377678049952,
+				-0.31163778901022853862,
+				-0.40986624359982865018,
+				2.8722410201955117515,
+				-0.28700971603322356085,
+				-2.7665438651969944672,
+			})
+			plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, 0)
 			if err != nil {
-				return err
-			}
-			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameLiftedPlanInputs[len(armFrameLiftedPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0)
-			if err != nil {
-				return err
-			}
-			if getBackHomeCachedPlan == nil {
+				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR: %v", err)
 				j := 1
 				for {
-					g.logger.Infof("plan.Trajectory(): %v", plan.Trajectory())
-					armInputs, err := plan.Trajectory().GetFrameInputs(armName)
-					if err != nil {
-						return err
-					}
-					lastSetOfArmInputs := armInputs[len(armInputs)-1]
-					// good plan
-					// arm: [{1.9081637859344482} {-0.21761181950569153} {-0.6136443614959717} {1.802912712097168} {1.323805093765259} {-2.3392598628997807}]
-					// arm: [{3.6838473236708578} {0.34870245978501047} {-1.2629047561914166} {3.0796384211177763} {-0.4517194870279333} {-3.066687865829873}]
-					penUltimateJointPosition := lastSetOfArmInputs[len(lastSetOfArmInputs)-2]
-					if penUltimateJointPosition.Value <= -0.1 {
+					plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j)
+					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR: %v", err)
+					if err == nil {
 						break
 					}
-					// the plan's traj had length not equal to 2 so we know it was not what we are looking for
-					g.logger.Info(" ")
-					g.logger.Info(" ")
-					g.logger.Info("WE ARE NOW GOING TO ASK FOR A NEW PATH SINCE WE DID NOT GET THE PATH WE WANTED!")
-					g.logger.Info(" ")
-					g.logger.Info(" ")
-					plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameLiftedPlanInputs[len(armFrameLiftedPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, j)
-					if err != nil {
-						return err
-					}
+					g.logger.Info("PLANNING AGAIN")
 					j++
 				}
-				getBackHomeCachedPlan = plan
 			}
 		} else {
 			formerplan := cupPouringPlans[i*3-1]
@@ -255,7 +241,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		cupPouringPlans[i*3] = plan
 
 		// now we come up with the plan to actually pour the liquid
-		// first we need to update the inputs tho
+		// first we need to update the inputs though
 		armFramePlanInputs, err := plan.Trajectory().GetFrameInputs(armName)
 		if err != nil {
 			return err
@@ -263,17 +249,28 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 
 		pourPt := cupLoc
 		pourGoal := spatialmath.NewPose(
-			// r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z},
-			r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z - 10},
+			r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z - 40},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
 		plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, 0)
 		if err != nil {
-			return err
+			g.logger.Infof("WE RETURNED THE FOLLOWING ERROR: %v", err)
+			j := 1
+			for {
+				plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, j)
+				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR: %v", err)
+				if err == nil {
+					break
+				}
+				g.logger.Info("PLANNING AGAIN")
+				j++
+			}
 		}
 		cupPouringPlans[i*3+1] = plan
 		cupPouringPlans[i*3+2] = reversePlan(plan)
 	}
+
+	g.logger.Infof("IT TOOK THIS LONG TO CONSTRUCT ALL PLANS: %v", time.Since(now))
 
 	// ---------------------------------------------------------------------------------
 	// AT THIS POINT IN TIME WE ARE DONE CONSTRUCTING ALL THE PLANS THAT WE WILL NEED AND NOW WE
@@ -284,7 +281,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		xArmComponent,
 		[]motionplan.Plan{approachGoalPlan, bottlePlan, liftedPlan},
 		cupPouringPlans,
-		[]motionplan.Plan{reversePlan(getBackHomeCachedPlan), reversePlan(liftedPlan), reversePlan(bottlePlan)},
+		[]motionplan.Plan{reversePlan(liftedPlan), reversePlan(bottlePlan)},
 		pourParams,
 	)
 }
@@ -317,6 +314,22 @@ func executeDemo(motionService motion.Service, logger logging.Logger, xArmCompon
 		}
 	}
 
+	// here we move to the intermediate jointPositions
+	intermediateJP := &pb.JointPositions{
+		Values: []float64{
+			228.77974074032667,
+			-17.855530047118815,
+			-23.483605923209325,
+			164.5672882019609,
+			-16.44444540799274,
+			-158.51128731399075,
+		},
+	}
+	err := xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	// plans which:
 	// move the bottle to be by the cup
 	// move the bottle such that it pours liquid into the cups
@@ -344,7 +357,7 @@ func executeDemo(motionService motion.Service, logger logging.Logger, xArmCompon
 		if (i+1)%3 == 0 {
 			// NOW WE SET THE SPEED AND ACCEL OF THE ARM BACK TO 50 and 100
 			_, err := xArmComponent.DoCommand(context.Background(), map[string]interface{}{
-				"set_speed":        50,
+				"set_speed":        60,
 				"set_acceleration": 100,
 			})
 			if err != nil {
@@ -353,18 +366,34 @@ func executeDemo(motionService motion.Service, logger logging.Logger, xArmCompon
 		}
 	}
 
-	for i, plan := range afterPourPlans {
+	liftedJP := &pb.JointPositions{
+		Values: []float64{
+			91.69475685266592,
+			-22.459967179846803,
+			-34.617099430727954,
+			90.9203909857049,
+			88.58103753459719,
+			-122.93429358787672,
+		},
+	}
+	err = xArmComponent.MoveToJointPositions(context.Background(), liftedJP, nil)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
+	for _, plan := range afterPourPlans {
 		cmd := map[string]interface{}{builtin.DoExecute: plan.Trajectory()}
 		_, err := motionService.DoCommand(context.Background(), cmd)
 		if err != nil {
 			return err
 		}
-		if i == 2 {
-			xArmComponent.DoCommand(context.Background(), map[string]interface{}{
-				"setup_gripper": true,
-				"move_gripper":  850,
-			})
-		}
+	}
+	_, err = xArmComponent.DoCommand(context.Background(), map[string]interface{}{
+		"setup_gripper": true,
+		"move_gripper":  850,
+	})
+	if err != nil {
+		logger.Fatal(err)
 	}
 	return nil
 }
@@ -458,6 +487,7 @@ func getPlan(ctx context.Context, logger logging.Logger, robot *client.RobotClie
 
 	fsInputs := referenceframe.StartPositions(fs)
 	fsInputs[armName] = armCurrentInputs
+	logger.Infof("rseed: %d", rseed)
 
 	return motionplan.PlanMotion(ctx, &motionplan.PlanRequest{
 		Logger:             logger,
@@ -467,7 +497,7 @@ func getPlan(ctx context.Context, logger logging.Logger, robot *client.RobotClie
 		FrameSystem:        fs,
 		WorldState:         worldState,
 		Constraints:        constraint,
-		Options:            map[string]interface{}{"rseed": rseed},
+		Options:            map[string]interface{}{"rseed": rseed, "timeout": 10},
 	})
 }
 

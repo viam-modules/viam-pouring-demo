@@ -19,10 +19,10 @@ import (
 	rutils "go.viam.com/rdk/utils"
 )
 
-var GenericServiceName = resource.NewModel("viam", "viam-pouring-demo", "pour")
+var Model = resource.NewModel("viam", "viam-pouring-demo", "pour")
 
 func init() {
-	resource.RegisterService(generic.API, GenericServiceName, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
+	resource.RegisterService(generic.API, Model, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
 }
 
 func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
@@ -147,5 +147,10 @@ func (g *gen) Close(ctx context.Context) error {
 
 // DoCommand echos input back to the caller.
 func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+	g.logger.Infof("cmd: %v", cmd)
+	if _, ok := cmd["stop"]; ok {
+		g.logger.Info("WE ARE INSIDE THE STOP CONDITIONAL AND ARE ABOUT TO RETURN")
+		return nil, g.a.Stop(ctx, nil)
+	}
 	return cmd, g.calibrate()
 }
