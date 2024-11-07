@@ -145,12 +145,14 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 		}
 		if successes == 0 {
 			for i := range len(clusters) {
-				logger.Infof("circles[0].center: %v", circles[0].center)
-				x = append(x, float64(circles[0].center.X))
-				y = append(y, float64(circles[0].center.Y))
+				logger.Infof("circles[0].center: %v", circles[i].center)
+				x = append(x, float64(circles[i].center.X))
+				y = append(y, float64(circles[i].center.Y))
 				logger.Infof(" ")
-				xAdj, yAdj := determineAdjustment(float64(circles[0].center.X), float64(circles[0].center.Y))
-				pt := circleToPt(*properties.IntrinsicParams, circles[0], 715, xAdj, yAdj)
+				xAdj, yAdj := determineAdjustment(logger, float64(circles[i].center.X), float64(circles[i].center.Y))
+				logger.Infof("xAdj %f", xAdj)
+				logger.Infof("yAdj %f", yAdj)
+				pt := circleToPt(*properties.IntrinsicParams, circles[i], 715, xAdj, yAdj)
 				clusters[i].include(pt)
 			}
 		} else {
@@ -159,7 +161,9 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 				logger.Infof(" ")
 				x = append(x, float64(circle.center.X))
 				y = append(y, float64(circle.center.Y))
-				xAdj, yAdj := determineAdjustment(float64(circle.center.X), float64(circle.center.Y))
+				xAdj, yAdj := determineAdjustment(logger, float64(circle.center.X), float64(circle.center.Y))
+				logger.Infof("xAdj %f", xAdj)
+				logger.Infof("yAdj %f", yAdj)
 				pt := circleToPt(*properties.IntrinsicParams, circle, 715, xAdj, yAdj)
 
 				min := math.Inf(1)
@@ -181,15 +185,6 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 	yAvg := calculateAverage(y)
 	logger.Infof("xAvg: %f", xAvg)
 	logger.Infof("yAvg: %f", yAvg)
-
-	checkLength := len(clusters[0].poses)
-	for i := range len(clusters) {
-		logger.Infof("len(clusters[i].poses): %v", len(clusters[i].poses))
-		logger.Infof("checkLength: %v", checkLength)
-		if len(clusters[i].poses) != checkLength {
-			logger.Info("clusters not of equal length")
-		}
-	}
 
 	return clusters
 }
@@ -228,7 +223,7 @@ func calculateAverage(numbers []float64) float64 {
 	return sum / float64(len(numbers))
 }
 
-func determineAdjustment(inputX, inputY float64) (float64, float64) {
+func determineAdjustment(logger logging.Logger, inputX, inputY float64) (float64, float64) {
 	deltaXPos := 0.375
 	deltaXNeg := 0.07
 	deltaYPos := 0.2
@@ -236,11 +231,15 @@ func determineAdjustment(inputX, inputY float64) (float64, float64) {
 	deltaX := 340.05 - inputX
 	deltaY := 222.7 - inputY
 	if deltaX > 0 && deltaY > 0 {
+		logger.Info("deltaX > 0 && deltaY > 0")
 		return deltaX * deltaXPos, deltaY * deltaYPos
 	} else if deltaX > 0 && deltaY < 0 {
+		logger.Info("deltaX > 0 && deltaY < 0")
 		return deltaX * deltaXPos, deltaY * deltaYNeg
 	} else if deltaX < 0 && deltaY < 0 {
+		logger.Info("deltaX < 0 && deltaY < 0")
 		return deltaX * deltaXNeg, deltaY * deltaYNeg
 	}
+	logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
 	return deltaX * deltaXNeg, deltaY * deltaYPos
 }
