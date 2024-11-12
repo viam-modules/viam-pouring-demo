@@ -4,6 +4,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/jpeg"
 	"os"
 	"sort"
@@ -18,8 +19,7 @@ const minDepth uint32 = 300 //mm
 const maxDepth uint32 = 675 //mm
 
 // for cropping (original image is size 640x480)
-// var crop = image.Rectangle{Min: image.Pt(0, 0), Max: image.Pt(600, 410)}
-var crop = image.Rectangle{Min: image.Pt(115, 0), Max: image.Pt(600, 410)}
+var crop = image.Rectangle{Min: image.Pt(115, 0), Max: image.Pt(600, 440)}
 
 // circles with radii smaller than this will be ignored
 const circleRThreshold = 18
@@ -31,10 +31,11 @@ type Circle struct {
 
 func vesselCircles(img image.Image) ([]Circle, error) {
 	// Normalize and convert the depth image to grayscale
-	grayImg := normalizeDepth(img, minDepth, maxDepth)
+	// grayImg := normalizeDepth(img, minDepth, maxDepth)
 
 	// Crop the image
-	croppedImg := grayImg.SubImage(crop)
+	// croppedImg := grayImg.SubImage(crop)
+	croppedImg := cropImage(img)
 	_ = croppedImg
 
 	// Save the image as a .jpg file
@@ -78,30 +79,17 @@ func vesselCircles(img image.Image) ([]Circle, error) {
 
 	// READ MORE ABOUT THIS HERE:
 	// https://docs.opencv.org/4.x/dd/d1a/group__imgproc__feature.html#ga47849c3be0d0406ad3ca45db65a25d2d
-	// THESE ARE PARAMS FOR CLEAR CUPS
-	// gocv.HoughCirclesWithParams(
-	// 	gray,                   // src
-	// 	&circles,               // circles
-	// 	gocv.HoughGradient,     // method - only HoughGradient is supported
-	// 	0.5,                    // dp: inverse ratio of the accumulator resolution to the image resolution
-	// 	float64(gray.Rows()/4), // minDist: minimum distance between the centers of detected circles (Question: how is distance calculated here?)
-	// 	30,                     // param1: the higher threshold for the canny edge detector
-	// 	20,                     // param2: the accumulator threshold for circle detection
-	// 	5,                      // minRadius of bounding circle
-	// 	40,                     // maxRadius of bouding circle
-	// )
-
-	// THESE ARE PARAMETERS FOR RED SOLO CUPS
+	// THESE ARE PARAMETERS FOR MATTE BLACK CUPS
 	gocv.HoughCirclesWithParams(
 		gray,                   // src
 		&circles,               // circles
 		gocv.HoughGradient,     // method - only HoughGradient is supported
 		1,                      // dp: inverse ratio of the accumulator resolution to the image resolution
 		float64(gray.Rows()/8), // minDist: minimum distance between the centers of detected circles (Question: how is distance calculated here?)
-		100,                    // param1: the higher threshold for the canny edge detector
-		15,                     // param2: the accumulator threshold for circle detection
-		30,                     // minRadius of bounding circle
-		60,                     // maxRadius of bouding circle
+		60,                     // param1: the higher threshold for the canny edge detector
+		25,                     // param2: the accumulator threshold for circle detection
+		35,                     // minRadius of bounding circle
+		50,                     // maxRadius of bouding circle
 	)
 
 	// Draw the circles on the original image
@@ -133,19 +121,28 @@ func vesselCircles(img image.Image) ([]Circle, error) {
 
 // normalizeDepth converts a depth image to a high-contrast grayscale image,
 // emphasizing objects like cups and bottles for Hough transform.
-func normalizeDepth(img image.Image, min, max uint32) *image.Gray {
-	bounds := img.Bounds()
-	grayImg := image.NewGray(bounds)
+// func normalizeDepth(img image.Image, min, max uint32) *image.Gray {
+// 	bounds := img.Bounds()
+// 	grayImg := image.NewGray(bounds)
 
-	// Normalize depth window we are interested in to 0-255
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			depth, _, _, _ := img.At(x, y).RGBA()
-			normalized := uint8((depth - min) * 255 / (max - min))
-			grayImg.SetGray(x, y, color.Gray{Y: normalized})
-		}
-	}
-	return grayImg
+// 	// Normalize depth window we are interested in to 0-255
+// 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+// 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+// 			depth, _, _, _ := img.At(x, y).RGBA()
+// 			normalized := uint8((depth - min) * 255 / (max - min))
+// 			grayImg.SetGray(x, y, color.Gray{Y: normalized})
+// 		}
+// 	}
+// 	return grayImg
+// }
+
+func cropImage(src image.Image) image.Image {
+	// Create a new RGBA image with the size of the crop rectangle
+	croppedImg := image.NewRGBA(image.Rect(0, 0, crop.Dx(), crop.Dy()))
+
+	// Adjust the draw point to correctly position the cropped area
+	draw.Draw(croppedImg, croppedImg.Bounds(), src, crop.Min, draw.Src)
+	return croppedImg
 }
 
 func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, xAdjustment, yAdjustment float64) r3.Vector {

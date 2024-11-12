@@ -3,15 +3,12 @@ package pour
 import (
 	"context"
 	"errors"
-	"image"
-	"image/draw"
 	"math"
 
 	"github.com/golang/geo/r3"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
-	"go.viam.com/rdk/rimage"
 	"go.viam.com/rdk/spatialmath"
 )
 
@@ -36,20 +33,20 @@ func (g *gen) calibrate() error {
 			logger.Error(err)
 			return err
 		}
-		if err == nil {
+		if num != 0 && err == nil {
 			numOfCupsToDetect = num
 			b = false
 		}
 	}
 	g.logger.Infof("WE FOUND THIS MANY CUPS: %d", numOfCupsToDetect)
 	g.logger.Info("determining the positions of the cups now")
-	clusters := getTheDetections(ctx, realsense, logger, numOfCupsToDetect)
+	clusters := g.getTheDetections(ctx, realsense, logger, numOfCupsToDetect)
 
 	// figure out which of the detections are the cups and which is the wine bottle
 	// know that wrt the camera, the bottle is on the left side, so it'll have a negative X value
 	cupLocations := []spatialmath.Pose{}
 	for _, c := range clusters {
-		cupLocations = append(cupLocations, spatialmath.NewPoseFromPoint(c.mean()))
+		cupLocations = append(cupLocations, spatialmath.NewPoseFromPoint(c.mean().Add(r3.Vector{20, 0, 0})))
 	}
 	g.logger.Info(" ")
 	g.logger.Info(" ")
@@ -80,7 +77,7 @@ func (g *gen) calibrate() error {
 
 	cupDemoPoints := []r3.Vector{}
 	for i := 0; i < numOfCupsToDetect; i++ {
-		cupDemoPoints = append(cupDemoPoints, r3.Vector{X: cupLocations[i].Point().X, Y: cupLocations[i].Point().Y, Z: 180})
+		cupDemoPoints = append(cupDemoPoints, r3.Vector{X: cupLocations[i].Point().X, Y: cupLocations[i].Point().Y, Z: 190})
 	}
 
 	g.logger.Info("LOCATIONS IN THE FRAME OF THE ARM WITH PROPER HEIGHT")
@@ -103,25 +100,14 @@ func getCalibrationDataPoint(ctx context.Context, cam camera.Camera) ([]Circle, 
 		return nil, err
 	}
 	for _, img := range images {
-		if img.SourceName == "depth" {
+		if img.SourceName == "color" {
 			return vesselCircles(img.Image)
-		} else {
-			// this is what the camera saw in RGBA
-
-			crop := image.Rectangle{Min: image.Pt(65, 0), Max: image.Pt(640, 320)}
-			// Create a new RGBA image with the size of the crop rectangle
-			croppedImg := image.NewRGBA(image.Rect(0, 0, crop.Dx(), crop.Dy()))
-
-			// Adjust the draw point to correctly position the cropped area
-			draw.Draw(croppedImg, croppedImg.Bounds(), img.Image, crop.Min, draw.Src)
-
-			rimage.SaveImage(img.Image, "real_time_image.jpg")
 		}
 	}
 	return nil, errors.New("this shouldn't happen")
 }
 
-func getTheDetections(ctx context.Context, realsense camera.Camera, logger logging.Logger, amountOfClusters int) []*cluster {
+func (g *gen) getTheDetections(ctx context.Context, realsense camera.Camera, logger logging.Logger, amountOfClusters int) []*cluster {
 	properties, err := realsense.Properties(ctx)
 	if err != nil {
 		logger.Fatal(err)
@@ -149,7 +135,7 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 				x = append(x, float64(circles[i].center.X))
 				y = append(y, float64(circles[i].center.Y))
 				logger.Infof(" ")
-				xAdj, yAdj := determineAdjustment(logger, float64(circles[i].center.X), float64(circles[i].center.Y))
+				xAdj, yAdj := g.determineAdjustment(logger, float64(circles[i].center.X), float64(circles[i].center.Y))
 				logger.Infof("xAdj %f", xAdj)
 				logger.Infof("yAdj %f", yAdj)
 				pt := circleToPt(*properties.IntrinsicParams, circles[i], 715, xAdj, yAdj)
@@ -161,7 +147,7 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 				logger.Infof(" ")
 				x = append(x, float64(circle.center.X))
 				y = append(y, float64(circle.center.Y))
-				xAdj, yAdj := determineAdjustment(logger, float64(circle.center.X), float64(circle.center.Y))
+				xAdj, yAdj := g.determineAdjustment(logger, float64(circle.center.X), float64(circle.center.Y))
 				logger.Infof("xAdj %f", xAdj)
 				logger.Infof("yAdj %f", yAdj)
 				pt := circleToPt(*properties.IntrinsicParams, circle, 715, xAdj, yAdj)
@@ -190,8 +176,8 @@ func getTheDetections(ctx context.Context, realsense camera.Camera, logger loggi
 }
 
 func (g *gen) determineAmountOfCups(ctx context.Context) (int, error) {
-	l := make([]int, 5)
-	for i := 0; i < 5; i++ {
+	l := make([]int, 3)
+	for i := 0; i < 3; i++ {
 		g.logger.Infof("on iteration %d", i)
 		circ, err := getCalibrationDataPoint(ctx, g.c)
 		if err != nil {
@@ -223,13 +209,20 @@ func calculateAverage(numbers []float64) float64 {
 	return sum / float64(len(numbers))
 }
 
-func determineAdjustment(logger logging.Logger, inputX, inputY float64) (float64, float64) {
-	deltaXPos := 0.375
-	deltaXNeg := 0.07
-	deltaYPos := 0.2
-	deltaYNeg := 0.15
+func (g *gen) determineAdjustment(logger logging.Logger, inputX, inputY float64) (float64, float64) {
+	deltaXPos := g.deltaXPos
+	deltaXNeg := g.deltaXNeg
+	deltaYPos := g.deltaYPos
+	deltaYNeg := g.deltaYNeg
+	logger.Infof("deltaXPos: %f", deltaXPos)
+	logger.Infof("deltaYPos: %f", deltaYPos)
+	logger.Infof("deltaXNeg: %f", deltaXNeg)
+	logger.Infof("deltaYNeg: %f", deltaYNeg)
+
 	deltaX := 340.05 - inputX
 	deltaY := 222.7 - inputY
+	logger.Infof("deltaX: %f", deltaX)
+	logger.Infof("deltaY: %f", deltaY)
 	if deltaX > 0 && deltaY > 0 {
 		logger.Info("deltaX > 0 && deltaY > 0")
 		return deltaX * deltaXPos, deltaY * deltaYPos
@@ -241,5 +234,6 @@ func determineAdjustment(logger logging.Logger, inputX, inputY float64) (float64
 		return deltaX * deltaXNeg, deltaY * deltaYNeg
 	}
 	logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
+	logger.Info("deltaX < 0 && deltaY > 0")
 	return deltaX * deltaXNeg, deltaY * deltaYPos
 }

@@ -215,11 +215,11 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			})
 			plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, 0)
 			if err != nil {
-				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR: %v", err)
+				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
 				j := 1
 				for {
 					plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j)
-					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR: %v", err)
+					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
 					if err == nil {
 						break
 					}
@@ -249,16 +249,17 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 
 		pourPt := cupLoc
 		pourGoal := spatialmath.NewPose(
-			r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z - 40},
+			r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z - 20},
+			// r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
 		plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, 0)
 		if err != nil {
-			g.logger.Infof("WE RETURNED THE FOLLOWING ERROR: %v", err)
+			g.logger.Infof("WE RETURNED THE FOLLOWING ERROR2: %v", err)
 			j := 1
 			for {
 				plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, j)
-				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR: %v", err)
+				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR2: %v", err)
 				if err == nil {
 					break
 				}

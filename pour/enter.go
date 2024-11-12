@@ -58,12 +58,16 @@ func (cfg *Config) Validate(path string) ([]string, error) {
 }
 
 type Config struct {
-	ArmName          string `json:"arm_name"`
-	CameraName       string `json:"camera_name"`
-	WeightSensorName string `json:"weight_sensor_name"`
-	Address          string `json:"address"`
-	Entity           string `json:"entity"`
-	Payload          string `json:"payload"`
+	ArmName          string  `json:"arm_name"`
+	CameraName       string  `json:"camera_name"`
+	WeightSensorName string  `json:"weight_sensor_name"`
+	Address          string  `json:"address"`
+	Entity           string  `json:"entity"`
+	Payload          string  `json:"payload"`
+	DeltaXPos        float64 `json:"delta_x_pos"`
+	DeltaYPos        float64 `json:"delta_y_pos"`
+	DeltaXNeg        float64 `json:"delta_x_neg"`
+	DeltaYNeg        float64 `json:"delta_y_neg"`
 }
 
 // gen is a fake Generic service that always echos input back to the caller.
@@ -72,15 +76,14 @@ type gen struct {
 	resource.Named
 	resource.TriviallyReconfigurable
 	resource.TriviallyCloseable
-	logger      logging.Logger
-	address     string
-	entity      string
-	payload     string
-	robotClient *client.RobotClient
-	a           arm.Arm
-	c           camera.Camera
-	s           sensor.Sensor
-	m           motion.Service
+	logger                                     logging.Logger
+	address, entity, payload                   string
+	robotClient                                *client.RobotClient
+	a                                          arm.Arm
+	c                                          camera.Camera
+	s                                          sensor.Sensor
+	m                                          motion.Service
+	deltaXPos, deltaYPos, deltaXNeg, deltaYNeg float64
 }
 
 func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
@@ -112,6 +115,11 @@ func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf 
 		return err
 	}
 	g.m = m
+
+	g.deltaXPos = config.DeltaXPos
+	g.deltaYPos = config.DeltaYPos
+	g.deltaXNeg = config.DeltaXNeg
+	g.deltaYNeg = config.DeltaYNeg
 
 	utils.PanicCapturingGo(g.getRobotClient)
 
