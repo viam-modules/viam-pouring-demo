@@ -16,6 +16,7 @@ import (
 
 	"go.viam.com/rdk/services/generic"
 	"go.viam.com/rdk/services/motion"
+	"go.viam.com/rdk/services/vision"
 	rutils "go.viam.com/rdk/utils"
 )
 
@@ -54,20 +55,21 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 }
 
 func (cfg *Config) Validate(path string) ([]string, error) {
-	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String()}, nil
+	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, nil
 }
 
 type Config struct {
-	ArmName          string  `json:"arm_name"`
-	CameraName       string  `json:"camera_name"`
-	WeightSensorName string  `json:"weight_sensor_name"`
-	Address          string  `json:"address"`
-	Entity           string  `json:"entity"`
-	Payload          string  `json:"payload"`
-	DeltaXPos        float64 `json:"delta_x_pos"`
-	DeltaYPos        float64 `json:"delta_y_pos"`
-	DeltaXNeg        float64 `json:"delta_x_neg"`
-	DeltaYNeg        float64 `json:"delta_y_neg"`
+	ArmName                string  `json:"arm_name"`
+	CameraName             string  `json:"camera_name"`
+	CircleDetectionService string  `json:"circle_detection_service"`
+	WeightSensorName       string  `json:"weight_sensor_name"`
+	Address                string  `json:"address"`
+	Entity                 string  `json:"entity"`
+	Payload                string  `json:"payload"`
+	DeltaXPos              float64 `json:"delta_x_pos"`
+	DeltaYPos              float64 `json:"delta_y_pos"`
+	DeltaXNeg              float64 `json:"delta_x_neg"`
+	DeltaYNeg              float64 `json:"delta_y_neg"`
 }
 
 // gen is a fake Generic service that always echos input back to the caller.
@@ -83,6 +85,7 @@ type gen struct {
 	c                                          camera.Camera
 	s                                          sensor.Sensor
 	m                                          motion.Service
+	v                                          vision.Service
 	deltaXPos, deltaYPos, deltaXNeg, deltaYNeg float64
 }
 
@@ -115,6 +118,12 @@ func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf 
 		return err
 	}
 	g.m = m
+
+	v, err := vision.FromDependencies(deps, config.CircleDetectionService)
+	if err != nil {
+		return err
+	}
+	g.v = v
 
 	g.deltaXPos = config.DeltaXPos
 	g.deltaYPos = config.DeltaYPos

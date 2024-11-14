@@ -2,15 +2,20 @@ package pour
 
 import (
 	"context"
-	"errors"
+	"image"
 	"math"
 
 	"github.com/golang/geo/r3"
-	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/rimage/transform"
 	"go.viam.com/rdk/spatialmath"
 )
+
+type Circle struct {
+	center image.Point
+	radius int
+}
 
 func calculateThePoseTheArmShouldGoTo(transformBy, clusterPose spatialmath.Pose) spatialmath.Pose {
 	return spatialmath.Compose(transformBy, clusterPose)
@@ -24,23 +29,15 @@ func (g *gen) calibrate() error {
 	realsense := g.c
 
 	// here I need to figure out how many cups there are on the table before I proceed to figure out how many cups to look for and their positions
-	b := true
-	var numOfCupsToDetect int
-	g.logger.Info("detecting how many cups there are on the table now")
-	for b {
-		num, err := g.determineAmountOfCups(context.Background())
-		if errors.Is(err, errors.New("we detected a different amount of circles")) && err != nil {
-			logger.Error(err)
-			return err
-		}
-		if num != 0 && err == nil {
-			numOfCupsToDetect = num
-			b = false
-		}
+	dets, err := g.v.DetectionsFromCamera(ctx, realsense.Name().Name, nil)
+	if err != nil {
+		return err
 	}
+	numOfCupsToDetect := len(dets)
+
 	g.logger.Infof("WE FOUND THIS MANY CUPS: %d", numOfCupsToDetect)
 	g.logger.Info("determining the positions of the cups now")
-	clusters := g.getTheDetections(ctx, realsense, logger, numOfCupsToDetect)
+	clusters := g.getTheDetections(ctx, logger, numOfCupsToDetect)
 
 	// figure out which of the detections are the cups and which is the wine bottle
 	// know that wrt the camera, the bottle is on the left side, so it'll have a negative X value
@@ -94,21 +91,8 @@ func (g *gen) calibrate() error {
 	return g.demoPlanMovements(wineBottlePoint, cupDemoPoints)
 }
 
-func getCalibrationDataPoint(ctx context.Context, cam camera.Camera) ([]Circle, error) {
-	images, _, err := cam.Images(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, img := range images {
-		if img.SourceName == "color" {
-			return vesselCircles(img.Image)
-		}
-	}
-	return nil, errors.New("this shouldn't happen")
-}
-
-func (g *gen) getTheDetections(ctx context.Context, realsense camera.Camera, logger logging.Logger, amountOfClusters int) []*cluster {
-	properties, err := realsense.Properties(ctx)
+func (g *gen) getTheDetections(ctx context.Context, logger logging.Logger, amountOfClusters int) []*cluster {
+	properties, err := g.c.Properties(ctx)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -122,9 +106,18 @@ func (g *gen) getTheDetections(ctx context.Context, realsense camera.Camera, log
 	y := []float64{}
 	for successes := 0; successes < 20; {
 		logger.Infof("attempting calibration iteration: %d", successes)
-		circles, err := getCalibrationDataPoint(ctx, realsense)
+		detections, err := g.v.DetectionsFromCamera(ctx, g.c.Name().Name, nil)
 		if err != nil {
 			logger.Fatal(err)
+		}
+		circles := make([]Circle, len(detections))
+		for i, d := range detections {
+			xAvg := (d.BoundingBox().Min.X + d.BoundingBox().Max.X) / 2
+			yAvg := (d.BoundingBox().Min.Y + d.BoundingBox().Max.Y) / 2
+			circles[i] = Circle{
+				center: image.Point{X: xAvg, Y: yAvg},
+				radius: xAvg,
+			}
 		}
 		if len(circles) != amountOfClusters {
 			continue
@@ -175,27 +168,6 @@ func (g *gen) getTheDetections(ctx context.Context, realsense camera.Camera, log
 	return clusters
 }
 
-func (g *gen) determineAmountOfCups(ctx context.Context) (int, error) {
-	l := make([]int, 3)
-	for i := 0; i < 3; i++ {
-		g.logger.Infof("on iteration %d", i)
-		circ, err := getCalibrationDataPoint(ctx, g.c)
-		if err != nil {
-			return -1, err
-		}
-		g.logger.Infof("len(circ): %d", len(circ))
-		l[i] = len(circ)
-	}
-
-	check := l[0]
-	for _, num := range l {
-		if num != check {
-			return -1, errors.New("we detected a different amount of circles")
-		}
-	}
-	return check, nil
-}
-
 func calculateAverage(numbers []float64) float64 {
 	if len(numbers) == 0 {
 		return 0 // Return 0 if the slice is empty to avoid division by zero
@@ -236,4 +208,12 @@ func (g *gen) determineAdjustment(logger logging.Logger, inputX, inputY float64)
 	logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
 	logger.Info("deltaX < 0 && deltaY > 0")
 	return deltaX * deltaXNeg, deltaY * deltaYPos
+}
+
+func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, xAdjustment, yAdjustment float64) r3.Vector {
+	xmm := (float64(circle.center.X) - intrinsics.Ppx) * (z / intrinsics.Fx)
+	ymm := (float64(circle.center.Y) - intrinsics.Ppy) * (z / intrinsics.Fy)
+	xmm = xmm + xAdjustment
+	ymm = ymm + yAdjustment
+	return r3.Vector{X: xmm, Y: ymm, Z: z}
 }
