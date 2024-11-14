@@ -4,6 +4,7 @@ import (
 	"context"
 	"image"
 	"math"
+	"sort"
 
 	"github.com/golang/geo/r3"
 	"go.viam.com/rdk/logging"
@@ -84,11 +85,14 @@ func (g *gen) calibrate() error {
 	g.logger.Info(" ")
 	g.logger.Info(" ")
 
+	// order the cups so that we got the farthest one first and the closest one last
+	orderedCups := sortByDistance(cupDemoPoints)
+
 	// HARDCODE FOR NOW
 	wineBottlePoint := r3.Vector{X: -255, Y: 334, Z: 108}
 
 	// execute the demo
-	return g.demoPlanMovements(wineBottlePoint, cupDemoPoints)
+	return g.demoPlanMovements(wineBottlePoint, orderedCups)
 }
 
 func (g *gen) getTheDetections(ctx context.Context, logger logging.Logger, amountOfClusters int) []*cluster {
@@ -216,4 +220,37 @@ func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, 
 	xmm = xmm + xAdjustment
 	ymm = ymm + yAdjustment
 	return r3.Vector{X: xmm, Y: ymm, Z: z}
+}
+
+// Function to calculate the squared distance from the origin
+func squaredDistance(v r3.Vector) float64 {
+	return v.X*v.X + v.Y*v.Y + v.Z*v.Z
+}
+
+// Function to sort a list of r3 vectors based on distance from the origin
+func sortByDistance(vectors []r3.Vector) []r3.Vector {
+	// Create a custom type to hold both vector and its squared distance
+	type distanceVector struct {
+		vec  r3.Vector
+		dist float64
+	}
+
+	// Create a slice of distanceVector
+	distVecs := make([]distanceVector, len(vectors))
+	for i, v := range vectors {
+		distVecs[i] = distanceVector{vec: v, dist: squaredDistance(v)}
+	}
+
+	// Sort the distanceVecs slice based on the distance (in descending order)
+	sort.Slice(distVecs, func(i, j int) bool {
+		return distVecs[i].dist > distVecs[j].dist
+	})
+
+	// Extract the sorted vectors
+	sortedVectors := make([]r3.Vector, len(vectors))
+	for i, dv := range distVecs {
+		sortedVectors[i] = dv.vec
+	}
+
+	return sortedVectors
 }

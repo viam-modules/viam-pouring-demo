@@ -37,4 +37,5 @@ The following attributes must be specified:
 
 ## What to do if something goes wrong
 
-Please message #team-motion on slack or reach out to Miko directly.
+Use a pen or pencil to draw a circle around where your cup(s) were placed.
+Message #team-motion on slack or reach out to Miko.
