@@ -4,4 +4,4 @@ mac:
 
 linux:
 	rm -rf bin
-	GOOS=linux GOARCH=arm64 go build -o bin/linux-arm64/viam-pouring-demo
+	GOOS=linux GOARCH=amd64 go build -o bin/linux-amd64/viam-pouring-demo
