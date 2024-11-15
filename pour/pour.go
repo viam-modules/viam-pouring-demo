@@ -8,7 +8,6 @@ import (
 
 	"github.com/golang/geo/r3"
 
-	pb "go.viam.com/api/component/arm/v1"
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
@@ -315,16 +314,15 @@ func executeDemo(motionService motion.Service, logger logging.Logger, xArmCompon
 	}
 
 	// here we move to the intermediate jointPositions
-	intermediateJP := &pb.JointPositions{
-		Values: []float64{
-			228.77974074032667,
-			-17.855530047118815,
-			-23.483605923209325,
-			164.5672882019609,
-			-16.44444540799274,
-			-158.51128731399075,
-		},
-	}
+	intermediateJP := referenceframe.FloatsToInputs([]float64{
+		3.9929597377678049952,
+		-0.31163778901022853862,
+		-0.40986624359982865018,
+		2.8722410201955117515,
+		-0.28700971603322356085,
+		-2.7665438651969944672,
+	})
+
 	err := xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
 	if err != nil {
 		logger.Fatal(err)
@@ -366,16 +364,15 @@ func executeDemo(motionService motion.Service, logger logging.Logger, xArmCompon
 		}
 	}
 
-	liftedJP := &pb.JointPositions{
-		Values: []float64{
-			91.69475685266592,
-			-22.459967179846803,
-			-34.617099430727954,
-			90.9203909857049,
-			88.58103753459719,
-			-122.93429358787672,
-		},
-	}
+	liftedJP := referenceframe.FloatsToInputs([]float64{
+		1.6003754138906833848,
+		-0.39200037717721969432,
+		-0.60418236255495871845,
+		1.58686017989718664,
+		1.5460307598075662128,
+		-2.1456081867164793486,
+	})
+
 	err = xArmComponent.MoveToJointPositions(context.Background(), liftedJP, nil)
 	if err != nil {
 		logger.Fatal(err)
@@ -483,7 +480,11 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 func getPlan(ctx context.Context, logger logging.Logger, robot *client.RobotClient, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed int) (motionplan.Plan, error) {
 	fsCfg, _ := robot.FrameSystemConfig(ctx)
 	parts := fsCfg.Parts
-	fs, _ := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
+	fs, err := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
+	if err != nil {
+		logger.Infof("we are logging an error here: %v", err)
+		return nil, err
+	}
 
 	fsInputs := referenceframe.StartPositions(fs)
 	fsInputs[armName] = armCurrentInputs
