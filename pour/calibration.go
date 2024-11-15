@@ -44,7 +44,7 @@ func (g *gen) calibrate() error {
 	// know that wrt the camera, the bottle is on the left side, so it'll have a negative X value
 	cupLocations := []spatialmath.Pose{}
 	for _, c := range clusters {
-		cupLocations = append(cupLocations, spatialmath.NewPoseFromPoint(c.mean().Add(r3.Vector{20, 0, 0})))
+		cupLocations = append(cupLocations, spatialmath.NewPoseFromPoint(c.mean().Add(r3.Vector{X: 20, Y: 0, Z: 0})))
 	}
 	g.logger.Info(" ")
 	g.logger.Info(" ")

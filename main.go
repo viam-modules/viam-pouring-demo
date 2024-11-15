@@ -8,11 +8,8 @@ import (
 	"main.go/pour"
 )
 
-const moduleName = "Liquid Pouring Go Module"
-
 func main() {
 	module.ModularMain(
-		moduleName,
 		resource.APIModel{API: generic.API, Model: pour.Model},
 	)
 }
