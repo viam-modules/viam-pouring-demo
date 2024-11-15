@@ -2,6 +2,7 @@ package pour
 
 import (
 	"context"
+	"errors"
 	"image"
 	"math"
 	"sort"
@@ -35,6 +36,9 @@ func (g *gen) calibrate() error {
 		return err
 	}
 	numOfCupsToDetect := len(dets)
+	if numOfCupsToDetect == 0 {
+		return errors.New("there were no cups placed on the table")
+	}
 
 	g.logger.Infof("WE FOUND THIS MANY CUPS: %d", numOfCupsToDetect)
 	g.logger.Info("determining the positions of the cups now")

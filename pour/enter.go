@@ -70,6 +70,7 @@ type Config struct {
 	DeltaYPos              float64 `json:"delta_y_pos"`
 	DeltaXNeg              float64 `json:"delta_x_neg"`
 	DeltaYNeg              float64 `json:"delta_y_neg"`
+	BottleHeight           float64 `json:"bottle_height"`
 }
 
 // gen is a fake Generic service that always echos input back to the caller.
@@ -78,15 +79,15 @@ type gen struct {
 	resource.Named
 	resource.TriviallyReconfigurable
 	resource.TriviallyCloseable
-	logger                                     logging.Logger
-	address, entity, payload                   string
-	robotClient                                *client.RobotClient
-	a                                          arm.Arm
-	c                                          camera.Camera
-	s                                          sensor.Sensor
-	m                                          motion.Service
-	v                                          vision.Service
-	deltaXPos, deltaYPos, deltaXNeg, deltaYNeg float64
+	logger                                                   logging.Logger
+	address, entity, payload                                 string
+	robotClient                                              *client.RobotClient
+	a                                                        arm.Arm
+	c                                                        camera.Camera
+	s                                                        sensor.Sensor
+	m                                                        motion.Service
+	v                                                        vision.Service
+	deltaXPos, deltaYPos, deltaXNeg, deltaYNeg, bottleHeight float64
 }
 
 func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
@@ -129,6 +130,7 @@ func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf 
 	g.deltaYPos = config.DeltaYPos
 	g.deltaXNeg = config.DeltaXNeg
 	g.deltaYNeg = config.DeltaYNeg
+	g.bottleHeight = config.BottleHeight
 
 	utils.PanicCapturingGo(g.getRobotClient)
 

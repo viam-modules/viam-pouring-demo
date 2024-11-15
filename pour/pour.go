@@ -2,6 +2,7 @@ package pour
 
 import (
 	"context"
+	"errors"
 	"math"
 
 	"time"
@@ -21,8 +22,8 @@ import (
 )
 
 const (
-	bottleHeight  = 310.
-	pourAngleSafe = 0.5
+	pourAngleSafe     = 0.5
+	emptyBottleWeight = 675
 )
 
 var (
@@ -74,7 +75,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	gripperResource := resource.Name{Name: "gripper"}
 
 	// GenerateTransforms adds the gripper and bottle frames
-	transforms := GenerateTransforms("world", spatialmath.NewPoseFromPoint(bottleGrabPoint), bottleGrabPoint)
+	transforms := GenerateTransforms("world", spatialmath.NewPoseFromPoint(bottleGrabPoint), bottleGrabPoint, g.bottleHeight)
 
 	// GenerateObstacles returns a slice of geometries we are supposed to avoid at plan time
 	obstacles := GenerateObstacles()
@@ -92,8 +93,10 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	if err != nil {
 		return err
 	}
-	// bottleWeight += 1200
 	g.logger.Infof("bottleWeight: %d", bottleWeight)
+	if bottleWeight < emptyBottleWeight {
+		return errors.New("not enough liquid in bottle to pour into any of the given cups -- please refill the bottle")
+	}
 
 	bottleLocation := bottleGrabPoint
 	approachgoal := spatialmath.NewPose(
@@ -154,7 +157,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	// HERE WE CONSTRUCT THE THIRD PLAN
 	// THE THIRD PLAN MOVES THE GRIPPER WHICH CLUTCHES THE BOTTLE INTO THE LIFTED GOAL POSITION
 	// REDEFINE BOTTLE LINK TO BE ATTACHED TO GRIPPER
-	transforms = GenerateTransforms("gripper", spatialmath.NewPoseFromOrientation(grabVectorOrient), bottleGrabPoint)
+	transforms = GenerateTransforms("gripper", spatialmath.NewPoseFromOrientation(grabVectorOrient), bottleGrabPoint, g.bottleHeight)
 	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
 	if err != nil {
 		return err
@@ -188,6 +191,11 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		minus := i * 150
 		currentBottleWeight := bottleWeight - minus
 		g.logger.Infof("currentBottleWeight: %d", currentBottleWeight)
+		// if there is not enough liquid in the bottle do not pour anything out
+		if currentBottleWeight < emptyBottleWeight {
+			g.logger.Info("there are still cups remaining but we will not pour into them since there is not enough liquid left in the bottle")
+			break
+		}
 		pourParameters := getAngleAndSleep(currentBottleWeight)
 		pourParams[i] = pourParameters
 		pourVec := cupLoc
@@ -364,6 +372,7 @@ func executeDemo(motionService motion.Service, logger logging.Logger, xArmCompon
 		}
 	}
 
+	// this should become a plan so that we not knock over cups
 	liftedJP := referenceframe.FloatsToInputs([]float64{
 		1.6003754138906833848,
 		-0.39200037717721969432,
@@ -396,7 +405,7 @@ func executeDemo(motionService motion.Service, logger logging.Logger, xArmCompon
 }
 
 // Generate any transforms needed. Pass parent to parent the bottle to world or the arm
-func GenerateTransforms(parent string, pose spatialmath.Pose, bottleGrabPoint r3.Vector) []*referenceframe.LinkInFrame {
+func GenerateTransforms(parent string, pose spatialmath.Pose, bottleGrabPoint r3.Vector, bottleHeight float64) []*referenceframe.LinkInFrame {
 	bottleOffsetFrame := referenceframe.NewLinkInFrame(
 		parent,
 		pose,
