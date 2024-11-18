@@ -1,0 +1,24 @@
+{
+	"name": "web",
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+	},
+	"devDependencies": {
+		"@fontsource/fira-mono": "^5.0.0",
+		"@neoconfetti/svelte": "^2.0.0",
+		"@sveltejs/adapter-auto": "^3.0.0",
+		"@sveltejs/kit": "^2.0.0",
+		"@sveltejs/vite-plugin-svelte": "^4.0.0",
+		"svelte": "^5.0.0",
+		"svelte-check": "^4.0.0",
+		"typescript": "^5.0.0",
+		"vite": "^5.0.3"
+	},
+	"packageManager": "pnpm@8.15.6+sha256.01c01eeb990e379b31ef19c03e9d06a14afa5250b82e81303f88721c99ff2e6f"
+}
