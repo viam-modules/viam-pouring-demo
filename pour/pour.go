@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"strconv"
 
 	"time"
 
@@ -184,11 +185,29 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 
 	// ---------------------------------------------------------------------------------
 	// NOTE: THIS WILL NEED TO BE UPDATED TO WORK FOR N CUPS AND NOT JUST ONE
-	cupPouringPlans := make([]motionplan.Plan, len(cupLocations)*3)
+	// cupPouringPlans := make([]motionplan.Plan, len(cupLocations)*3)
+	cupPouringPlans := []motionplan.Plan{}
 	pourParams := make([][]float64, len(cupLocations))
 
+	// here we add the cups as obstacles to be avoided
+	cupGeoms := []spatialmath.Geometry{}
 	for i, cupLoc := range cupLocations {
-		minus := i * 150
+		cupOrigin := spatialmath.NewPoseFromPoint(r3.Vector{cupLoc.X, cupLoc.Y, 60})
+		radius := 45.
+		length := 170.
+		label := "cup" + strconv.Itoa(i)
+		cupObj, _ := spatialmath.NewCapsule(cupOrigin, radius, length, label)
+		cupGeoms = append(cupGeoms, cupObj)
+	}
+	cupGifs := referenceframe.NewGeometriesInFrame(referenceframe.World, cupGeoms)
+	obstacles = append(obstacles, cupGifs)
+	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
+	if err != nil {
+		return err
+	}
+
+	for i, cupLoc := range cupLocations {
+		minus := len(cupPouringPlans) / 3
 		currentBottleWeight := bottleWeight - minus
 		g.logger.Infof("currentBottleWeight: %d", currentBottleWeight)
 		// if there is not enough liquid in the bottle do not pour anything out
@@ -209,9 +228,11 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourAngleSafe, Theta: 179},
 		)
 
+		b := false
+
 		// need to get the currentInputs for the arm
 		var plan motionplan.Plan
-		if i == 0 {
+		if len(cupPouringPlans) == 0 {
 			intermediateInputs := referenceframe.FloatsToInputs([]float64{
 				3.9929597377678049952,
 				-0.31163778901022853862,
@@ -230,6 +251,12 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 					if err == nil {
 						break
 					}
+					if j == 20 {
+						g.logger.Info("1: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+						// we did not generate a plan after 20 tries
+						b = true
+						break
+					}
 					g.logger.Info("PLANNING AGAIN")
 					j++
 				}
@@ -245,7 +272,13 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				return err
 			}
 		}
-		cupPouringPlans[i*3] = plan
+
+		if b {
+			continue
+		}
+
+		// cupPouringPlans[i*3] = plan
+		cupPouringPlans = append(cupPouringPlans, plan)
 
 		// now we come up with the plan to actually pour the liquid
 		// first we need to update the inputs though
@@ -269,12 +302,25 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				if err == nil {
 					break
 				}
+				if j == 20 {
+					g.logger.Info("2: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+					// we did not generate a plan after 20 tries
+					// we need to remove the previous plan which was actually generated
+					cupPouringPlans = cupPouringPlans[:len(cupPouringPlans)-1]
+					b = true
+					break
+				}
 				g.logger.Info("PLANNING AGAIN")
 				j++
 			}
 		}
-		cupPouringPlans[i*3+1] = plan
-		cupPouringPlans[i*3+2] = reversePlan(plan)
+		if b {
+			continue
+		}
+		// cupPouringPlans[i*3+1] = plan
+		cupPouringPlans = append(cupPouringPlans, plan)
+		// cupPouringPlans[i*3+2] = reversePlan(plan)
+		cupPouringPlans = append(cupPouringPlans, reversePlan(plan))
 	}
 
 	g.logger.Infof("IT TOOK THIS LONG TO CONSTRUCT ALL PLANS: %v", time.Since(now))
