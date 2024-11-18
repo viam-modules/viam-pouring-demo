@@ -85,6 +85,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	// worldState combines the obstacles we wish to avoid at plan time with other frames (gripper & bottle) that are found on the robot
 	worldState, err := referenceframe.NewWorldState(obstacles, transforms)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 
@@ -93,12 +94,15 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	// get the weight of the bottle
 	bottleWeight, err := getWeight(g.s)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
-	bottleWeight += 1000
+	// bottleWeight += 1000
 	g.logger.Infof("bottleWeight: %d", bottleWeight)
 	if bottleWeight < emptyBottleWeight {
-		return errors.New("not enough liquid in bottle to pour into any of the given cups -- please refill the bottle")
+		statement := "not enough liquid in bottle to pour into any of the given cups -- please refill the bottle"
+		g.setStatus(statement)
+		return errors.New(statement)
 	}
 
 	bottleLocation := bottleGrabPoint
@@ -121,11 +125,13 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	g.logger.Info("PLANNING FOR THE 1st MOVEMENT")
 	armCurrentInputs, err := xArmComponent.CurrentInputs(context.Background())
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 
 	approachGoalPlan, err := getPlan(context.Background(), logger, g.robotClient, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 	g.logger.Info("DONE PLANNING THE 1st MOVEMENT")
@@ -148,11 +154,13 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	// we need to adjust the fsInputs
 	armFrameApproachGoalInputs, err := approachGoalPlan.Trajectory().GetFrameInputs(armName)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 
 	bottlePlan, err := getPlan(context.Background(), logger, g.robotClient, armFrameApproachGoalInputs[len(armFrameApproachGoalInputs)-1], gripperResource, bottlegoal, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 	// g.status += 1
@@ -167,12 +175,14 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	transforms = GenerateTransforms("gripper", spatialmath.NewPoseFromOrientation(grabVectorOrient), bottleGrabPoint, g.bottleHeight)
 	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 
 	// we need to adjust the fsInputs
 	armFrameBottlePlanInputs, err := bottlePlan.Trajectory().GetFrameInputs(armName)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 
@@ -180,6 +190,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	g.logger.Info("PLANNING FOR THE 3rd MOVEMENT")
 	liftedPlan, err := getPlan(context.Background(), logger, g.robotClient, armFrameBottlePlanInputs[len(armFrameBottlePlanInputs)-1], gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0, 100)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 	g.logger.Infof("liftedPlan: %v", liftedPlan.Trajectory())
@@ -210,6 +221,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	obstacles = append(obstacles, cupGifs)
 	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 
@@ -272,10 +284,12 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			formerplan := cupPouringPlans[i*3-1]
 			armFrameFormerPlanInputs, err := formerplan.Trajectory().GetFrameInputs(armName)
 			if err != nil {
+				g.setStatus(err.Error())
 				return err
 			}
 			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 500)
 			if err != nil {
+				g.setStatus(err.Error())
 				return err
 			}
 		}
@@ -293,6 +307,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		// first we need to update the inputs though
 		armFramePlanInputs, err := plan.Trajectory().GetFrameInputs(armName)
 		if err != nil {
+			g.setStatus(err.Error())
 			return err
 		}
 
@@ -368,6 +383,7 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 		cmd := map[string]interface{}{builtin.DoExecute: plan.Trajectory()}
 		_, err := motionService.DoCommand(context.Background(), cmd)
 		if err != nil {
+			g.setStatus(err.Error())
 			return err
 		}
 		if i == 1 {
@@ -410,12 +426,14 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 				"set_acceleration": 180 * 20,
 			})
 			if err != nil {
+				g.setStatus(err.Error())
 				return err
 			}
 		}
 		cmd := map[string]interface{}{builtin.DoExecute: plan.Trajectory()}
 		_, err := motionService.DoCommand(context.Background(), cmd)
 		if err != nil {
+			g.setStatus(err.Error())
 			return err
 		}
 		if (i+1)%3 == 0 {
@@ -425,6 +443,7 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 				"set_acceleration": 100,
 			})
 			if err != nil {
+				g.setStatus(err.Error())
 				return err
 			}
 		}
@@ -449,6 +468,7 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 		cmd := map[string]interface{}{builtin.DoExecute: plan.Trajectory()}
 		_, err := motionService.DoCommand(context.Background(), cmd)
 		if err != nil {
+			g.setStatus(err.Error())
 			return err
 		}
 	}
@@ -457,6 +477,7 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 		"move_gripper":  850,
 	})
 	if err != nil {
+		g.setStatus(err.Error())
 		logger.Fatal(err)
 	}
 	g.setStatus("done running the demo")

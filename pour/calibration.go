@@ -34,12 +34,15 @@ func (g *gen) calibrate() error {
 	// here I need to figure out how many cups there are on the table before I proceed to figure out how many cups to look for and their positions
 	dets, err := g.v.DetectionsFromCamera(ctx, realsense.Name().Name, nil)
 	if err != nil {
+		g.setStatus(err.Error())
 		return err
 	}
 	numOfCupsToDetect := len(dets)
 	g.setStatus("found this many cups: " + strconv.Itoa(numOfCupsToDetect) + " will now determine their postions")
 	if numOfCupsToDetect == 0 {
-		return errors.New("there were no cups placed on the table")
+		statement := "there were no cups placed on the table"
+		g.setStatus(statement)
+		return errors.New(statement)
 	}
 
 	g.logger.Infof("WE FOUND THIS MANY CUPS: %d", numOfCupsToDetect)
