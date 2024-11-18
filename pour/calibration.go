@@ -6,6 +6,7 @@ import (
 	"image"
 	"math"
 	"sort"
+	"strconv"
 
 	"github.com/golang/geo/r3"
 	"go.viam.com/rdk/logging"
@@ -36,6 +37,7 @@ func (g *gen) calibrate() error {
 		return err
 	}
 	numOfCupsToDetect := len(dets)
+	g.setStatus("found this many cups: " + strconv.Itoa(numOfCupsToDetect) + " will now determine their postions")
 	if numOfCupsToDetect == 0 {
 		return errors.New("there were no cups placed on the table")
 	}
@@ -94,6 +96,8 @@ func (g *gen) calibrate() error {
 
 	// HARDCODE FOR NOW
 	wineBottlePoint := r3.Vector{X: -255, Y: 334, Z: 108}
+
+	g.setStatus("found the positions of the cups, will do planning now")
 
 	// execute the demo
 	return g.demoPlanMovements(wineBottlePoint, orderedCups)

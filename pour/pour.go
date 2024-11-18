@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"strconv"
 
 	"time"
 
@@ -31,6 +32,7 @@ var (
 )
 
 func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vector) error {
+	numPlans := 3 + 3*len(cupLocations)
 	logger := g.logger
 	motionService := g.m
 
@@ -93,6 +95,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	if err != nil {
 		return err
 	}
+	bottleWeight += 1000
 	g.logger.Infof("bottleWeight: %d", bottleWeight)
 	if bottleWeight < emptyBottleWeight {
 		return errors.New("not enough liquid in bottle to pour into any of the given cups -- please refill the bottle")
@@ -121,12 +124,14 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		return err
 	}
 
-	approachGoalPlan, err := getPlan(context.Background(), logger, g.robotClient, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0)
+	approachGoalPlan, err := getPlan(context.Background(), logger, g.robotClient, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		return err
 	}
 	g.logger.Info("DONE PLANNING THE 1st MOVEMENT")
 	g.logger.Info(" ")
+	g.setStatus("1/" + strconv.Itoa(numPlans) + " complete")
+	// g.status +=1
 	// ---------------------------------------------------------------------------------
 
 	// ---------------------------------------------------------------------------------
@@ -146,11 +151,13 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		return err
 	}
 
-	bottlePlan, err := getPlan(context.Background(), logger, g.robotClient, armFrameApproachGoalInputs[len(armFrameApproachGoalInputs)-1], gripperResource, bottlegoal, worldState, &linearAndBottleConstraint, 0)
+	bottlePlan, err := getPlan(context.Background(), logger, g.robotClient, armFrameApproachGoalInputs[len(armFrameApproachGoalInputs)-1], gripperResource, bottlegoal, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		return err
 	}
+	// g.status += 1
 	g.logger.Info("DONE PLANNING THE 2nd MOVEMENT")
+	g.setStatus("2/" + strconv.Itoa(numPlans) + " complete")
 	// ---------------------------------------------------------------------------------
 
 	// ---------------------------------------------------------------------------------
@@ -171,12 +178,13 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 
 	// LIFT
 	g.logger.Info("PLANNING FOR THE 3rd MOVEMENT")
-	liftedPlan, err := getPlan(context.Background(), logger, g.robotClient, armFrameBottlePlanInputs[len(armFrameBottlePlanInputs)-1], gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0)
+	liftedPlan, err := getPlan(context.Background(), logger, g.robotClient, armFrameBottlePlanInputs[len(armFrameBottlePlanInputs)-1], gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0, 100)
 	if err != nil {
 		return err
 	}
 	g.logger.Infof("liftedPlan: %v", liftedPlan.Trajectory())
 	g.logger.Info("DONE PLANNING THE 3rd MOVEMENT")
+	g.setStatus("3/" + strconv.Itoa(numPlans) + " complete")
 	// ---------------------------------------------------------------------------------
 
 	// AT THIS POINT IN THE PLAN GENERATION, WE'VE LIFTED THE BOTTLE INTO THE ARM AND ARE NOW READY TO
@@ -184,11 +192,29 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 
 	// ---------------------------------------------------------------------------------
 	// NOTE: THIS WILL NEED TO BE UPDATED TO WORK FOR N CUPS AND NOT JUST ONE
-	cupPouringPlans := make([]motionplan.Plan, len(cupLocations)*3)
+	// cupPouringPlans := make([]motionplan.Plan, len(cupLocations)*3)
+	cupPouringPlans := []motionplan.Plan{}
 	pourParams := make([][]float64, len(cupLocations))
 
+	// here we add the cups as obstacles to be avoided
+	cupGeoms := []spatialmath.Geometry{}
 	for i, cupLoc := range cupLocations {
-		minus := i * 150
+		cupOrigin := spatialmath.NewPoseFromPoint(r3.Vector{cupLoc.X, cupLoc.Y, 60})
+		radius := 45.
+		length := 170.
+		label := "cup" + strconv.Itoa(i)
+		cupObj, _ := spatialmath.NewCapsule(cupOrigin, radius, length, label)
+		cupGeoms = append(cupGeoms, cupObj)
+	}
+	cupGifs := referenceframe.NewGeometriesInFrame(referenceframe.World, cupGeoms)
+	obstacles = append(obstacles, cupGifs)
+	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
+	if err != nil {
+		return err
+	}
+
+	for i, cupLoc := range cupLocations {
+		minus := len(cupPouringPlans) / 3
 		currentBottleWeight := bottleWeight - minus
 		g.logger.Infof("currentBottleWeight: %d", currentBottleWeight)
 		// if there is not enough liquid in the bottle do not pour anything out
@@ -209,9 +235,11 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourAngleSafe, Theta: 179},
 		)
 
+		b := false
+
 		// need to get the currentInputs for the arm
 		var plan motionplan.Plan
-		if i == 0 {
+		if len(cupPouringPlans) == 0 {
 			intermediateInputs := referenceframe.FloatsToInputs([]float64{
 				3.9929597377678049952,
 				-0.31163778901022853862,
@@ -220,14 +248,20 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				-0.28700971603322356085,
 				-2.7665438651969944672,
 			})
-			plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, 0)
+			plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 500)
 			if err != nil {
 				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
 				j := 1
 				for {
-					plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j)
+					plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 500)
 					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
 					if err == nil {
+						break
+					}
+					if j == 20 {
+						g.logger.Info("1: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+						// we did not generate a plan after 20 tries
+						b = true
 						break
 					}
 					g.logger.Info("PLANNING AGAIN")
@@ -240,12 +274,20 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			if err != nil {
 				return err
 			}
-			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0)
+			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 500)
 			if err != nil {
 				return err
 			}
 		}
-		cupPouringPlans[i*3] = plan
+
+		if b {
+			continue
+		}
+
+		// cupPouringPlans[i*3] = plan
+		cupPouringPlans = append(cupPouringPlans, plan)
+		howManyPlans := len(cupPouringPlans) + 3
+		g.setStatus(strconv.Itoa(howManyPlans) + "/" + strconv.Itoa(numPlans) + " complete")
 
 		// now we come up with the plan to actually pour the liquid
 		// first we need to update the inputs though
@@ -259,30 +301,46 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z - 20},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
-		plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, 0)
+		plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, 0, 100)
 		if err != nil {
 			g.logger.Infof("WE RETURNED THE FOLLOWING ERROR2: %v", err)
 			j := 1
 			for {
-				plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, j)
+				plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, j, 100)
 				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR2: %v", err)
 				if err == nil {
+					break
+				}
+				if j == 20 {
+					g.logger.Info("2: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+					// we did not generate a plan after 20 tries
+					// we need to remove the previous plan which was actually generated
+					cupPouringPlans = cupPouringPlans[:len(cupPouringPlans)-1]
+					b = true
 					break
 				}
 				g.logger.Info("PLANNING AGAIN")
 				j++
 			}
 		}
-		cupPouringPlans[i*3+1] = plan
-		cupPouringPlans[i*3+2] = reversePlan(plan)
+		if b {
+			continue
+		}
+		// cupPouringPlans[i*3+1] = plan
+		cupPouringPlans = append(cupPouringPlans, plan)
+		// cupPouringPlans[i*3+2] = reversePlan(plan)
+		cupPouringPlans = append(cupPouringPlans, reversePlan(plan))
+		howManyPlans = len(cupPouringPlans) + 3
+		g.setStatus(strconv.Itoa(howManyPlans) + "/" + strconv.Itoa(numPlans) + " complete")
 	}
 
 	g.logger.Infof("IT TOOK THIS LONG TO CONSTRUCT ALL PLANS: %v", time.Since(now))
+	g.setStatus("DONE CONSTRUCTING PLANS -- EXECUTING NOW")
 
 	// ---------------------------------------------------------------------------------
 	// AT THIS POINT IN TIME WE ARE DONE CONSTRUCTING ALL THE PLANS THAT WE WILL NEED AND NOW WE
 	// WILL NEED TO RUN THEM ON THE ROBOT
-	return executeDemo(
+	return g.executeDemo(
 		motionService,
 		logger,
 		xArmComponent,
@@ -293,7 +351,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 	)
 }
 
-func executeDemo(motionService motion.Service, logger logging.Logger, xArmComponent arm.Arm, beforePourPlans, pouringPlans, afterPourPlans []motionplan.Plan, pourParams [][]float64) error {
+func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, xArmComponent arm.Arm, beforePourPlans, pouringPlans, afterPourPlans []motionplan.Plan, pourParams [][]float64) error {
 	// NEED TO ADD LOGIC ON WHEN TO OPEN AND CLOSE THE GRIPPER
 	// first we need to make sure that the griper is open
 	// Open gripper
@@ -401,6 +459,7 @@ func executeDemo(motionService motion.Service, logger logging.Logger, xArmCompon
 	if err != nil {
 		logger.Fatal(err)
 	}
+	g.setStatus("done running the demo")
 	return nil
 }
 
@@ -486,7 +545,7 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 	return obstaclesInFrame
 }
 
-func getPlan(ctx context.Context, logger logging.Logger, robot *client.RobotClient, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed int) (motionplan.Plan, error) {
+func getPlan(ctx context.Context, logger logging.Logger, robot *client.RobotClient, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) (motionplan.Plan, error) {
 	fsCfg, _ := robot.FrameSystemConfig(ctx)
 	parts := fsCfg.Parts
 	fs, err := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
@@ -507,7 +566,7 @@ func getPlan(ctx context.Context, logger logging.Logger, robot *client.RobotClie
 		FrameSystem:        fs,
 		WorldState:         worldState,
 		Constraints:        constraint,
-		Options:            map[string]interface{}{"rseed": rseed, "timeout": 10},
+		Options:            map[string]interface{}{"rseed": rseed, "timeout": 10, "smooth_iter": smoothIter},
 	})
 }
 
