@@ -3,6 +3,7 @@ package pour
 
 import (
 	"context"
+	"sync"
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
@@ -75,6 +76,7 @@ type Config struct {
 
 // gen is a fake Generic service that always echos input back to the caller.
 type gen struct {
+	mu sync.Mutex
 	resource.Resource
 	resource.Named
 	resource.TriviallyReconfigurable
@@ -88,6 +90,7 @@ type gen struct {
 	m                                                        motion.Service
 	v                                                        vision.Service
 	deltaXPos, deltaYPos, deltaXNeg, deltaYNeg, bottleHeight float64
+	status                                                   string
 }
 
 func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
@@ -171,5 +174,20 @@ func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 		g.logger.Info("WE ARE INSIDE THE STOP CONDITIONAL AND ARE ABOUT TO RETURN")
 		return nil, g.a.Stop(ctx, nil)
 	}
+	if _, ok := cmd["status"]; ok {
+		return map[string]interface{}{"status": g.getStatus()}, nil
+	}
 	return cmd, g.calibrate()
+}
+
+func (g *gen) setStatus(input string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.status = input
+}
+
+func (g *gen) getStatus() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.status
 }
