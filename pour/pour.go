@@ -97,7 +97,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		g.setStatus(err.Error())
 		return err
 	}
-	// bottleWeight += 1000
+	bottleWeight += 1000
 	g.logger.Infof("bottleWeight: %d", bottleWeight)
 	if bottleWeight < emptyBottleWeight {
 		statement := "not enough liquid in bottle to pour into any of the given cups -- please refill the bottle"
@@ -287,7 +287,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				g.setStatus(err.Error())
 				return err
 			}
-			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 500)
+			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 1000)
 			if err != nil {
 				g.setStatus(err.Error())
 				return err
@@ -447,6 +447,11 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 				return err
 			}
 		}
+	}
+
+	err = xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
+	if err != nil {
+		logger.Fatal(err)
 	}
 
 	// this should become a plan so that we not knock over cups
