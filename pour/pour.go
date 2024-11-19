@@ -287,7 +287,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				g.setStatus(err.Error())
 				return err
 			}
-			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 500)
+			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 1000)
 			if err != nil {
 				g.setStatus(err.Error())
 				return err
@@ -449,6 +449,11 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 		}
 	}
 
+	err = xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	// this should become a plan so that we not knock over cups
 	liftedJP := referenceframe.FloatsToInputs([]float64{
 		1.6003754138906833848,
@@ -508,11 +513,9 @@ func GenerateTransforms(parent string, pose spatialmath.Pose, bottleGrabPoint r3
 	)
 	transforms = append(transforms, bottleFrame)
 
-	// gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 160}, "gripper")
 	gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 200}, "gripper")
 	gripperFrame := referenceframe.NewLinkInFrame(
 		armName,
-		// spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 150}),
 		spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 190}),
 		"gripper",
 		gripperGeom,
