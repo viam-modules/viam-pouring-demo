@@ -513,10 +513,10 @@ func GenerateTransforms(parent string, pose spatialmath.Pose, bottleGrabPoint r3
 	)
 	transforms = append(transforms, bottleFrame)
 
-	gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 160}, "gripper")
+	gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 200}, "gripper")
 	gripperFrame := referenceframe.NewLinkInFrame(
 		armName,
-		spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 150}),
+		spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 190}),
 		"gripper",
 		gripperGeom,
 	)
