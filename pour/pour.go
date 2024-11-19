@@ -97,7 +97,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		g.setStatus(err.Error())
 		return err
 	}
-	// bottleWeight += 1000
+	bottleWeight += 1000
 	g.logger.Infof("bottleWeight: %d", bottleWeight)
 	if bottleWeight < emptyBottleWeight {
 		statement := "not enough liquid in bottle to pour into any of the given cups -- please refill the bottle"
@@ -508,10 +508,12 @@ func GenerateTransforms(parent string, pose spatialmath.Pose, bottleGrabPoint r3
 	)
 	transforms = append(transforms, bottleFrame)
 
-	gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 160}, "gripper")
+	// gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 160}, "gripper")
+	gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 200}, "gripper")
 	gripperFrame := referenceframe.NewLinkInFrame(
 		armName,
-		spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 150}),
+		// spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 150}),
+		spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 190}),
 		"gripper",
 		gripperGeom,
 	)
