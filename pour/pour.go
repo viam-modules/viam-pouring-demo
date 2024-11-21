@@ -463,8 +463,13 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		g.setStatus(err.Error())
 		return err
 	}
+
+	g.logger.Infof("getBackToLiftedGoal.Trajectory(): %v", getBackToLiftedGoal.Trajectory())
+
 	g.logger.Infof("IT TOOK THIS LONG TO CONSTRUCT ALL PLANS: %v", time.Since(now))
 	g.setStatus("DONE CONSTRUCTING PLANS -- EXECUTING NOW")
+
+	g.logger.Infof("reversePlan(liftedPlan).Trajectory(): %v", reversePlan(liftedPlan).Trajectory())
 
 	// ---------------------------------------------------------------------------------
 	// AT THIS POINT IN TIME WE ARE DONE CONSTRUCTING ALL THE PLANS THAT WE WILL NEED AND NOW WE
