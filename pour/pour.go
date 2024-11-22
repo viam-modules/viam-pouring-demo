@@ -451,25 +451,8 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		return errors.New(statement)
 	}
 
-	// TODO WILL NEED TO GET BACK TO THE LIFTED GOAL
-	formerCupPlanInputs, err := cupPouringPlans[len(cupPouringPlans)-1].Trajectory().GetFrameInputs(armName)
-	if err != nil {
-		g.setStatus(err.Error())
-		return err
-	}
-	formerSetOfInputs := formerCupPlanInputs[len(formerCupPlanInputs)-1]
-	getBackToLiftedGoal, err := getPlan(context.Background(), logger, g.robotClient, formerSetOfInputs, gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0, 100)
-	if err != nil {
-		g.setStatus(err.Error())
-		return err
-	}
-
-	g.logger.Infof("getBackToLiftedGoal.Trajectory(): %v", getBackToLiftedGoal.Trajectory())
-
 	g.logger.Infof("IT TOOK THIS LONG TO CONSTRUCT ALL PLANS: %v", time.Since(now))
 	g.setStatus("DONE CONSTRUCTING PLANS -- EXECUTING NOW")
-
-	g.logger.Infof("reversePlan(liftedPlan).Trajectory(): %v", reversePlan(liftedPlan).Trajectory())
 
 	// ---------------------------------------------------------------------------------
 	// AT THIS POINT IN TIME WE ARE DONE CONSTRUCTING ALL THE PLANS THAT WE WILL NEED AND NOW WE
@@ -480,7 +463,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		xArmComponent,
 		[]motionplan.Plan{approachGoalPlan, bottlePlan, liftedPlan},
 		cupPouringPlans,
-		[]motionplan.Plan{getBackToLiftedGoal, reversePlan(liftedPlan), reversePlan(bottlePlan)},
+		[]motionplan.Plan{reversePlan(liftedPlan), reversePlan(bottlePlan)},
 		pourParams,
 	)
 }
@@ -568,25 +551,25 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 		}
 	}
 
-	// err = xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
-	// if err != nil {
-	// 	logger.Fatal(err)
-	// }
+	err = xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
+	if err != nil {
+		logger.Fatal(err)
+	}
 
-	// // this should become a plan so that we not knock over cups
-	// liftedJP := referenceframe.FloatsToInputs([]float64{
-	// 	1.6003754138906833848,
-	// 	-0.39200037717721969432,
-	// 	-0.60418236255495871845,
-	// 	1.58686017989718664,
-	// 	1.5460307598075662128,
-	// 	-2.1456081867164793486,
-	// })
+	// this should become a plan so that we not knock over cups
+	liftedJP := referenceframe.FloatsToInputs([]float64{
+		1.6003754138906833848,
+		-0.39200037717721969432,
+		-0.60418236255495871845,
+		1.58686017989718664,
+		1.5460307598075662128,
+		-2.1456081867164793486,
+	})
 
-	// err = xArmComponent.MoveToJointPositions(context.Background(), liftedJP, nil)
-	// if err != nil {
-	// 	logger.Fatal(err)
-	// }
+	err = xArmComponent.MoveToJointPositions(context.Background(), liftedJP, nil)
+	if err != nil {
+		logger.Fatal(err)
+	}
 
 	for _, plan := range afterPourPlans {
 		cmd := map[string]interface{}{builtin.DoExecute: plan.Trajectory()}
