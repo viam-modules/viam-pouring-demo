@@ -97,7 +97,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		g.setStatus(err.Error())
 		return err
 	}
-	bottleWeight += 1000
+	// bottleWeight += 1000
 	g.logger.Infof("bottleWeight: %d", bottleWeight)
 	if bottleWeight < emptyBottleWeight {
 		statement := "not enough liquid in bottle to pour into any of the given cups -- please refill the bottle"
@@ -342,9 +342,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		if b {
 			continue
 		}
-		// cupPouringPlans[i*3+1] = plan
 		cupPouringPlans = append(cupPouringPlans, plan)
-		// cupPouringPlans[i*3+2] = reversePlan(plan)
 		cupPouringPlans = append(cupPouringPlans, reversePlan(plan))
 		howManyPlans = len(cupPouringPlans) + 3
 		g.setStatus(strconv.Itoa(howManyPlans) + "/" + strconv.Itoa(numPlans) + " complete")
