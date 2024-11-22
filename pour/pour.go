@@ -290,8 +290,23 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			}
 			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 1000)
 			if err != nil {
-				g.setStatus(err.Error())
-				return err
+				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
+				j := 1
+				for {
+					plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 1000)
+					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
+					if err == nil {
+						break
+					}
+					if j == 20 {
+						g.logger.Info("1: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+						// we did not generate a plan after 20 tries
+						b = true
+						break
+					}
+					g.logger.Info("PLANNING AGAIN")
+					j++
+				}
 			}
 		}
 
@@ -299,7 +314,6 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			continue
 		}
 
-		// cupPouringPlans[i*3] = plan
 		cupPouringPlans = append(cupPouringPlans, plan)
 		howManyPlans := len(cupPouringPlans) + 3
 		g.setStatus(strconv.Itoa(howManyPlans) + "/" + strconv.Itoa(numPlans) + " complete")
