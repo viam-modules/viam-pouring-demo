@@ -95,7 +95,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/miekg/dns v1.1.53 // indirect
-	github.com/montanaflynn/stats v0.7.0 // indirect
+	github.com/montanaflynn/stats v0.7.1 // indirect
 	github.com/muesli/clusters v0.0.0-20200529215643-2700303c1762 // indirect
 	github.com/muesli/kmeans v0.3.1 // indirect
 	github.com/pion/datachannel v1.5.8 // indirect
@@ -129,11 +129,11 @@ require (
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/xfmoulet/qoi v0.2.0 // indirect
 	github.com/xtgo/set v1.0.0 // indirect
-	github.com/youmark/pkcs8 v0.0.0-20201027041543-1326539a0a0a // indirect
+	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	github.com/zitadel/oidc v1.13.4 // indirect
 	github.com/ziutek/mymysql v1.5.4 // indirect
 	go-hep.org/x/hep v0.32.1 // indirect
-	go.mongodb.org/mongo-driver v1.12.2 // indirect
+	go.mongodb.org/mongo-driver v1.17.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
@@ -176,5 +176,3 @@ require (
 	periph.io/x/conn/v3 v3.7.0 // indirect
 	periph.io/x/host/v3 v3.8.1-0.20230331112814-9f0d9f7d76db // indirect
 )
-
-// replace go.viam.com/rdk => ../rdk-fxork

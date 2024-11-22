@@ -203,14 +203,13 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 
 	// ---------------------------------------------------------------------------------
 	// NOTE: THIS WILL NEED TO BE UPDATED TO WORK FOR N CUPS AND NOT JUST ONE
-	// cupPouringPlans := make([]motionplan.Plan, len(cupLocations)*3)
 	cupPouringPlans := []motionplan.Plan{}
 	pourParams := make([][]float64, len(cupLocations))
 
 	// here we add the cups as obstacles to be avoided
 	cupGeoms := []spatialmath.Geometry{}
 	for i, cupLoc := range cupLocations {
-		cupOrigin := spatialmath.NewPoseFromPoint(r3.Vector{cupLoc.X, cupLoc.Y, 60})
+		cupOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: 60})
 		radius := 45.
 		length := 170.
 		label := "cup" + strconv.Itoa(i)
@@ -262,16 +261,68 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			})
 			plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 500)
 			if err != nil {
-				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
+				// case2: err != nil --> we try again 20x
+				// g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
+				g.logger.Info("we are planning for the first cup")
+				g.logger.Infof("err was not equal to nil: %s", err.Error())
+				j := 1
+				for {
+					g.logger.Info("we are in the for loop -- should try again 20x")
+					plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 500)
+					g.logger.Infof("we are within the for loop and returned the following error: %s", err.Error())
+					// g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
+					if err != nil {
+						j++
+						if j >= 20 {
+							g.logger.Info("1: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+							// we did not generate a plan after 20 tries
+							b = true
+							break
+						}
+						continue
+					}
+					// we check if the joint positions that we got are good
+					g.logger.Infof("plan.Trajectory(): %v", plan.Trajectory())
+					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
+					if penultimateJointPosition < 0 {
+						break
+					}
+					if j >= 20 {
+						g.logger.Info("1: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+						// we did not generate a plan after 20 tries
+						b = true
+						break
+					}
+					g.logger.Info("PLANNING AGAIN")
+					j++
+				}
+			} else {
+				// case1: err == nil but we do not get the jp we want --> try again 20x to get the plan that we want, if we can't then we move onto the next cup
 				j := 1
 				for {
 					plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 500)
-					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
-					if err == nil {
+					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR2: %v", err)
+					if err != nil {
+						j++
+						if j >= 20 {
+							g.logger.Info("1: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+							// we did not generate a plan after 20 tries
+							b = true
+							break
+						}
+						continue
+					}
+					g.logger.Infof("plan.Trajectory(): %v", plan.Trajectory())
+					// we check if the joint positions that we got are good
+					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
+					if penultimateJointPosition < 0 {
 						break
 					}
-					if j == 20 {
-						g.logger.Info("1: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+
+					if j >= 20 {
+						g.logger.Info("2: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
 						// we did not generate a plan after 20 tries
 						b = true
 						break
@@ -281,7 +332,6 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				}
 			}
 		} else {
-			// formerplan := cupPouringPlans[i*3-1]
 			formerplan := cupPouringPlans[len(cupPouringPlans)-1]
 			armFrameFormerPlanInputs, err := formerplan.Trajectory().GetFrameInputs(armName)
 			if err != nil {
@@ -290,19 +340,67 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			}
 			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 1000)
 			if err != nil {
-				g.setStatus(err.Error())
-				return err
+				// case2: err != nil --> we try again 20x
+				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR3: %v", err)
+				j := 1
+				for {
+					plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 1000)
+					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR3: %v", err)
+					if err != nil {
+						j++
+						continue
+					}
+					// we check if the joint positions that we got are good
+					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
+					if penultimateJointPosition < 0 {
+						break
+					}
+
+					if j == 20 {
+						g.logger.Info("3: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+						// we did not generate a plan after 20 tries
+						b = true
+						break
+					}
+					g.logger.Info("PLANNING AGAIN")
+					j++
+				}
+			} else {
+				// case1: err == nil but we do not get the jp we want --> try again 20x to get the plan that we want, if we can't then we move onto the next cup
+				j := 1
+				for {
+					plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 1000)
+					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR4: %v", err)
+					if err != nil {
+						j++
+						continue
+					}
+					// we check if the joint positions that we got are good
+					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
+					if penultimateJointPosition < 0 {
+						break
+					}
+
+					if j == 20 {
+						g.logger.Info("4: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+						// we did not generate a plan after 20 tries
+						b = true
+						break
+					}
+					g.logger.Info("PLANNING AGAIN")
+					j++
+				}
 			}
 		}
-
 		if b {
 			continue
 		}
-
-		// cupPouringPlans[i*3] = plan
+		g.logger.Info("LOOK HERE!!!!")
+		g.logger.Infof("plan.Trajectory(): %v", plan.Trajectory())
 		cupPouringPlans = append(cupPouringPlans, plan)
-		howManyPlans := len(cupPouringPlans) + 3
-		g.setStatus(strconv.Itoa(howManyPlans) + "/" + strconv.Itoa(numPlans) + " complete")
+		g.setStatus(strconv.Itoa(len(cupPouringPlans)+3) + "/" + strconv.Itoa(numPlans) + " complete")
 
 		// now we come up with the plan to actually pour the liquid
 		// first we need to update the inputs though
@@ -344,10 +442,27 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		}
 		cupPouringPlans = append(cupPouringPlans, plan)
 		cupPouringPlans = append(cupPouringPlans, reversePlan(plan))
-		howManyPlans = len(cupPouringPlans) + 3
-		g.setStatus(strconv.Itoa(howManyPlans) + "/" + strconv.Itoa(numPlans) + " complete")
+		g.setStatus(strconv.Itoa(len(cupPouringPlans)+3) + "/" + strconv.Itoa(numPlans) + " complete")
 	}
 
+	if len(cupPouringPlans) == 0 {
+		statement := "could not generate plans for any of the provided cups"
+		g.setStatus(statement)
+		return errors.New(statement)
+	}
+
+	// TODO WILL NEED TO GET BACK TO THE LIFTED GOAL
+	formerCupPlanInputs, err := cupPouringPlans[len(cupPouringPlans)-1].Trajectory().GetFrameInputs(armName)
+	if err != nil {
+		g.setStatus(err.Error())
+		return err
+	}
+	formerSetOfInputs := formerCupPlanInputs[len(formerCupPlanInputs)-1]
+	getBackToLiftedGoal, err := getPlan(context.Background(), logger, g.robotClient, formerSetOfInputs, gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0, 100)
+	if err != nil {
+		g.setStatus(err.Error())
+		return err
+	}
 	g.logger.Infof("IT TOOK THIS LONG TO CONSTRUCT ALL PLANS: %v", time.Since(now))
 	g.setStatus("DONE CONSTRUCTING PLANS -- EXECUTING NOW")
 
@@ -360,7 +475,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		xArmComponent,
 		[]motionplan.Plan{approachGoalPlan, bottlePlan, liftedPlan},
 		cupPouringPlans,
-		[]motionplan.Plan{reversePlan(liftedPlan), reversePlan(bottlePlan)},
+		[]motionplan.Plan{getBackToLiftedGoal, reversePlan(liftedPlan), reversePlan(bottlePlan)},
 		pourParams,
 	)
 }
@@ -448,25 +563,25 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 		}
 	}
 
-	err = xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
+	// err = xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
+	// if err != nil {
+	// 	logger.Fatal(err)
+	// }
 
-	// this should become a plan so that we not knock over cups
-	liftedJP := referenceframe.FloatsToInputs([]float64{
-		1.6003754138906833848,
-		-0.39200037717721969432,
-		-0.60418236255495871845,
-		1.58686017989718664,
-		1.5460307598075662128,
-		-2.1456081867164793486,
-	})
+	// // this should become a plan so that we not knock over cups
+	// liftedJP := referenceframe.FloatsToInputs([]float64{
+	// 	1.6003754138906833848,
+	// 	-0.39200037717721969432,
+	// 	-0.60418236255495871845,
+	// 	1.58686017989718664,
+	// 	1.5460307598075662128,
+	// 	-2.1456081867164793486,
+	// })
 
-	err = xArmComponent.MoveToJointPositions(context.Background(), liftedJP, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
+	// err = xArmComponent.MoveToJointPositions(context.Background(), liftedJP, nil)
+	// if err != nil {
+	// 	logger.Fatal(err)
+	// }
 
 	for _, plan := range afterPourPlans {
 		cmd := map[string]interface{}{builtin.DoExecute: plan.Trajectory()}
