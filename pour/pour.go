@@ -20,6 +20,7 @@ import (
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/motion/builtin"
 	"go.viam.com/rdk/spatialmath"
+	"go.viam.com/rdk/utils"
 )
 
 const (
@@ -261,8 +262,6 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			})
 			plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 500)
 			if err != nil {
-				// case2: err != nil --> we try again 20x
-				// g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
 				g.logger.Info("we are planning for the first cup")
 				g.logger.Infof("err was not equal to nil: %s", err.Error())
 				j := 1
@@ -301,6 +300,12 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				// case1: err == nil but we do not get the jp we want --> try again 20x to get the plan that we want, if we can't then we move onto the next cup
 				j := 1
 				for {
+					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
+					if penultimateJointPosition < 0 {
+						break
+					}
+
 					plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 500)
 					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR2: %v", err)
 					if err != nil {
@@ -315,8 +320,8 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 					}
 					g.logger.Infof("plan.Trajectory(): %v", plan.Trajectory())
 					// we check if the joint positions that we got are good
-					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
-					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
+					armInputs, _ = plan.Trajectory().GetFrameInputs(armName)
+					penultimateJointPosition = armInputs[len(armInputs)-1][4].Value
 					if penultimateJointPosition < 0 {
 						break
 					}
@@ -348,6 +353,12 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR3: %v", err)
 					if err != nil {
 						j++
+						if j >= 20 {
+							g.logger.Info("1: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
+							// we did not generate a plan after 20 tries
+							b = true
+							break
+						}
 						continue
 					}
 					// we check if the joint positions that we got are good
@@ -357,7 +368,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 						break
 					}
 
-					if j == 20 {
+					if j >= 20 {
 						g.logger.Info("3: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
 						// we did not generate a plan after 20 tries
 						b = true
@@ -370,6 +381,11 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				// case1: err == nil but we do not get the jp we want --> try again 20x to get the plan that we want, if we can't then we move onto the next cup
 				j := 1
 				for {
+					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
+					if penultimateJointPosition < 0 {
+						break
+					}
 					plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 1000)
 					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR4: %v", err)
 					if err != nil {
@@ -377,13 +393,13 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 						continue
 					}
 					// we check if the joint positions that we got are good
-					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
-					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
+					armInputs, _ = plan.Trajectory().GetFrameInputs(armName)
+					penultimateJointPosition = armInputs[len(armInputs)-1][4].Value
 					if penultimateJointPosition < 0 {
 						break
 					}
 
-					if j == 20 {
+					if j >= 20 {
 						g.logger.Info("4: WE HAVE FAILED TO GENERATE A PLAN FOR THIS CUP AND WE WILL MOVE TO PLANNING FOR THE NEXT CUP")
 						// we did not generate a plan after 20 tries
 						b = true
@@ -469,6 +485,25 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 }
 
 func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, xArmComponent arm.Arm, beforePourPlans, pouringPlans, afterPourPlans []motionplan.Plan, pourParams [][]float64) error {
+
+	for _, plan := range pouringPlans {
+		armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+		for _, in := range armInputs {
+			jps := []float64{}
+			for _, i := range in {
+				jps = append(jps, utils.RadToDeg(i.Value))
+			}
+			g.logger.Infof("jps: %v", jps)
+			g.logger.Infof("raw inputs: %v", in)
+			g.logger.Info(" ")
+			g.logger.Info(" ")
+		}
+		g.logger.Info(" ")
+		g.logger.Info(" ")
+		g.logger.Info(" ")
+		g.logger.Info(" ")
+	}
+
 	// NEED TO ADD LOGIC ON WHEN TO OPEN AND CLOSE THE GRIPPER
 	// first we need to make sure that the griper is open
 	// Open gripper
@@ -721,3 +756,7 @@ func getWeight(weightSensor sensor.Sensor) (int, error) {
 	time.Sleep(time.Millisecond * 500)
 	return int(massInGrams1), nil
 }
+
+// func checkPlan(plan motionplan.Plan) {
+
+// }
