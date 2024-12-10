@@ -206,8 +206,8 @@ func (g *gen) determineAdjustment(logger logging.Logger, inputX, inputY float64)
 	logger.Infof("deltaXNeg: %f", deltaXNeg)
 	logger.Infof("deltaYNeg: %f", deltaYNeg)
 
-	deltaX := 340.05 - inputX
-	deltaY := 222.7 - inputY
+	deltaX := 320.1 - inputX
+	deltaY := 235.1 - inputY
 	logger.Infof("deltaX: %f", deltaX)
 	logger.Infof("deltaY: %f", deltaY)
 	if deltaX > 0 && deltaY > 0 {
