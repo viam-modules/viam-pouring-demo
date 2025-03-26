@@ -71,7 +71,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 
 	// Define an orientation constraint so that the bottle is not flipped over when moving
 	orientationConst := motionplan.OrientationConstraint{OrientationToleranceDegs: 30}
-	orientationConstraint := motionplan.NewConstraints(nil, []motionplan.OrientationConstraint{orientationConst}, nil)
+	orientationConstraint := motionplan.NewConstraints(nil, nil, []motionplan.OrientationConstraint{orientationConst}, nil)
 
 	// Define the resource names of bottle and gripper as they do not exist in the config
 	bottleResource := resource.Name{Name: "bottle"}
@@ -717,19 +717,20 @@ func getPlan(ctx context.Context, logger logging.Logger, robot *client.RobotClie
 		return nil, err
 	}
 
-	fsInputs := referenceframe.StartPositions(fs)
+	fsInputs := referenceframe.NewZeroInputs(fs)
 	fsInputs[armName] = armCurrentInputs
 	logger.Infof("rseed: %d", rseed)
 
 	return motionplan.PlanMotion(ctx, &motionplan.PlanRequest{
-		Logger:             logger,
-		Goal:               referenceframe.NewPoseInFrame("world", goal),
-		Frame:              fs.Frame(toMove.Name),
-		StartConfiguration: fsInputs,
-		FrameSystem:        fs,
-		WorldState:         worldState,
-		Constraints:        constraint,
-		Options:            map[string]interface{}{"rseed": rseed, "timeout": 10, "smooth_iter": smoothIter},
+		Logger: logger,
+		Goals: []*motionplan.PlanState{
+			motionplan.NewPlanState(referenceframe.FrameSystemPoses{toMove.Name: referenceframe.NewPoseInFrame("world", goal)}, nil),
+		},
+		StartState:  motionplan.NewPlanState(nil, fsInputs),
+		FrameSystem: fs,
+		WorldState:  worldState,
+		Constraints: constraint,
+		Options:     map[string]interface{}{"rseed": rseed, "timeout": 10, "smooth_iter": smoothIter},
 	})
 }
 
