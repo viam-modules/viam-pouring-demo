@@ -5,7 +5,8 @@ import (
 	"go.viam.com/rdk/module"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/generic"
-	"main.go/pour"
+
+	"github.com/viam-modules/viam-pouring-demo/pour"
 )
 
 func main() {

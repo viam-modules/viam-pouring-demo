@@ -1,4 +1,4 @@
-module main.go
+module github.com/viam-modules/viam-pouring-demo
 
 go 1.23
 
