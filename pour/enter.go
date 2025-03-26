@@ -21,7 +21,7 @@ import (
 	rutils "go.viam.com/rdk/utils"
 )
 
-var Model = resource.NewModel("viam", "viam-pouring-demo", "pour")
+var Model = resource.NewModel("viam", "pouring-demo", "pour")
 
 func init() {
 	resource.RegisterService(generic.API, Model, resource.Registration[resource.Resource, *Config]{Constructor: newPour})
