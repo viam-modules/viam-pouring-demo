@@ -24,10 +24,7 @@ func calculateThePoseTheArmShouldGoTo(transformBy, clusterPose spatialmath.Pose)
 	return spatialmath.Compose(transformBy, clusterPose)
 }
 
-func (g *gen) calibrate() error {
-	ctx := context.Background()
-	logger := g.logger
-
+func (g *gen) calibrate(ctx context.Context) error {
 	// Get the camera from the robot
 	realsense := g.c
 
@@ -47,7 +44,7 @@ func (g *gen) calibrate() error {
 
 	g.logger.Infof("WE FOUND THIS MANY CUPS: %d", numOfCupsToDetect)
 	g.logger.Info("determining the positions of the cups now")
-	clusters := g.getTheDetections(ctx, logger, numOfCupsToDetect)
+	clusters := g.getTheDetections(ctx, g.logger, numOfCupsToDetect)
 
 	// figure out which of the detections are the cups and which is the wine bottle
 	// know that wrt the camera, the bottle is on the left side, so it'll have a negative X value
@@ -103,7 +100,7 @@ func (g *gen) calibrate() error {
 	g.setStatus("found the positions of the cups, will do planning now")
 
 	// execute the demo
-	return g.demoPlanMovements(wineBottlePoint, orderedCups)
+	return g.demoPlanMovements(ctx, wineBottlePoint, orderedCups)
 }
 
 func (g *gen) getTheDetections(ctx context.Context, logger logging.Logger, amountOfClusters int) []*cluster {

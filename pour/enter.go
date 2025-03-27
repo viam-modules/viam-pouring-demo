@@ -177,7 +177,7 @@ func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 	if _, ok := cmd["status"]; ok {
 		return map[string]interface{}{"status": g.getStatus()}, nil
 	}
-	return cmd, g.calibrate()
+	return cmd, g.calibrate(ctx)
 }
 
 func (g *gen) setStatus(input string) {

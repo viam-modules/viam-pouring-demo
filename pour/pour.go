@@ -16,7 +16,6 @@ import (
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
-	"go.viam.com/rdk/robot/client"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/motion/builtin"
 	"go.viam.com/rdk/spatialmath"
@@ -32,7 +31,7 @@ var (
 	armName = "arm"
 )
 
-func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vector) error {
+func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector) error {
 	numPlans := 3 + 3*len(cupLocations)
 	logger := g.logger
 	motionService := g.m
@@ -130,7 +129,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		return err
 	}
 
-	approachGoalPlan, err := getPlan(context.Background(), logger, g.robotClient, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0, 100)
+	approachGoalPlan, err := g.getPlan(ctx, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		g.setStatus(err.Error())
 		return err
@@ -159,7 +158,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 		return err
 	}
 
-	bottlePlan, err := getPlan(context.Background(), logger, g.robotClient, armFrameApproachGoalInputs[len(armFrameApproachGoalInputs)-1], gripperResource, bottlegoal, worldState, &linearAndBottleConstraint, 0, 100)
+	bottlePlan, err := g.getPlan(ctx, armFrameApproachGoalInputs[len(armFrameApproachGoalInputs)-1], gripperResource, bottlegoal, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		g.setStatus(err.Error())
 		return err
@@ -189,7 +188,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 
 	// LIFT
 	g.logger.Info("PLANNING FOR THE 3rd MOVEMENT")
-	liftedPlan, err := getPlan(context.Background(), logger, g.robotClient, armFrameBottlePlanInputs[len(armFrameBottlePlanInputs)-1], gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0, 100)
+	liftedPlan, err := g.getPlan(ctx, armFrameBottlePlanInputs[len(armFrameBottlePlanInputs)-1], gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0, 100)
 	if err != nil {
 		g.setStatus(err.Error())
 		return err
@@ -260,14 +259,14 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				-0.28700971603322356085,
 				-2.7665438651969944672,
 			})
-			plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 500)
+			plan, err = g.getPlan(ctx, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 500)
 			if err != nil {
 				g.logger.Info("we are planning for the first cup")
 				g.logger.Infof("err was not equal to nil: %s", err.Error())
 				j := 1
 				for {
 					g.logger.Info("we are in the for loop -- should try again 20x")
-					plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 500)
+					plan, err = g.getPlan(ctx, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 500)
 					g.logger.Infof("we are within the for loop and returned the following error: %s", err.Error())
 					// g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
 					if err != nil {
@@ -306,7 +305,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 						break
 					}
 
-					plan, err = getPlan(context.Background(), logger, g.robotClient, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 500)
+					plan, err = g.getPlan(ctx, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 500)
 					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR2: %v", err)
 					if err != nil {
 						j++
@@ -343,13 +342,13 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 				g.setStatus(err.Error())
 				return err
 			}
-			plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 1000)
+			plan, err = g.getPlan(ctx, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, 0, 1000)
 			if err != nil {
 				// case2: err != nil --> we try again 20x
 				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR3: %v", err)
 				j := 1
 				for {
-					plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 1000)
+					plan, err = g.getPlan(ctx, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 1000)
 					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR3: %v", err)
 					if err != nil {
 						j++
@@ -386,7 +385,7 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 					if penultimateJointPosition < 0 {
 						break
 					}
-					plan, err = getPlan(context.Background(), logger, g.robotClient, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 1000)
+					plan, err = g.getPlan(ctx, armFrameFormerPlanInputs[len(armFrameFormerPlanInputs)-1], bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 1000)
 					g.logger.Infof("WE RETURNED THE FOLLOWING ERROR4: %v", err)
 					if err != nil {
 						j++
@@ -431,12 +430,12 @@ func (g *gen) demoPlanMovements(bottleGrabPoint r3.Vector, cupLocations []r3.Vec
 			r3.Vector{X: pourPt.X, Y: pourPt.Y, Z: pourPt.Z - 20},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
-		plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, 0, 100)
+		plan, err = g.getPlan(ctx, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, 0, 100)
 		if err != nil {
 			g.logger.Infof("WE RETURNED THE FOLLOWING ERROR2: %v", err)
 			j := 1
 			for {
-				plan, err = getPlan(context.Background(), logger, g.robotClient, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, j, 100)
+				plan, err = g.getPlan(ctx, armFramePlanInputs[len(armFramePlanInputs)-1], bottleResource, pourGoal, worldState, &linearConstraint, j, 100)
 				g.logger.Infof("WE RETURNED THE FOLLOWING ERROR2: %v", err)
 				if err == nil {
 					break
@@ -708,21 +707,21 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 	return obstaclesInFrame
 }
 
-func getPlan(ctx context.Context, logger logging.Logger, robot *client.RobotClient, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) (motionplan.Plan, error) {
-	fsCfg, _ := robot.FrameSystemConfig(ctx)
+func (g *gen) getPlan(ctx context.Context, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) (motionplan.Plan, error) {
+	fsCfg, _ := g.robotClient.FrameSystemConfig(ctx)
 	parts := fsCfg.Parts
 	fs, err := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
 	if err != nil {
-		logger.Infof("we are logging an error here: %v", err)
+		g.logger.Infof("we are logging an error here: %v", err)
 		return nil, err
 	}
 
 	fsInputs := referenceframe.NewZeroInputs(fs)
 	fsInputs[armName] = armCurrentInputs
-	logger.Infof("rseed: %d", rseed)
+	g.logger.Infof("rseed: %d", rseed)
 
 	return motionplan.PlanMotion(ctx, &motionplan.PlanRequest{
-		Logger: logger,
+		Logger: g.logger,
 		Goals: []*motionplan.PlanState{
 			motionplan.NewPlanState(referenceframe.FrameSystemPoses{toMove.Name: referenceframe.NewPoseInFrame("world", goal)}, nil),
 		},
