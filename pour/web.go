@@ -36,7 +36,7 @@ func createAndRunWebServer(g *gen, port int, logger logging.Logger) (*http.Serve
 	mux.Handle("/", http.FileServerFS(fsToUse))
 
 	webServer := &http.Server{}
-	webServer.Handler = mux
+	webServer.Handler = &cookieSetter{g, mux}
 	webServer.Addr = fmt.Sprintf(":%d", port)
 
 	go func() {
@@ -48,4 +48,16 @@ func createAndRunWebServer(g *gen, port int, logger logging.Logger) (*http.Serve
 	}()
 
 	return webServer, nil
+}
+
+type cookieSetter struct {
+	g       *gen
+	handler http.Handler
+}
+
+func (cs *cookieSetter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{Name: "host", Value: cs.g.address})
+	http.SetCookie(w, &http.Cookie{Name: "authEntity", Value: cs.g.entity})
+	http.SetCookie(w, &http.Cookie{Name: "payload", Value: cs.g.payload})
+	cs.handler.ServeHTTP(w, r)
 }

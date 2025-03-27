@@ -1,5 +1,7 @@
 <script lang="ts">
  import * as VIAM from "@viamrobotics/sdk";
+ import { getCookie } from 'typescript-cookie';
+
  import StartButton from "./start-button.svelte";
  import ImageDisplay from "./image-display.svelte";
  import WeightSensor from "./weight-sensor.svelte";
@@ -19,11 +21,24 @@
      };
    }
 
+   var host = getCookie("host");
+   var payload = getCookie("payload");
+   var authEntity = getCookie("authEntity");
+   
+   if (host) {
+     return {
+       host: host,
+       payload: payload,
+       authEntity: authEntity
+     }
+   }
+
+   
    const urlParams = new URLSearchParams(window.location.search);
    
-   const host = urlParams.get("host");
-   const payload = urlParams.get("payload");
-   const authEntity = urlParams.get("authEntity");
+   var host = urlParams.get("host");
+   var payload = urlParams.get("payload");
+   var authEntity = urlParams.get("authEntity");
 
    if (host) {
      return {
