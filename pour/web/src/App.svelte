@@ -50,13 +50,10 @@
       signalingAddress: "https://app.viam.com:443",
     });
 
-    console.log("Resources:");
-    console.log(await machine.resourceNames());
 
     pouringClient = new VIAM.GenericServiceClient(machine, "pouring-service");
-    houghClient = new VIAM.VisionClient(machine, "wine-pouring-camera-main:circle-service");
-    weightClient = new VIAM.SensorClient(machine, "weight-sensor-main:sensor-1");
-
+    houghClient = new VIAM.VisionClient(machine, "circle-service");
+    weightClient = new VIAM.SensorClient(machine, "sensor-1");
 
   };
 
