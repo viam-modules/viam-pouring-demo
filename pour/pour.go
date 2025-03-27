@@ -27,10 +27,6 @@ const (
 	emptyBottleWeight = 675
 )
 
-var (
-	armName = "arm"
-)
-
 func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector) error {
 	numPlans := 3 + 3*len(cupLocations)
 	logger := g.logger
@@ -76,8 +72,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	bottleResource := resource.Name{Name: "bottle"}
 	gripperResource := resource.Name{Name: "gripper"}
 
-	// GenerateTransforms adds the gripper and bottle frames
-	transforms := GenerateTransforms("world", spatialmath.NewPoseFromPoint(bottleGrabPoint), bottleGrabPoint, g.bottleHeight)
+	transforms := GenerateTransforms("world", g.conf.ArmName, spatialmath.NewPoseFromPoint(bottleGrabPoint), bottleGrabPoint, g.conf.BottleHeight)
 
 	// GenerateObstacles returns a slice of geometries we are supposed to avoid at plan time
 	obstacles := GenerateObstacles()
@@ -152,7 +147,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	)
 
 	// we need to adjust the fsInputs
-	armFrameApproachGoalInputs, err := approachGoalPlan.Trajectory().GetFrameInputs(armName)
+	armFrameApproachGoalInputs, err := approachGoalPlan.Trajectory().GetFrameInputs(g.conf.ArmName)
 	if err != nil {
 		g.setStatus(err.Error())
 		return err
@@ -172,7 +167,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	// HERE WE CONSTRUCT THE THIRD PLAN
 	// THE THIRD PLAN MOVES THE GRIPPER WHICH CLUTCHES THE BOTTLE INTO THE LIFTED GOAL POSITION
 	// REDEFINE BOTTLE LINK TO BE ATTACHED TO GRIPPER
-	transforms = GenerateTransforms("gripper", spatialmath.NewPoseFromOrientation(grabVectorOrient), bottleGrabPoint, g.bottleHeight)
+	transforms = GenerateTransforms("gripper", g.conf.ArmName, spatialmath.NewPoseFromOrientation(grabVectorOrient), bottleGrabPoint, g.conf.BottleHeight)
 	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
 	if err != nil {
 		g.setStatus(err.Error())
@@ -180,7 +175,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	}
 
 	// we need to adjust the fsInputs
-	armFrameBottlePlanInputs, err := bottlePlan.Trajectory().GetFrameInputs(armName)
+	armFrameBottlePlanInputs, err := bottlePlan.Trajectory().GetFrameInputs(g.conf.ArmName)
 	if err != nil {
 		g.setStatus(err.Error())
 		return err
@@ -281,7 +276,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 					}
 					// we check if the joint positions that we got are good
 					g.logger.Infof("plan.Trajectory(): %v", plan.Trajectory())
-					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					armInputs, _ := plan.Trajectory().GetFrameInputs(g.conf.ArmName)
 					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
 					if penultimateJointPosition < 0 {
 						break
@@ -299,7 +294,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 				// case1: err == nil but we do not get the jp we want --> try again 20x to get the plan that we want, if we can't then we move onto the next cup
 				j := 1
 				for {
-					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					armInputs, _ := plan.Trajectory().GetFrameInputs(g.conf.ArmName)
 					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
 					if penultimateJointPosition < 0 {
 						break
@@ -319,7 +314,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 					}
 					g.logger.Infof("plan.Trajectory(): %v", plan.Trajectory())
 					// we check if the joint positions that we got are good
-					armInputs, _ = plan.Trajectory().GetFrameInputs(armName)
+					armInputs, _ = plan.Trajectory().GetFrameInputs(g.conf.ArmName)
 					penultimateJointPosition = armInputs[len(armInputs)-1][4].Value
 					if penultimateJointPosition < 0 {
 						break
@@ -337,7 +332,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 			}
 		} else {
 			formerplan := cupPouringPlans[len(cupPouringPlans)-1]
-			armFrameFormerPlanInputs, err := formerplan.Trajectory().GetFrameInputs(armName)
+			armFrameFormerPlanInputs, err := formerplan.Trajectory().GetFrameInputs(g.conf.ArmName)
 			if err != nil {
 				g.setStatus(err.Error())
 				return err
@@ -361,7 +356,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 						continue
 					}
 					// we check if the joint positions that we got are good
-					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					armInputs, _ := plan.Trajectory().GetFrameInputs(g.conf.ArmName)
 					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
 					if penultimateJointPosition < 0 {
 						break
@@ -380,7 +375,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 				// case1: err == nil but we do not get the jp we want --> try again 20x to get the plan that we want, if we can't then we move onto the next cup
 				j := 1
 				for {
-					armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+					armInputs, _ := plan.Trajectory().GetFrameInputs(g.conf.ArmName)
 					penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
 					if penultimateJointPosition < 0 {
 						break
@@ -392,7 +387,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 						continue
 					}
 					// we check if the joint positions that we got are good
-					armInputs, _ = plan.Trajectory().GetFrameInputs(armName)
+					armInputs, _ = plan.Trajectory().GetFrameInputs(g.conf.ArmName)
 					penultimateJointPosition = armInputs[len(armInputs)-1][4].Value
 					if penultimateJointPosition < 0 {
 						break
@@ -419,7 +414,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 
 		// now we come up with the plan to actually pour the liquid
 		// first we need to update the inputs though
-		armFramePlanInputs, err := plan.Trajectory().GetFrameInputs(armName)
+		armFramePlanInputs, err := plan.Trajectory().GetFrameInputs(g.conf.ArmName)
 		if err != nil {
 			g.setStatus(err.Error())
 			return err
@@ -486,7 +481,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, xArmComponent arm.Arm, beforePourPlans, pouringPlans, afterPourPlans []motionplan.Plan, pourParams [][]float64) error {
 
 	for _, plan := range pouringPlans {
-		armInputs, _ := plan.Trajectory().GetFrameInputs(armName)
+		armInputs, _ := plan.Trajectory().GetFrameInputs(g.conf.ArmName)
 		for _, in := range armInputs {
 			jps := []float64{}
 			for _, i := range in {
@@ -626,7 +621,7 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 }
 
 // Generate any transforms needed. Pass parent to parent the bottle to world or the arm
-func GenerateTransforms(parent string, pose spatialmath.Pose, bottleGrabPoint r3.Vector, bottleHeight float64) []*referenceframe.LinkInFrame {
+func GenerateTransforms(parent, armName string, pose spatialmath.Pose, bottleGrabPoint r3.Vector, bottleHeight float64) []*referenceframe.LinkInFrame {
 	bottleOffsetFrame := referenceframe.NewLinkInFrame(
 		parent,
 		pose,
@@ -717,7 +712,7 @@ func (g *gen) getPlan(ctx context.Context, armCurrentInputs []referenceframe.Inp
 	}
 
 	fsInputs := referenceframe.NewZeroInputs(fs)
-	fsInputs[armName] = armCurrentInputs
+	fsInputs[g.conf.ArmName] = armCurrentInputs
 	g.logger.Infof("rseed: %d", rseed)
 
 	return motionplan.PlanMotion(ctx, &motionplan.PlanRequest{

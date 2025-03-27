@@ -4,23 +4,22 @@ package pour
 import (
 	"context"
 	"net/http"
+	"os"
 	"sync"
 
 	"go.uber.org/multierr"
 
+	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
-	"go.viam.com/rdk/robot/client"
-	"go.viam.com/utils/rpc"
-
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
-
+	"go.viam.com/rdk/robot/client"
 	"go.viam.com/rdk/services/generic"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
-	rutils "go.viam.com/rdk/utils"
+	"go.viam.com/utils/rpc"
 )
 
 var Model = resource.NewModel("viam", "pouring-demo", "pour")
@@ -30,30 +29,15 @@ func init() {
 }
 
 func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
-	address, err := rutils.AssertType[string](conf.Attributes["address"])
-	if err != nil {
-		return nil, err
-	}
-	entity, err := rutils.AssertType[string](conf.Attributes["entity"])
-	if err != nil {
-		return nil, err
-	}
-	payload, err := rutils.AssertType[string](conf.Attributes["payload"])
+	config, err := resource.NativeConfig[*Config](conf)
 	if err != nil {
 		return nil, err
 	}
 
 	g := &gen{
-		name:    conf.ResourceName(),
-		logger:  logger,
-		address: address,
-		entity:  entity,
-		payload: payload,
-	}
-
-	config, err := resource.NativeConfig[*Config](conf)
-	if err != nil {
-		return nil, err
+		name:   conf.ResourceName(),
+		logger: logger,
+		conf:   config,
 	}
 
 	g.a, err = arm.FromDependencies(deps, config.ArmName)
@@ -81,18 +65,12 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 		return nil, err
 	}
 
-	g.deltaXPos = config.DeltaXPos
-	g.deltaYPos = config.DeltaYPos
-	g.deltaXNeg = config.DeltaXNeg
-	g.deltaYNeg = config.DeltaYNeg
-	g.bottleHeight = config.BottleHeight
-
 	err = g.setupRobotClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	g.web, err = createAndRunWebServer(config, 8888, logger)
+	g.web, err = createAndRunWebServer(g, 8888, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -106,44 +84,60 @@ func (cfg *Config) Validate(path string) ([]string, error) {
 }
 
 type Config struct {
-	Address string `json:"address"`
-	Entity  string `json:"entity"`
-	Payload string `json:"payload"`
+	ArmName                string `json:"arm_name"`
+	CameraName             string `json:"camera_name"`
+	CircleDetectionService string `json:"circle_detection_service"`
+	WeightSensorName       string `json:"weight_sensor_name"`
 
-	ArmName                string  `json:"arm_name"`
-	CameraName             string  `json:"camera_name"`
-	CircleDetectionService string  `json:"circle_detection_service"`
-	WeightSensorName       string  `json:"weight_sensor_name"`
-	DeltaXPos              float64 `json:"delta_x_pos"`
-	DeltaYPos              float64 `json:"delta_y_pos"`
-	DeltaXNeg              float64 `json:"delta_x_neg"`
-	DeltaYNeg              float64 `json:"delta_y_neg"`
-	BottleHeight           float64 `json:"bottle_height"`
+	DeltaXPos    float64 `json:"delta_x_pos"`
+	DeltaYPos    float64 `json:"delta_y_pos"`
+	DeltaXNeg    float64 `json:"delta_x_neg"`
+	DeltaYNeg    float64 `json:"delta_y_neg"`
+	BottleHeight float64 `json:"bottle_height"`
 }
 
-// gen is a fake Generic service that always echos input back to the caller.
 type gen struct {
 	resource.AlwaysRebuild
 
 	name   resource.Name
 	logger logging.Logger
+	conf   *Config
+
+	address string
+	entity  string
+	payload string
 
 	web *http.Server
 
-	address, entity, payload                                 string
-	robotClient                                              *client.RobotClient
-	a                                                        arm.Arm
-	c                                                        camera.Camera
-	s                                                        sensor.Sensor
-	m                                                        motion.Service
-	v                                                        vision.Service
-	deltaXPos, deltaYPos, deltaXNeg, deltaYNeg, bottleHeight float64
+	robotClient *client.RobotClient
+	a           arm.Arm
+	c           camera.Camera
+	s           sensor.Sensor
+	m           motion.Service
+	v           vision.Service
 
 	statusLock sync.Mutex
 	status     string
 }
 
 func (g *gen) setupRobotClient(ctx context.Context) error {
+	vc, err := app.CreateViamClientFromEnvVars(ctx, nil, g.logger)
+	if err != nil {
+		return err
+	}
+	defer vc.Close()
+
+	g.payload = os.Getenv("VIAM_API_KEY")
+	g.entity = os.Getenv("VIAM_API_KEY_ID")
+
+	r, _, err := vc.AppClient().GetRobotPart(ctx, os.Getenv("VIAM_MACHINE_PART_ID"))
+	if err != nil {
+		return err
+	}
+
+	g.logger.Warnf("hi %#v", r)
+	g.address = r.FQDN
+
 	machine, err := client.New(
 		ctx,
 		g.address,

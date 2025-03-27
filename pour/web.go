@@ -20,7 +20,7 @@ func init() {
 	defer temp.Close()
 }
 
-func createAndRunWebServer(c *Config, port int, logger logging.Logger) (*http.Server, error) {
+func createAndRunWebServer(g *gen, port int, logger logging.Logger) (*http.Server, error) {
 
 	mux := http.NewServeMux()
 
@@ -30,7 +30,7 @@ func createAndRunWebServer(c *Config, port int, logger logging.Logger) (*http.Se
 	}
 
 	mux.HandleFunc("/help", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, fmt.Sprintf("/index.html?host=%s&payload=%s&authEntity=%s", c.Address, c.Payload, c.Entity), http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("/index.html?host=%s&payload=%s&authEntity=%s", g.address, g.payload, g.entity), http.StatusFound)
 	})
 
 	mux.Handle("/", http.FileServerFS(fsToUse))

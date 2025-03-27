@@ -140,7 +140,7 @@ func (g *gen) getTheDetections(ctx context.Context, logger logging.Logger, amoun
 				x = append(x, float64(circles[i].center.X))
 				y = append(y, float64(circles[i].center.Y))
 				logger.Infof(" ")
-				xAdj, yAdj := g.determineAdjustment(logger, float64(circles[i].center.X), float64(circles[i].center.Y))
+				xAdj, yAdj := g.determineAdjustment(float64(circles[i].center.X), float64(circles[i].center.Y))
 				logger.Infof("xAdj %f", xAdj)
 				logger.Infof("yAdj %f", yAdj)
 				pt := circleToPt(*properties.IntrinsicParams, circles[i], 715, xAdj, yAdj)
@@ -152,7 +152,7 @@ func (g *gen) getTheDetections(ctx context.Context, logger logging.Logger, amoun
 				logger.Infof(" ")
 				x = append(x, float64(circle.center.X))
 				y = append(y, float64(circle.center.Y))
-				xAdj, yAdj := g.determineAdjustment(logger, float64(circle.center.X), float64(circle.center.Y))
+				xAdj, yAdj := g.determineAdjustment(float64(circle.center.X), float64(circle.center.Y))
 				logger.Infof("xAdj %f", xAdj)
 				logger.Infof("yAdj %f", yAdj)
 				pt := circleToPt(*properties.IntrinsicParams, circle, 715, xAdj, yAdj)
@@ -193,33 +193,29 @@ func calculateAverage(numbers []float64) float64 {
 	return sum / float64(len(numbers))
 }
 
-func (g *gen) determineAdjustment(logger logging.Logger, inputX, inputY float64) (float64, float64) {
-	deltaXPos := g.deltaXPos
-	deltaXNeg := g.deltaXNeg
-	deltaYPos := g.deltaYPos
-	deltaYNeg := g.deltaYNeg
-	logger.Infof("deltaXPos: %f", deltaXPos)
-	logger.Infof("deltaYPos: %f", deltaYPos)
-	logger.Infof("deltaXNeg: %f", deltaXNeg)
-	logger.Infof("deltaYNeg: %f", deltaYNeg)
+func (g *gen) determineAdjustment(inputX, inputY float64) (float64, float64) {
+	g.logger.Infof("deltaXPos: %f", g.conf.DeltaXPos)
+	g.logger.Infof("deltaYPos: %f", g.conf.DeltaYPos)
+	g.logger.Infof("deltaXNeg: %f", g.conf.DeltaXNeg)
+	g.logger.Infof("deltaYNeg: %f", g.conf.DeltaYNeg)
 
 	deltaX := 320.1 - inputX
 	deltaY := 235.1 - inputY
-	logger.Infof("deltaX: %f", deltaX)
-	logger.Infof("deltaY: %f", deltaY)
+	g.logger.Infof("deltaX: %f", deltaX)
+	g.logger.Infof("deltaY: %f", deltaY)
 	if deltaX > 0 && deltaY > 0 {
-		logger.Info("deltaX > 0 && deltaY > 0")
-		return deltaX * deltaXPos, deltaY * deltaYPos
+		g.logger.Info("deltaX > 0 && deltaY > 0")
+		return deltaX * g.conf.DeltaXPos, deltaY * g.conf.DeltaYPos
 	} else if deltaX > 0 && deltaY < 0 {
-		logger.Info("deltaX > 0 && deltaY < 0")
-		return deltaX * deltaXPos, deltaY * deltaYNeg
+		g.logger.Info("deltaX > 0 && deltaY < 0")
+		return deltaX * g.conf.DeltaXPos, deltaY * g.conf.DeltaYNeg
 	} else if deltaX < 0 && deltaY < 0 {
-		logger.Info("deltaX < 0 && deltaY < 0")
-		return deltaX * deltaXNeg, deltaY * deltaYNeg
+		g.logger.Info("deltaX < 0 && deltaY < 0")
+		return deltaX * g.conf.DeltaXNeg, deltaY * g.conf.DeltaYNeg
 	}
-	logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
-	logger.Info("deltaX < 0 && deltaY > 0")
-	return deltaX * deltaXNeg, deltaY * deltaYPos
+	g.logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
+	g.logger.Info("deltaX < 0 && deltaY > 0")
+	return deltaX * g.conf.DeltaXNeg, deltaY * g.conf.DeltaYPos
 }
 
 func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, xAdjustment, yAdjustment float64) r3.Vector {
