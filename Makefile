@@ -41,6 +41,7 @@ module: test module.tar.gz
 all: test module.tar.gz
 
 setup:
+	which apt > /dev/null 2>&1 && apt -y install nodejs || echo "no apt"
 
 pour/web/dist/index.html: pour/web/*.json pour/web/*.html pour/web/src/*.ts pour/web/src/*.svelte
 	cd pour/web && npm install && npm run build
