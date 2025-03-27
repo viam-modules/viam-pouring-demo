@@ -8,8 +8,12 @@ ifeq ($(VIAM_TARGET_OS), windows)
 	MODULE_BINARY = bin/viam-pouring-demo.exe
 endif
 
-$(MODULE_BINARY): Makefile go.mod cmd/module/*.go pour/*.go
+$(MODULE_BINARY): bin Makefile go.mod cmd/module/*.go pour/*.go
 	$(GO_BUILD_ENV) go build $(GO_BUILD_FLAGS) -o $(MODULE_BINARY) cmd/module/main.go
+
+bin:
+	mkdir -p $@
+
 
 lint:
 	gofmt -s -w .
