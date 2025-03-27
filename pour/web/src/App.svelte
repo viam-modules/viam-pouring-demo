@@ -1,34 +1,51 @@
 <script lang="ts">
-  import * as VIAM from "@viamrobotics/sdk";
-  import StartButton from "./start-button.svelte";
-  import ImageDisplay from "./image-display.svelte";
-  import WeightSensor from "./weight-sensor.svelte";
+ import * as VIAM from "@viamrobotics/sdk";
+ import StartButton from "./start-button.svelte";
+ import ImageDisplay from "./image-display.svelte";
+ import WeightSensor from "./weight-sensor.svelte";
+ 
+ let pouringClient: VIAM.GenericService | undefined = undefined;
+ let houghClient: VIAM.VisionClient | undefined = undefined;
+ let weightClient: VIAM.SensorClient | undefined = undefined;
+ 
+ 
 
-  let pouringClient: VIAM.GenericService | undefined = undefined;
-  let houghClient: VIAM.VisionClient | undefined = undefined;
-  let weightClient: VIAM.SensorClient | undefined = undefined;
+ async function getConfig() {
+   if (import.meta.env.VITE_HOST) {
+     return {
+       host: import.meta.env.VITE_HOST,
+       payload: import.meta.env.VITE_PAYLOAD,
+       authEntity: import.meta.env.VITE_KEY_ID
+     };
+   }
 
-  console.log(import.meta.env.VITE_HOST);
-  if (!import.meta.env.VITE_HOST) {
-    throw new Error("environment variable VITE_HOST is required");
-  }
-  if (!import.meta.env.VITE_PAYLOAD) {
-    throw new Error("environment variable VITE_PAYLOAD is required");
-  }
-  if (!import.meta.env.VITE_KEY_ID) {
-    throw new Error("environment variable VITE_KEY_ID is required");
-  }
+   const urlParams = new URLSearchParams(window.location.search);
+   
+   const host = urlParams.get("host");
+   const payload = urlParams.get("payload");
+   const authEntity = urlParams.get("authEntity");
 
+   if (host) {
+     return {
+       host: host,
+       payload: payload,
+       authEntity: authEntity
+     }
+   }
+   
+   throw new Error("no connection config");
+ }
 
-  const main = async () => {
-    const host = import.meta.env.VITE_HOST;
+ const main = async () => {
 
-    const machine = await VIAM.createRobotClient({
-      host,
+   var cfg = await getConfig();
+   
+   const machine = await VIAM.createRobotClient({
+     host: cfg.host,
       credentials: {
         type: "api-key",
-        payload: import.meta.env.VITE_PAYLOAD,
-        authEntity: import.meta.env.VITE_KEY_ID,
+        payload: cfg.payload,
+        authEntity: cfg.authEntity
       },
       signalingAddress: "https://app.viam.com:443",
     });

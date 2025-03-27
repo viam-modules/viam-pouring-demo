@@ -3,12 +3,14 @@ package pour
 
 import (
 	"context"
+	"net/http"
 	"sync"
+
+	"go.uber.org/multierr"
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/robot/client"
-	"go.viam.com/utils"
 	"go.viam.com/utils/rpc"
 
 	"go.viam.com/rdk/components/sensor"
@@ -42,15 +44,59 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 	}
 
 	g := &gen{
+		name:    conf.ResourceName(),
 		logger:  logger,
 		address: address,
 		entity:  entity,
 		payload: payload,
 	}
 
-	if err := g.Reconfigure(ctx, deps, conf); err != nil {
+	config, err := resource.NativeConfig[*Config](conf)
+	if err != nil {
 		return nil, err
 	}
+
+	g.a, err = arm.FromDependencies(deps, config.ArmName)
+	if err != nil {
+		return nil, err
+	}
+
+	g.c, err = camera.FromDependencies(deps, config.CameraName)
+	if err != nil {
+		return nil, err
+	}
+
+	g.s, err = sensor.FromDependencies(deps, config.WeightSensorName)
+	if err != nil {
+		return nil, err
+	}
+
+	g.m, err = motion.FromDependencies(deps, "builtin")
+	if err != nil {
+		return nil, err
+	}
+
+	g.v, err = vision.FromDependencies(deps, config.CircleDetectionService)
+	if err != nil {
+		return nil, err
+	}
+
+	g.deltaXPos = config.DeltaXPos
+	g.deltaYPos = config.DeltaYPos
+	g.deltaXNeg = config.DeltaXNeg
+	g.deltaYNeg = config.DeltaYNeg
+	g.bottleHeight = config.BottleHeight
+
+	err = g.setupRobotClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	g.web, err = createAndRunWebServer(config, 8888, logger)
+	if err != nil {
+		return nil, err
+	}
+
 	logger.Info("the pouring module has been constructed")
 	return g, nil
 }
@@ -60,13 +106,14 @@ func (cfg *Config) Validate(path string) ([]string, error) {
 }
 
 type Config struct {
+	Address string `json:"address"`
+	Entity  string `json:"entity"`
+	Payload string `json:"payload"`
+
 	ArmName                string  `json:"arm_name"`
 	CameraName             string  `json:"camera_name"`
 	CircleDetectionService string  `json:"circle_detection_service"`
 	WeightSensorName       string  `json:"weight_sensor_name"`
-	Address                string  `json:"address"`
-	Entity                 string  `json:"entity"`
-	Payload                string  `json:"payload"`
 	DeltaXPos              float64 `json:"delta_x_pos"`
 	DeltaYPos              float64 `json:"delta_y_pos"`
 	DeltaXNeg              float64 `json:"delta_x_neg"`
@@ -76,12 +123,13 @@ type Config struct {
 
 // gen is a fake Generic service that always echos input back to the caller.
 type gen struct {
-	mu sync.Mutex
-	resource.Resource
-	resource.Named
-	resource.TriviallyReconfigurable
-	resource.TriviallyCloseable
-	logger                                                   logging.Logger
+	resource.AlwaysRebuild
+
+	name   resource.Name
+	logger logging.Logger
+
+	web *http.Server
+
 	address, entity, payload                                 string
 	robotClient                                              *client.RobotClient
 	a                                                        arm.Arm
@@ -90,60 +138,14 @@ type gen struct {
 	m                                                        motion.Service
 	v                                                        vision.Service
 	deltaXPos, deltaYPos, deltaXNeg, deltaYNeg, bottleHeight float64
-	status                                                   string
+
+	statusLock sync.Mutex
+	status     string
 }
 
-func (g *gen) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
-	config, err := resource.NativeConfig[*Config](conf)
-	if err != nil {
-		return err
-	}
-
-	a, err := arm.FromDependencies(deps, config.ArmName)
-	if err != nil {
-		return err
-	}
-	g.a = a
-
-	c, err := camera.FromDependencies(deps, config.CameraName)
-	if err != nil {
-		return err
-	}
-	g.c = c
-
-	s, err := sensor.FromDependencies(deps, config.WeightSensorName)
-	if err != nil {
-		return err
-	}
-	g.s = s
-
-	m, err := motion.FromDependencies(deps, "builtin")
-	if err != nil {
-		return err
-	}
-	g.m = m
-
-	v, err := vision.FromDependencies(deps, config.CircleDetectionService)
-	if err != nil {
-		return err
-	}
-	g.v = v
-
-	g.deltaXPos = config.DeltaXPos
-	g.deltaYPos = config.DeltaYPos
-	g.deltaXNeg = config.DeltaXNeg
-	g.deltaYNeg = config.DeltaYNeg
-	g.bottleHeight = config.BottleHeight
-
-	utils.PanicCapturingGo(g.getRobotClient)
-
-	g.logger.Info("done reconfiguring")
-	return nil
-}
-
-func (g *gen) getRobotClient() {
+func (g *gen) setupRobotClient(ctx context.Context) error {
 	machine, err := client.New(
-		context.Background(),
+		ctx,
 		g.address,
 		g.logger,
 		client.WithDialOptions(rpc.WithEntityCredentials(
@@ -154,17 +156,21 @@ func (g *gen) getRobotClient() {
 			})),
 	)
 	if err != nil {
-		g.logger.Fatal(err)
+		return err
 	}
 	g.robotClient = machine
+	return nil
 }
 
 func (g *gen) Name() resource.Name {
-	return resource.NewName(generic.API, "viam_pouring_demo")
+	return g.name
 }
 
 func (g *gen) Close(ctx context.Context) error {
-	return g.robotClient.Close(ctx)
+	return multierr.Combine(
+		g.robotClient.Close(ctx),
+		g.web.Close(),
+	)
 }
 
 // DoCommand echos input back to the caller.
@@ -181,13 +187,13 @@ func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 }
 
 func (g *gen) setStatus(input string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.statusLock.Lock()
+	defer g.statusLock.Unlock()
 	g.status = input
 }
 
 func (g *gen) getStatus() string {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.statusLock.Lock()
+	defer g.statusLock.Unlock()
 	return g.status
 }
