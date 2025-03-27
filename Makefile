@@ -37,6 +37,4 @@ module: test module.tar.gz
 all: test module.tar.gz
 
 setup:
-ifeq ($(VIAM_TARGET_OS), darwin)
-	brew install nlopt-static
-endif
+
