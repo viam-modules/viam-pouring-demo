@@ -481,13 +481,7 @@ func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, af
 			}
 			g.logger.Infof("jps: %v", jps)
 			g.logger.Infof("raw inputs: %v", in)
-			g.logger.Info(" ")
-			g.logger.Info(" ")
 		}
-		g.logger.Info(" ")
-		g.logger.Info(" ")
-		g.logger.Info(" ")
-		g.logger.Info(" ")
 	}
 
 	// NEED TO ADD LOGIC ON WHEN TO OPEN AND CLOSE THE GRIPPER
