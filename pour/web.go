@@ -59,5 +59,10 @@ func (cs *cookieSetter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: "host", Value: cs.g.address})
 	http.SetCookie(w, &http.Cookie{Name: "authEntity", Value: cs.g.entity})
 	http.SetCookie(w, &http.Cookie{Name: "payload", Value: cs.g.payload})
+
+	http.SetCookie(w, &http.Cookie{Name: "circle_detection_service", Value: cs.g.conf.CircleDetectionService})
+	http.SetCookie(w, &http.Cookie{Name: "weight_sensor_name", Value: cs.g.conf.WeightSensorName})
+	http.SetCookie(w, &http.Cookie{Name: "my_service", Value: cs.g.name.ShortName()})
+
 	cs.handler.ServeHTTP(w, r)
 }

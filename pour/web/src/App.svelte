@@ -10,7 +10,22 @@
  let houghClient: VIAM.VisionClient | undefined = undefined;
  let weightClient: VIAM.SensorClient | undefined = undefined;
  
- 
+
+ function getUrlOrCookies(n, def) {
+   const urlParams = new URLSearchParams(window.location.search);
+
+   var x = urlParams.get(n);
+   if (x && x.length > 0 ) {
+     return x;
+   }
+
+   x = getCookie(n);
+   if (x && x.length > 0 ) {
+     return x;
+   }
+
+   return def;
+ }
 
  async function getConfig() {
    if (import.meta.env.VITE_HOST) {
@@ -21,25 +36,10 @@
      };
    }
 
-   var host = getCookie("host");
-   var payload = getCookie("payload");
-   var authEntity = getCookie("authEntity");
+   var host = getUrlOrCookies("host");
+   var payload = getUrlOrCookies("payload");
+   var authEntity = getUrlOrCookies("authEntity");
    
-   if (host) {
-     return {
-       host: host,
-       payload: payload,
-       authEntity: authEntity
-     }
-   }
-
-   
-   const urlParams = new URLSearchParams(window.location.search);
-   
-   var host = urlParams.get("host");
-   var payload = urlParams.get("payload");
-   var authEntity = urlParams.get("authEntity");
-
    if (host) {
      return {
        host: host,
@@ -66,9 +66,9 @@
     });
 
 
-    pouringClient = new VIAM.GenericServiceClient(machine, "pouring-service");
-    houghClient = new VIAM.VisionClient(machine, "circle-service");
-    weightClient = new VIAM.SensorClient(machine, "sensor-1");
+    pouringClient = new VIAM.GenericServiceClient(machine, getUrlOrCookies("my_service", "pouring-service"));
+    houghClient = new VIAM.VisionClient(machine, getUrlOrCookies("circle_detection_service", "circle-service"));
+    weightClient = new VIAM.SensorClient(machine, getUrlOrCookies("weight_sensor_name", "scale1"));
 
   };
 
