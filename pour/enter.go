@@ -36,7 +36,7 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 		return nil, err
 	}
 
-	g := &gen{
+	g := &Gen{
 		name:   conf.ResourceName(),
 		logger: logger,
 		conf:   config,
@@ -105,7 +105,21 @@ type Config struct {
 	CPUThreads int `json:"cpu_threads"`
 }
 
-type gen struct {
+func NewCamTesting(cam camera.Camera, camVision vision.Service, logger logging.Logger) *Gen {
+	return &Gen{
+		cam:       cam,
+		camVision: camVision,
+		logger:    logger,
+		conf: &Config{
+			DeltaXPos: 0.225,
+			DeltaYPos: 0.31,
+			DeltaXNeg: 0.295,
+			DeltaYNeg: 0.295,
+		},
+	}
+}
+
+type Gen struct {
 	resource.AlwaysRebuild
 
 	name   resource.Name
@@ -132,7 +146,7 @@ type gen struct {
 	numThreads int
 }
 
-func (g *gen) setupRobotClient(ctx context.Context) error {
+func (g *Gen) setupRobotClient(ctx context.Context) error {
 	vc, err := app.CreateViamClientFromEnvVars(ctx, nil, g.logger)
 	if err != nil {
 		return err
@@ -168,11 +182,11 @@ func (g *gen) setupRobotClient(ctx context.Context) error {
 	return nil
 }
 
-func (g *gen) Name() resource.Name {
+func (g *Gen) Name() resource.Name {
 	return g.name
 }
 
-func (g *gen) Close(ctx context.Context) error {
+func (g *Gen) Close(ctx context.Context) error {
 	return multierr.Combine(
 		g.robotClient.Close(ctx),
 		g.web.Close(),
@@ -180,7 +194,7 @@ func (g *gen) Close(ctx context.Context) error {
 }
 
 // DoCommand
-func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+func (g *Gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	// TODO-eliot cancel old movement
 
 	g.logger.Infof("cmd: %v", cmd)
@@ -204,14 +218,14 @@ func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 	return map[string]interface{}{}, err
 }
 
-func (g *gen) setStatus(input string) {
+func (g *Gen) setStatus(input string) {
 	g.logger.Info(input)
 	g.statusLock.Lock()
 	defer g.statusLock.Unlock()
 	g.status = input
 }
 
-func (g *gen) getStatus() string {
+func (g *Gen) getStatus() string {
 	g.statusLock.Lock()
 	defer g.statusLock.Unlock()
 	return g.status

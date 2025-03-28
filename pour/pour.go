@@ -3,7 +3,6 @@ package pour
 import (
 	"context"
 	"errors"
-	"math"
 	"strconv"
 
 	"time"
@@ -23,7 +22,7 @@ const (
 	emptyBottleWeight = 675
 )
 
-func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector, doPour bool) error {
+func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector, doPour bool) error {
 	numPlans := 3 + 3*len(cupLocations)
 
 	// Compute orientation to approach bottle. We may also just want to hardcode rather than depending on the start position
@@ -81,7 +80,6 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	// get the weight of the bottle
 	bottleWeight, err := g.getWeight(ctx)
 	if err != nil {
-		g.setStatus(err.Error())
 		return err
 	}
 	// bottleWeight += 1000
@@ -472,7 +470,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	)
 }
 
-func (g *gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, afterPourPlans []motionplan.Plan, pourParams [][]float64) error {
+func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, afterPourPlans []motionplan.Plan, pourParams [][]float64) error {
 
 	for _, plan := range pouringPlans {
 		armInputs, _ := plan.Trajectory().GetFrameInputs(g.conf.ArmName)
@@ -691,7 +689,7 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 	return obstaclesInFrame
 }
 
-func (g *gen) getPlan(ctx context.Context, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) (motionplan.Plan, error) {
+func (g *Gen) getPlan(ctx context.Context, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) (motionplan.Plan, error) {
 	fsCfg, _ := g.robotClient.FrameSystemConfig(ctx)
 	parts := fsCfg.Parts
 	fs, err := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
@@ -732,15 +730,3 @@ func reversePlan(originalPlan motionplan.Plan) motionplan.Plan {
 	}
 	return motionplan.NewSimplePlan(path, traj)
 }
-
-func (g *gen) getWeight(ctx context.Context) (int, error) {
-	readings1, _ := g.weight.Readings(ctx, nil)
-	mass1 := readings1["mass_kg"].(float64)
-	massInGrams1 := math.Round(mass1 * 1000)
-	time.Sleep(time.Millisecond * 500)
-	return int(massInGrams1), nil
-}
-
-// func checkPlan(plan motionplan.Plan) {
-
-// }

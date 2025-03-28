@@ -20,7 +20,7 @@ func init() {
 	defer temp.Close()
 }
 
-func createAndRunWebServer(g *gen, port int, logger logging.Logger) (*http.Server, error) {
+func createAndRunWebServer(g *Gen, port int, logger logging.Logger) (*http.Server, error) {
 
 	mux := http.NewServeMux()
 
@@ -51,7 +51,7 @@ func createAndRunWebServer(g *gen, port int, logger logging.Logger) (*http.Serve
 }
 
 type cookieSetter struct {
-	g       *gen
+	g       *Gen
 	handler http.Handler
 }
 
