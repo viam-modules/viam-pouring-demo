@@ -724,7 +724,7 @@ func (g *gen) getPlan(ctx context.Context, armCurrentInputs []referenceframe.Inp
 		FrameSystem: fs,
 		WorldState:  worldState,
 		Constraints: constraint,
-		Options:     map[string]interface{}{"rseed": rseed, "timeout": 10, "smooth_iter": smoothIter},
+		Options:     map[string]interface{}{"rseed": rseed, "timeout": 10, "smooth_iter": smoothIter, "num_threads": 1},
 	})
 }
 
