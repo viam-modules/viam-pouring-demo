@@ -34,6 +34,7 @@ The following attributes must be specified:
 | `delta_y_pos`              | float64 | **Required** | A skew parameter used to adjust the postions of cups when translating from pixel space into the world. |
 | `delta_x_neg`              | float64 | **Required** | A skew parameter used to adjust the postions of cups when translating from pixel space into the world. |
 | `delta_y_neg`              | float64 | **Required** | A skew parameter used to adjust the postions of cups when translating from pixel space into the world. |
+| `cpu_threads`              | int     | Optional     | Number of threads to use for motion planning. Half the availible threads will be used if unsupplied.
 
 ## What to do if something goes wrong
 
