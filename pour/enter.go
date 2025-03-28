@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"runtime"
 	"sync"
 
 	"go.uber.org/multierr"
@@ -75,6 +76,11 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 		return nil, err
 	}
 
+	g.numThreads = config.CPUThreads
+	if g.numThreads == 0 {
+		g.numThreads = runtime.NumCPU() / 2
+	}
+
 	logger.Info("the pouring module has been constructed")
 	return g, nil
 }
@@ -94,6 +100,8 @@ type Config struct {
 	DeltaXNeg    float64 `json:"delta_x_neg"`
 	DeltaYNeg    float64 `json:"delta_y_neg"`
 	BottleHeight float64 `json:"bottle_height"`
+
+	CPUThreads int `json:"cpu_threads"`
 }
 
 type gen struct {
@@ -118,6 +126,8 @@ type gen struct {
 
 	statusLock sync.Mutex
 	status     string
+
+	numThreads int
 }
 
 func (g *gen) setupRobotClient(ctx context.Context) error {
