@@ -1,19 +1,23 @@
 <script lang="ts">
-  import { Struct, type GenericService } from "@viamrobotics/sdk";
-  import StatusReading from "./status-reading.svelte";
-  export let client: GenericService;
-  let isRunning = false;
-  const onClick = async () => {
-    try {
-      isRunning = true;
-      const res = await client.doCommand(new Struct({}));
-      console.log(res);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      isRunning = false;
-    }
-  };
+ import * as VIAM from "@viamrobotics/sdk";
+
+ import { Struct, type GenericService } from "@viamrobotics/sdk";
+ import StatusReading from "./status-reading.svelte";
+ export let client: GenericService;
+ let isRunning = false;
+ const onClick = async () => {
+   try {
+     isRunning = true;
+     var x = VIAM.Struct.fromJson({"do-pour" : true});
+     console.log("doCommand cmd", x);
+     const res = await client.doCommand(x);
+     console.log(res);
+   } catch (error) {
+     console.error(error);
+   } finally {
+     isRunning = false;
+   }
+ };
 </script>
 
 <div class="flex flex-col gap-4 bg-gradient-2 p-4 rounded h-[100px]">

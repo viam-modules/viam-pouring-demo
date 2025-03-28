@@ -2,14 +2,13 @@ package pour
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"image"
 	"math"
 	"sort"
 	"strconv"
 
 	"github.com/golang/geo/r3"
-	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/rimage/transform"
 	"go.viam.com/rdk/spatialmath"
@@ -24,27 +23,25 @@ func calculateThePoseTheArmShouldGoTo(transformBy, clusterPose spatialmath.Pose)
 	return spatialmath.Compose(transformBy, clusterPose)
 }
 
-func (g *gen) calibrate(ctx context.Context) error {
-	// Get the camera from the robot
-	realsense := g.c
+func (g *gen) startPouringProcess(ctx context.Context, doPour bool) error {
 
 	// here I need to figure out how many cups there are on the table before I proceed to figure out how many cups to look for and their positions
-	dets, err := g.v.DetectionsFromCamera(ctx, realsense.Name().Name, nil)
+	dets, err := g.camVision.DetectionsFromCamera(ctx, "", nil)
 	if err != nil {
 		g.setStatus(err.Error())
 		return err
 	}
 	numOfCupsToDetect := len(dets)
 	g.setStatus("found this many cups: " + strconv.Itoa(numOfCupsToDetect) + " will now determine their postions")
+
 	if numOfCupsToDetect == 0 {
-		statement := "there were no cups placed on the table"
-		g.setStatus(statement)
-		return errors.New(statement)
+		return fmt.Errorf("there were no cups placed on the table")
 	}
 
-	g.logger.Infof("WE FOUND THIS MANY CUPS: %d", numOfCupsToDetect)
-	g.logger.Info("determining the positions of the cups now")
-	clusters := g.getTheDetections(ctx, g.logger, numOfCupsToDetect)
+	clusters, err := g.getTheDetections(ctx, numOfCupsToDetect)
+	if err != nil {
+		return err
+	}
 
 	// figure out which of the detections are the cups and which is the wine bottle
 	// know that wrt the camera, the bottle is on the left side, so it'll have a negative X value
@@ -52,21 +49,14 @@ func (g *gen) calibrate(ctx context.Context) error {
 	for _, c := range clusters {
 		cupLocations = append(cupLocations, spatialmath.NewPoseFromPoint(c.mean().Add(r3.Vector{X: 20, Y: 0, Z: 0})))
 	}
-	g.logger.Info(" ")
-	g.logger.Info(" ")
+
 	g.logger.Info("LOCATIONS IN THE FRAME OF THE CAMERA")
 	for i := 0; i < numOfCupsToDetect; i++ {
 		g.logger.Infof("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
 	}
 
-	motionService := g.m
-	g.logger.Info(" ")
-	g.logger.Info(" ")
-	g.logger.Info(" ")
-	g.logger.Info(" ")
-
 	// get the transform from camera frame to the world frame
-	tf, _ := motionService.GetPose(ctx, realsense.Name(), referenceframe.World, nil, nil)
+	tf, _ := g.motion.GetPose(ctx, g.cam.Name(), referenceframe.World, nil, nil)
 
 	for i := 0; i < numOfCupsToDetect; i++ {
 		cupLocations[i] = calculateThePoseTheArmShouldGoTo(tf.Pose(), cupLocations[i])
@@ -88,8 +78,6 @@ func (g *gen) calibrate(ctx context.Context) error {
 	for i := 0; i < numOfCupsToDetect; i++ {
 		g.logger.Infof("cupDemoPoints[%d]: %v\n", i, cupDemoPoints[i])
 	}
-	g.logger.Info(" ")
-	g.logger.Info(" ")
 
 	// order the cups so that we got the farthest one first and the closest one last
 	orderedCups := sortByDistance(cupDemoPoints)
@@ -100,27 +88,27 @@ func (g *gen) calibrate(ctx context.Context) error {
 	g.setStatus("found the positions of the cups, will do planning now")
 
 	// execute the demo
-	return g.demoPlanMovements(ctx, wineBottlePoint, orderedCups)
+	return g.demoPlanMovements(ctx, wineBottlePoint, orderedCups, doPour)
 }
 
-func (g *gen) getTheDetections(ctx context.Context, logger logging.Logger, amountOfClusters int) []*cluster {
-	properties, err := g.c.Properties(ctx)
+func (g *gen) getTheDetections(ctx context.Context, amountOfClusters int) ([]*cluster, error) {
+	properties, err := g.cam.Properties(ctx)
 	if err != nil {
-		logger.Fatal(err)
+		return nil, err
 	}
 
 	clusters := make([]*cluster, amountOfClusters)
-	logger.Infof("len(clusters): %d", len(clusters))
+	g.logger.Infof("len(clusters): %d", len(clusters))
 	for i := range len(clusters) {
 		clusters[i] = newCluster()
 	}
 	x := []float64{}
 	y := []float64{}
 	for successes := 0; successes < 20; {
-		logger.Infof("attempting calibration iteration: %d", successes)
-		detections, err := g.v.DetectionsFromCamera(ctx, g.c.Name().Name, nil)
+		g.logger.Infof("attempting calibration iteration: %d", successes)
+		detections, err := g.camVision.DetectionsFromCamera(ctx, "", nil) // TODO-eliot
 		if err != nil {
-			logger.Fatal(err)
+			return nil, err
 		}
 		circles := make([]Circle, len(detections))
 		for i, d := range detections {
@@ -136,25 +124,24 @@ func (g *gen) getTheDetections(ctx context.Context, logger logging.Logger, amoun
 		}
 		if successes == 0 {
 			for i := range len(clusters) {
-				logger.Infof("circles[0].center: %v", circles[i].center)
+				g.logger.Infof("circles[0].center: %v", circles[i].center)
 				x = append(x, float64(circles[i].center.X))
 				y = append(y, float64(circles[i].center.Y))
-				logger.Infof(" ")
+
 				xAdj, yAdj := g.determineAdjustment(float64(circles[i].center.X), float64(circles[i].center.Y))
-				logger.Infof("xAdj %f", xAdj)
-				logger.Infof("yAdj %f", yAdj)
+				g.logger.Infof("xAdj %f", xAdj)
+				g.logger.Infof("yAdj %f", yAdj)
 				pt := circleToPt(*properties.IntrinsicParams, circles[i], 715, xAdj, yAdj)
 				clusters[i].include(pt)
 			}
 		} else {
 			for _, circle := range circles {
-				logger.Infof("circle.center: %v", circle.center)
-				logger.Infof(" ")
+				g.logger.Infof("circle.center: %v", circle.center)
 				x = append(x, float64(circle.center.X))
 				y = append(y, float64(circle.center.Y))
 				xAdj, yAdj := g.determineAdjustment(float64(circle.center.X), float64(circle.center.Y))
-				logger.Infof("xAdj %f", xAdj)
-				logger.Infof("yAdj %f", yAdj)
+				g.logger.Infof("xAdj %f", xAdj)
+				g.logger.Infof("yAdj %f", yAdj)
 				pt := circleToPt(*properties.IntrinsicParams, circle, 715, xAdj, yAdj)
 
 				min := math.Inf(1)
@@ -174,10 +161,10 @@ func (g *gen) getTheDetections(ctx context.Context, logger logging.Logger, amoun
 
 	xAvg := calculateAverage(x)
 	yAvg := calculateAverage(y)
-	logger.Infof("xAvg: %f", xAvg)
-	logger.Infof("yAvg: %f", yAvg)
+	g.logger.Infof("xAvg: %f", xAvg)
+	g.logger.Infof("yAvg: %f", yAvg)
 
-	return clusters
+	return clusters, nil
 }
 
 func calculateAverage(numbers []float64) float64 {

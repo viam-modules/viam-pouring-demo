@@ -10,13 +10,9 @@ import (
 
 	"github.com/golang/geo/r3"
 
-	"go.viam.com/rdk/components/arm"
-	"go.viam.com/rdk/components/sensor"
-	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
-	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/motion/builtin"
 	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/rdk/utils"
@@ -27,10 +23,8 @@ const (
 	emptyBottleWeight = 675
 )
 
-func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector) error {
+func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector, doPour bool) error {
 	numPlans := 3 + 3*len(cupLocations)
-	logger := g.logger
-	motionService := g.m
 
 	// Compute orientation to approach bottle. We may also just want to hardcode rather than depending on the start position
 	vectorArmToBottle := r3.Vector{X: -1, Y: 0, Z: 0}
@@ -84,10 +78,8 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 		return err
 	}
 
-	xArmComponent := g.a
-
 	// get the weight of the bottle
-	bottleWeight, err := getWeight(g.s)
+	bottleWeight, err := g.getWeight(ctx)
 	if err != nil {
 		g.setStatus(err.Error())
 		return err
@@ -118,15 +110,13 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	// HERE WE CONSTRUCT THE FIRST PLAN
 	// THE FIRST PLAN IS MOVING THE ARM TO BE IN THE NEUTRAL POSITION
 	g.logger.Info("PLANNING FOR THE 1st MOVEMENT")
-	armCurrentInputs, err := xArmComponent.CurrentInputs(context.Background())
+	armCurrentInputs, err := g.arm.CurrentInputs(ctx)
 	if err != nil {
-		g.setStatus(err.Error())
 		return err
 	}
 
 	approachGoalPlan, err := g.getPlan(ctx, armCurrentInputs, gripperResource, approachgoal, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
-		g.setStatus(err.Error())
 		return err
 	}
 	g.logger.Info("DONE PLANNING THE 1st MOVEMENT")
@@ -262,7 +252,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 				for {
 					g.logger.Info("we are in the for loop -- should try again 20x")
 					plan, err = g.getPlan(ctx, intermediateInputs, bottleResource, pourReadyGoal, worldState, orientationConstraint, j, 500)
-					g.logger.Infof("we are within the for loop and returned the following error: %s", err.Error())
+					g.logger.Infof("we are within the for loop and returned the following error: %v", err)
 					// g.logger.Infof("WE RETURNED THE FOLLOWING ERROR1: %v", err)
 					if err != nil {
 						j++
@@ -462,15 +452,19 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	}
 
 	g.logger.Infof("IT TOOK THIS LONG TO CONSTRUCT ALL PLANS: %v", time.Since(now))
+
+	if !doPour {
+		g.logger.Infof("not moving")
+		return nil
+	}
+
 	g.setStatus("DONE CONSTRUCTING PLANS -- EXECUTING NOW")
 
 	// ---------------------------------------------------------------------------------
 	// AT THIS POINT IN TIME WE ARE DONE CONSTRUCTING ALL THE PLANS THAT WE WILL NEED AND NOW WE
 	// WILL NEED TO RUN THEM ON THE ROBOT
 	return g.executeDemo(
-		motionService,
-		logger,
-		xArmComponent,
+		ctx,
 		[]motionplan.Plan{approachGoalPlan, bottlePlan, liftedPlan},
 		cupPouringPlans,
 		[]motionplan.Plan{reversePlan(liftedPlan), reversePlan(bottlePlan)},
@@ -478,7 +472,7 @@ func (g *gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	)
 }
 
-func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, xArmComponent arm.Arm, beforePourPlans, pouringPlans, afterPourPlans []motionplan.Plan, pourParams [][]float64) error {
+func (g *gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, afterPourPlans []motionplan.Plan, pourParams [][]float64) error {
 
 	for _, plan := range pouringPlans {
 		armInputs, _ := plan.Trajectory().GetFrameInputs(g.conf.ArmName)
@@ -501,7 +495,7 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 	// NEED TO ADD LOGIC ON WHEN TO OPEN AND CLOSE THE GRIPPER
 	// first we need to make sure that the griper is open
 	// Open gripper
-	xArmComponent.DoCommand(context.Background(), map[string]interface{}{
+	g.arm.DoCommand(ctx, map[string]interface{}{
 		"setup_gripper": true,
 		"move_gripper":  850,
 	})
@@ -512,13 +506,13 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 	// lift the bottle
 	for i, plan := range beforePourPlans {
 		cmd := map[string]interface{}{builtin.DoExecute: plan.Trajectory()}
-		_, err := motionService.DoCommand(context.Background(), cmd)
+		_, err := g.motion.DoCommand(ctx, cmd)
 		if err != nil {
 			g.setStatus(err.Error())
 			return err
 		}
 		if i == 1 {
-			xArmComponent.DoCommand(context.Background(), map[string]interface{}{
+			g.arm.DoCommand(ctx, map[string]interface{}{
 				"setup_gripper": true,
 				"move_gripper":  0,
 			})
@@ -536,9 +530,9 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 		-2.7665438651969944672,
 	})
 
-	err := xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
+	err := g.arm.MoveToJointPositions(ctx, intermediateJP, nil)
 	if err != nil {
-		logger.Fatal(err)
+		g.logger.Fatal(err)
 	}
 
 	// plans which:
@@ -547,42 +541,39 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 	// move the bottle such that is is no longer pouring liquid
 	for i, plan := range pouringPlans {
 		if (i+1)%3 == 0 {
-			logger.Infof("pourParams: %v", pourParams)
+			g.logger.Infof("pourParams: %v", pourParams)
 			sleep := pourParams[i%2][1]
-			logger.Infof("sleep: %f", sleep)
+			g.logger.Infof("sleep: %f", sleep)
 			time.Sleep(time.Millisecond * time.Duration(sleep))
 			// NOW WE SET THE SPEED AND ACCEL OF THE XARM TO 180 and 180*20
-			_, err := xArmComponent.DoCommand(context.Background(), map[string]interface{}{
+			_, err := g.arm.DoCommand(ctx, map[string]interface{}{
 				"set_speed":        180,
 				"set_acceleration": 180 * 20,
 			})
 			if err != nil {
-				g.setStatus(err.Error())
 				return err
 			}
 		}
 		cmd := map[string]interface{}{builtin.DoExecute: plan.Trajectory()}
-		_, err := motionService.DoCommand(context.Background(), cmd)
+		_, err := g.motion.DoCommand(ctx, cmd)
 		if err != nil {
-			g.setStatus(err.Error())
 			return err
 		}
 		if (i+1)%3 == 0 {
 			// NOW WE SET THE SPEED AND ACCEL OF THE ARM BACK TO 50 and 100
-			_, err := xArmComponent.DoCommand(context.Background(), map[string]interface{}{
+			_, err := g.arm.DoCommand(ctx, map[string]interface{}{
 				"set_speed":        60,
 				"set_acceleration": 100,
 			})
 			if err != nil {
-				g.setStatus(err.Error())
 				return err
 			}
 		}
 	}
 
-	err = xArmComponent.MoveToJointPositions(context.Background(), intermediateJP, nil)
+	err = g.arm.MoveToJointPositions(ctx, intermediateJP, nil)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 
 	// this should become a plan so that we not knock over cups
@@ -595,26 +586,24 @@ func (g *gen) executeDemo(motionService motion.Service, logger logging.Logger, x
 		-2.1456081867164793486,
 	})
 
-	err = xArmComponent.MoveToJointPositions(context.Background(), liftedJP, nil)
+	err = g.arm.MoveToJointPositions(ctx, liftedJP, nil)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 
 	for _, plan := range afterPourPlans {
 		cmd := map[string]interface{}{builtin.DoExecute: plan.Trajectory()}
-		_, err := motionService.DoCommand(context.Background(), cmd)
+		_, err := g.motion.DoCommand(ctx, cmd)
 		if err != nil {
-			g.setStatus(err.Error())
 			return err
 		}
 	}
-	_, err = xArmComponent.DoCommand(context.Background(), map[string]interface{}{
+	_, err = g.arm.DoCommand(ctx, map[string]interface{}{
 		"setup_gripper": true,
 		"move_gripper":  850,
 	})
 	if err != nil {
-		g.setStatus(err.Error())
-		logger.Fatal(err)
+		return err
 	}
 	g.setStatus("done running the demo")
 	return nil
@@ -744,8 +733,8 @@ func reversePlan(originalPlan motionplan.Plan) motionplan.Plan {
 	return motionplan.NewSimplePlan(path, traj)
 }
 
-func getWeight(weightSensor sensor.Sensor) (int, error) {
-	readings1, _ := weightSensor.Readings(context.Background(), nil)
+func (g *gen) getWeight(ctx context.Context) (int, error) {
+	readings1, _ := g.weight.Readings(ctx, nil)
 	mass1 := readings1["mass_kg"].(float64)
 	massInGrams1 := math.Round(mass1 * 1000)
 	time.Sleep(time.Millisecond * 500)

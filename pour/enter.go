@@ -3,6 +3,7 @@ package pour
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"runtime"
@@ -41,27 +42,27 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 		conf:   config,
 	}
 
-	g.a, err = arm.FromDependencies(deps, config.ArmName)
+	g.arm, err = arm.FromDependencies(deps, config.ArmName)
 	if err != nil {
 		return nil, err
 	}
 
-	g.c, err = camera.FromDependencies(deps, config.CameraName)
+	g.cam, err = camera.FromDependencies(deps, config.CameraName)
 	if err != nil {
 		return nil, err
 	}
 
-	g.s, err = sensor.FromDependencies(deps, config.WeightSensorName)
+	g.weight, err = sensor.FromDependencies(deps, config.WeightSensorName)
 	if err != nil {
 		return nil, err
 	}
 
-	g.m, err = motion.FromDependencies(deps, "builtin")
+	g.motion, err = motion.FromDependencies(deps, "builtin")
 	if err != nil {
 		return nil, err
 	}
 
-	g.v, err = vision.FromDependencies(deps, config.CircleDetectionService)
+	g.camVision, err = vision.FromDependencies(deps, config.CircleDetectionService)
 	if err != nil {
 		return nil, err
 	}
@@ -118,11 +119,12 @@ type gen struct {
 	web *http.Server
 
 	robotClient *client.RobotClient
-	a           arm.Arm
-	c           camera.Camera
-	s           sensor.Sensor
-	m           motion.Service
-	v           vision.Service
+
+	arm       arm.Arm
+	cam       camera.Camera
+	weight    sensor.Sensor
+	motion    motion.Service
+	camVision vision.Service
 
 	statusLock sync.Mutex
 	status     string
@@ -177,20 +179,33 @@ func (g *gen) Close(ctx context.Context) error {
 	)
 }
 
-// DoCommand echos input back to the caller.
+// DoCommand
 func (g *gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+	// TODO-eliot cancel old movement
+
 	g.logger.Infof("cmd: %v", cmd)
 	if _, ok := cmd["stop"]; ok {
 		g.logger.Info("WE ARE INSIDE THE STOP CONDITIONAL AND ARE ABOUT TO RETURN")
-		return nil, g.a.Stop(ctx, nil)
+		return nil, g.arm.Stop(ctx, nil)
 	}
 	if _, ok := cmd["status"]; ok {
 		return map[string]interface{}{"status": g.getStatus()}, nil
 	}
-	return cmd, g.calibrate(ctx)
+
+	doPour, _ := cmd["do-pour"].(bool)
+
+	err := g.startPouringProcess(ctx, doPour)
+	if err != nil {
+		g.setStatus(fmt.Sprintf("error: %v", err))
+	} else {
+		g.setStatus("success")
+	}
+
+	return map[string]interface{}{}, err
 }
 
 func (g *gen) setStatus(input string) {
+	g.logger.Info(input)
 	g.statusLock.Lock()
 	defer g.statusLock.Unlock()
 	g.status = input
