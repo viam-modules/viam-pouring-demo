@@ -3,8 +3,8 @@ package pour
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
-
 	"time"
 
 	"github.com/golang/geo/r3"
@@ -492,11 +492,10 @@ func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, af
 
 	// NEED TO ADD LOGIC ON WHEN TO OPEN AND CLOSE THE GRIPPER
 	// first we need to make sure that the griper is open
-	// Open gripper
-	g.arm.DoCommand(ctx, map[string]interface{}{
-		"setup_gripper": true,
-		"move_gripper":  850,
-	})
+	err := g.gripper.Open(ctx, nil)
+	if err != nil {
+		return err
+	}
 
 	// plans which:
 	// move the arm into the neutral position
@@ -510,11 +509,13 @@ func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, af
 			return err
 		}
 		if i == 1 {
-			g.arm.DoCommand(ctx, map[string]interface{}{
-				"setup_gripper": true,
-				"move_gripper":  0,
-			})
-			time.Sleep(time.Second)
+			got, err := g.gripper.Grab(ctx, nil)
+			if err != nil {
+				return err
+			}
+			if !got {
+				return fmt.Errorf("didn't pick up bottle")
+			}
 		}
 	}
 
@@ -528,9 +529,9 @@ func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, af
 		-2.7665438651969944672,
 	})
 
-	err := g.arm.MoveToJointPositions(ctx, intermediateJP, nil)
+	err = g.arm.MoveToJointPositions(ctx, intermediateJP, nil)
 	if err != nil {
-		g.logger.Fatal(err)
+		return err
 	}
 
 	// plans which:
@@ -596,10 +597,7 @@ func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, af
 			return err
 		}
 	}
-	_, err = g.arm.DoCommand(ctx, map[string]interface{}{
-		"setup_gripper": true,
-		"move_gripper":  850,
-	})
+	err = g.gripper.Open(ctx, nil)
 	if err != nil {
 		return err
 	}

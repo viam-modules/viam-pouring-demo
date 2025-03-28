@@ -14,6 +14,7 @@ import (
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
+	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
@@ -43,6 +44,11 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 	}
 
 	g.arm, err = arm.FromDependencies(deps, config.ArmName)
+	if err != nil {
+		return nil, err
+	}
+
+	g.gripper, err = gripper.FromDependencies(deps, config.GripperName)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +93,24 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 }
 
 func (cfg *Config) Validate(path string) ([]string, error) {
-	return []string{cfg.ArmName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, nil
+	if cfg.ArmName == "" {
+		return nil, fmt.Errorf("need an arm name")
+	}
+
+	if cfg.GripperName == "" {
+		return nil, fmt.Errorf("need a gripper name")
+	}
+	if cfg.CameraName == "" {
+		return nil, fmt.Errorf("need a camera name")
+	}
+	if cfg.WeightSensorName == "" {
+		return nil, fmt.Errorf("need a weight name")
+	}
+	if cfg.CircleDetectionService == "" {
+		return nil, fmt.Errorf("need a circledetectionservice name")
+	}
+
+	return []string{cfg.ArmName, cfg.GripperName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, nil
 }
 
 type Config struct {
@@ -95,11 +118,8 @@ type Config struct {
 	CameraName             string `json:"camera_name"`
 	CircleDetectionService string `json:"circle_detection_service"`
 	WeightSensorName       string `json:"weight_sensor_name"`
+	GripperName            string `json:"gripper_name"`
 
-	DeltaXPos    float64 `json:"delta_x_pos"`
-	DeltaYPos    float64 `json:"delta_y_pos"`
-	DeltaXNeg    float64 `json:"delta_x_neg"`
-	DeltaYNeg    float64 `json:"delta_y_neg"`
 	BottleHeight float64 `json:"bottle_height"`
 
 	CPUThreads int `json:"cpu_threads"`
@@ -110,12 +130,7 @@ func NewCamTesting(cam camera.Camera, camVision vision.Service, logger logging.L
 		cam:       cam,
 		camVision: camVision,
 		logger:    logger,
-		conf: &Config{
-			DeltaXPos: 0.225,
-			DeltaYPos: 0.31,
-			DeltaXNeg: 0.295,
-			DeltaYNeg: 0.295,
-		},
+		conf:      &Config{},
 	}
 }
 
@@ -135,6 +150,7 @@ type Gen struct {
 	robotClient *client.RobotClient
 
 	arm       arm.Arm
+	gripper   gripper.Gripper
 	cam       camera.Camera
 	weight    sensor.Sensor
 	motion    motion.Service

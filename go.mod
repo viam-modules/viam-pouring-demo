@@ -5,7 +5,6 @@ go 1.23.0
 toolchain go1.23.2
 
 require (
-	github.com/erh/vmodutils v0.0.1
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	go.uber.org/multierr v1.11.0
 	go.viam.com/rdk v0.68.1
@@ -45,6 +44,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/edaniels/golog v0.0.0-20230215213219-28954395e8d0 // indirect
 	github.com/edaniels/lidario v0.0.0-20220607182921-5879aa7b96dd // indirect
+	github.com/erh/vmodutils v0.0.0-20250328210906-a75244708249 // indirect
 	github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fogleman/gg v1.3.0 // indirect
@@ -181,5 +181,3 @@ require (
 	periph.io/x/conn/v3 v3.7.0 // indirect
 	periph.io/x/host/v3 v3.8.1-0.20230331112814-9f0d9f7d76db // indirect
 )
-
-replace github.com/erh/vmodutils => /Users/erh/work/vmodutils
