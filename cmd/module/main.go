@@ -2,6 +2,7 @@
 package main
 
 import (
+	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/module"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/generic"
@@ -12,5 +13,6 @@ import (
 func main() {
 	module.ModularMain(
 		resource.APIModel{API: generic.API, Model: pour.Model},
+		resource.APIModel{API: sensor.API, Model: pour.WeightModel},
 	)
 }

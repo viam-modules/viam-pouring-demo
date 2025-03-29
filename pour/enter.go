@@ -25,7 +25,7 @@ import (
 	"go.viam.com/utils/rpc"
 )
 
-var Model = resource.NewModel("viam", "pouring-demo", "pour")
+var Model = NamespaceFamily.WithModel("pour")
 
 func init() {
 	resource.RegisterService(generic.API, Model, resource.Registration[resource.Resource, *Config]{Constructor: newPour})

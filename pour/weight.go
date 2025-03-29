@@ -3,8 +3,6 @@ package pour
 import (
 	"context"
 	"math"
-	"sort"
-	"time"
 )
 
 var (
@@ -58,20 +56,6 @@ func getAngleAndSleep(bottleWeight int) []float64 {
 }
 
 func (g *Gen) getWeight(ctx context.Context) (int, error) {
-	all := []int{}
-	for i := 0; i < 10; i++ {
-		x, err := g.getWeightOnce(ctx)
-		if err != nil {
-			return 0, err
-		}
-		all = append(all, x)
-		time.Sleep(time.Millisecond * 25)
-	}
-	sort.Ints(all)
-	return (all[4] + all[5] + all[6]) / 3, nil
-}
-
-func (g *Gen) getWeightOnce(ctx context.Context) (int, error) {
 	readings1, _ := g.weight.Readings(ctx, nil)
 	mass1 := readings1["mass_kg"].(float64)
 	massInGrams1 := math.Round(mass1 * 1000)
