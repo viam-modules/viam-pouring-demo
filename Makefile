@@ -25,7 +25,7 @@ update:
 test:
 	$(GO_BUILD_ENV) go test ./...
 
-module.tar.gz: meta.json $(MODULE_BINARY)
+module.tar.gz: test meta.json $(MODULE_BINARY)
 ifeq ($(VIAM_TARGET_OS), windows)
 	jq '.entrypoint = "./bin/viam-pouring-demo.exe"' meta.json > temp.json && mv temp.json meta.json
 else
