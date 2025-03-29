@@ -28,7 +28,10 @@ func (g *Gen) pickupBottle(ctx context.Context, pickupSpot r3.Vector) error {
 	if err != nil {
 		return err
 	}
+
 	thePlan.add(newGripperOpen(g.gripper))
+
+	startReverse := thePlan.size()
 
 	obstacles := GenerateObstacles()
 	transforms := GenerateTransforms("world", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(pickupSpot), pickupSpot, g.conf.BottleHeight)
@@ -81,15 +84,15 @@ func (g *Gen) pickupBottle(ctx context.Context, pickupSpot r3.Vector) error {
 	// drop on scale
 	thePlan.add(newGripperOpen(g.gripper))
 
+	// xxxxx
+
+	stopReverse := thePlan.size() - 1
+
+	thePlan.addReverse(startReverse, stopReverse)
+
 	return thePlan.do(ctx)
 }
 
 func (g *Gen) eliotMoveArm(ctx context.Context, thePlan *planBuilder, what resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState) error {
-	plan, err := g.getPlan(ctx, thePlan.current(), what, goal, worldState, &linearAndBottleConstraint, 0, 100)
-	if err != nil {
-		return fmt.Errorf("failing to get plan: %v", err)
-	}
-	thePlan.add(newMotionPlanAction(g.motion, what.ShortName(), plan))
-	return nil
-
+	return g.getPlanAndAdd(ctx, thePlan, what, goal, worldState, &linearAndBottleConstraint, 0, 100)
 }

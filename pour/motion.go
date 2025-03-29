@@ -37,6 +37,13 @@ var linearAndBottleConstraint = motionplan.Constraints{
 	},
 }
 
+// Define an orientation constraint so that the bottle is not flipped over when moving
+var orientationConstraint = motionplan.Constraints{
+	OrientationConstraint: []motionplan.OrientationConstraint{
+		{OrientationToleranceDegs: 30},
+	},
+}
+
 // Compute orientation to approach bottle. We may also just want to hardcode rather than depending on the start position
 var vectorArmToBottle = r3.Vector{X: -1, Y: 0, Z: 0}
 var grabVectorOrient = &spatialmath.OrientationVector{OX: vectorArmToBottle.X, OY: vectorArmToBottle.Y, OZ: vectorArmToBottle.Z}

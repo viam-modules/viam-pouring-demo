@@ -17,6 +17,7 @@ type action interface {
 	isPlan() bool
 	position() []referenceframe.Input
 	do(ctx context.Context) error
+	reverse() action
 }
 
 // ----
@@ -56,6 +57,10 @@ func (ma *motionplanAction) do(ctx context.Context) error {
 	return err
 }
 
+func (ma *motionplanAction) reverse() action {
+	return &motionplanAction{motion: ma.motion, frame: ma.frame, plan: reversePlan(ma.plan)}
+}
+
 // ----
 func newMoveToJointPositionsAction(a arm.Arm, joints []referenceframe.Input) action {
 	return &moveToJointPositions{a, joints}
@@ -74,6 +79,9 @@ func (a *moveToJointPositions) position() []referenceframe.Input {
 }
 func (a *moveToJointPositions) do(ctx context.Context) error {
 	return a.a.MoveToJointPositions(ctx, a.joints, nil)
+}
+func (a *moveToJointPositions) reverse() action {
+	return a
 }
 
 // ----
@@ -99,6 +107,9 @@ func (a *setSpeedAction) do(ctx context.Context) error {
 	})
 	return err
 }
+func (a *setSpeedAction) reverse() action {
+	return &emptyAction{}
+}
 
 // ----
 
@@ -119,6 +130,27 @@ func (sa *sleepAction) position() []referenceframe.Input {
 func (sa *sleepAction) do(ctx context.Context) error {
 	time.Sleep(sa.dur)
 	return nil
+}
+func (sa *sleepAction) reverse() action {
+	return sa
+}
+
+// ----
+
+type emptyAction struct {
+}
+
+func (a *emptyAction) isPlan() bool {
+	return false
+}
+func (a *emptyAction) position() []referenceframe.Input {
+	return nil
+}
+func (a *emptyAction) do(ctx context.Context) error {
+	return nil
+}
+func (a *emptyAction) reverse() action {
+	return a
 }
 
 // ----
@@ -146,6 +178,9 @@ func (gg *gripperGrabAction) do(ctx context.Context) error {
 
 	return err
 }
+func (gg *gripperGrabAction) reverse() action {
+	return newGripperOpen(gg.g)
+}
 
 func newGripperOpen(g gripper.Gripper) action {
 	return &gripperOpenAction{g}
@@ -164,6 +199,9 @@ func (gg *gripperOpenAction) position() []referenceframe.Input {
 func (gg *gripperOpenAction) do(ctx context.Context) error {
 	return gg.g.Open(ctx, nil)
 }
+func (gg *gripperOpenAction) reverse() action {
+	return newGripperGrab(gg.g)
+}
 
 // ----
 
@@ -174,6 +212,10 @@ type planBuilder struct {
 
 func newPlanBuilder(start []referenceframe.Input) *planBuilder {
 	return &planBuilder{start: start}
+}
+
+func (pb *planBuilder) size() int {
+	return len(pb.plans)
 }
 
 func (pb *planBuilder) add(a action) {
@@ -204,4 +246,10 @@ func (pb *planBuilder) do(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (pb *planBuilder) addReverse(start, endInclusive int) {
+	for i := endInclusive; i >= start; i-- {
+		pb.add(pb.plans[i].reverse())
+	}
 }

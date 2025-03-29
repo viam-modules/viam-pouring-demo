@@ -39,12 +39,6 @@ var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
 })
 
 func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector, doPour bool) error {
-	numPlans := 3 + 3*len(cupLocations)
-
-	// Define an orientation constraint so that the bottle is not flipped over when moving
-	orientationConst := motionplan.OrientationConstraint{OrientationToleranceDegs: 30}
-	orientationConstraint := motionplan.NewConstraints(nil, nil, []motionplan.OrientationConstraint{orientationConst}, nil)
-
 	// Define the resource names of bottle and gripper as they do not exist in the config
 	bottleResource := resource.Name{Name: "bottle"}
 	gripperResource := resource.Name{Name: "gripper"}
@@ -57,7 +51,6 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	// worldState combines the obstacles we wish to avoid at plan time with other frames (gripper & bottle) that are found on the robot
 	worldState, err := referenceframe.NewWorldState(obstacles, transforms)
 	if err != nil {
-		g.setStatus(err.Error())
 		return err
 	}
 
@@ -66,7 +59,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	if err != nil {
 		return err
 	}
-	// bottleWeight += 1000
+
 	g.logger.Infof("bottleWeight: %d", bottleWeight)
 	if bottleWeight < emptyBottleWeight {
 		return errors.New("not enough liquid in bottle to pour into any of the given cups -- please refill the bottle")
@@ -76,7 +69,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	// ---------------------------------------------------------------------------------
 	// HERE WE CONSTRUCT THE FIRST PLAN
 	// THE FIRST PLAN IS MOVING THE ARM TO BE IN THE NEUTRAL POSITION
-	g.logger.Info("PLANNING FOR THE 1st MOVEMENT")
+	g.logger.Info("PLANNING the prep")
 
 	thePlan, err := g.startPlan(ctx)
 	if err != nil {
@@ -91,8 +84,6 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 		return err
 	}
 
-	g.setStatus("1/" + strconv.Itoa(numPlans) + " complete")
-
 	// ---------------------------------------------------------------------------------
 	// HERE WE CONSTRUCT THE SECOND PLAN
 	// THE SECOND PLAN MOVES THE GRIPPER TO A POSITION WHERE IT CAN GRASP THE BOTTLE
@@ -104,9 +95,6 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 		return err
 	}
 
-	g.setStatus("2/" + strconv.Itoa(numPlans) + " complete")
-
-	// ---------------------------------------------------------------------------------
 	// HERE WE CONSTRUCT THE THIRD PLAN
 	// THE THIRD PLAN MOVES THE GRIPPER WHICH CLUTCHES THE BOTTLE INTO THE LIFTED GOAL POSITION
 	// REDEFINE BOTTLE LINK TO BE ATTACHED TO GRIPPER
@@ -130,7 +118,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	if err != nil {
 		return err
 	}
-	g.setStatus("3/" + strconv.Itoa(numPlans) + " complete")
+	g.setStatus("done with prep planning")
 
 	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour))
 
@@ -178,12 +166,10 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourAngleSafe, Theta: 179},
 		)
 
-		err = g.getPlanAndAddForCup(ctx, thePlan, bottleResource, pourReadyGoal, worldState, orientationConstraint)
+		err = g.getPlanAndAddForCup(ctx, thePlan, bottleResource, pourReadyGoal, worldState, &orientationConstraint)
 		if err != nil {
 			return fmt.Errorf("could not plan for cup %d even after retrying %v", i, err)
 		}
-
-		g.setStatus(fmt.Sprintf("%d / %d complete", len(cupPouringPlans)+3, numPlans))
 
 		pourGoal := spatialmath.NewPose(
 			r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: cupLoc.Z - 20},
@@ -202,12 +188,13 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 		thePlan.add(newMotionPlanAction(g.motion, g.arm.Name().ShortName(), reversePlan(p)))
 		thePlan.add(newSetSpeed(g.arm, 60, 100))
 
-		g.setStatus(fmt.Sprintf("%d / %d complete", len(cupPouringPlans)+3, numPlans))
+		g.setStatus(fmt.Sprintf("planned cup %d", i+1))
 	}
 
 	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour))
 
 	// this should become a plan so that we not knock over cups
+	// this is above the scale about 50cm
 	thePlan.add(newMoveToJointPositionsAction(g.arm, referenceframe.FloatsToInputs([]float64{
 		1.6003754138906833848,
 		-0.39200037717721969432,
