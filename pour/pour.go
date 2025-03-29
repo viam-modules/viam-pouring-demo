@@ -47,34 +47,6 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	vectorArmToBottle := r3.Vector{X: -1, Y: 0, Z: 0}
 	grabVectorOrient := &spatialmath.OrientationVector{OX: vectorArmToBottle.X, OY: vectorArmToBottle.Y, OZ: vectorArmToBottle.Z}
 
-	// DEFINE CONSTRAINTS HERE
-	// Move linearly allowing no collisions
-	linearConstraint := motionplan.Constraints{
-		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 5, OrientationToleranceDegs: 5},
-		},
-	}
-
-	// Allow gripper-bottle collision to grab
-	bottleGripperSpec := motionplan.Constraints{
-		CollisionSpecification: []motionplan.CollisionSpecification{
-			{Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
-				{Frame1: "gripper_origin", Frame2: "bottle_origin"},
-			}},
-		},
-	}
-
-	linearAndBottleConstraint := motionplan.Constraints{
-		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 1},
-		},
-		CollisionSpecification: []motionplan.CollisionSpecification{
-			{Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
-				{Frame1: "gripper_origin", Frame2: "bottle_origin"},
-			}},
-		},
-	}
-
 	// Define an orientation constraint so that the bottle is not flipped over when moving
 	orientationConst := motionplan.OrientationConstraint{OrientationToleranceDegs: 30}
 	orientationConstraint := motionplan.NewConstraints(nil, nil, []motionplan.OrientationConstraint{orientationConst}, nil)

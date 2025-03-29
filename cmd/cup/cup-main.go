@@ -45,7 +45,7 @@ func realMain() error {
 		return err
 	}
 
-	g := pour.NewTesting(logger, nil, nil, cam, nil, nil, camVision)
+	g := pour.NewTesting(logger, client, nil, nil, cam, nil, nil, camVision)
 	fmt.Printf("g %v\n", g)
 
 	cups, err := g.FindCupsEliot(ctx)

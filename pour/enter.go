@@ -127,6 +127,7 @@ type Config struct {
 }
 
 func NewTesting(logger logging.Logger,
+	client *client.RobotClient,
 	arm arm.Arm,
 	gripper gripper.Gripper,
 	cam camera.Camera,
@@ -135,14 +136,15 @@ func NewTesting(logger logging.Logger,
 	camVision vision.Service,
 ) *Gen {
 	return &Gen{
-		arm:       arm,
-		gripper:   gripper,
-		cam:       cam,
-		weight:    weight,
-		motion:    motion,
-		camVision: camVision,
-		logger:    logger,
-		conf:      &Config{},
+		robotClient: client,
+		arm:         arm,
+		gripper:     gripper,
+		cam:         cam,
+		weight:      weight,
+		motion:      motion,
+		camVision:   camVision,
+		logger:      logger,
+		conf:        &Config{},
 	}
 }
 

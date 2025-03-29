@@ -70,12 +70,14 @@ func realMain() error {
 		logger.Warnf("no vision service: %v", err)
 	}
 
-	g := pour.NewTesting(logger, arm, gripper, cam, weight, motion, camVision)
+	g := pour.NewTesting(logger, client, arm, gripper, cam, weight, motion, camVision)
 
 	cmd := flag.Arg(0)
 	switch cmd {
 	case "reset":
 		return g.ResetArmToHome(ctx)
+	case "pick-far":
+		return g.PickFarBottle(ctx)
 	case "visWorldState":
 		return visObstacles(arm)
 	default:
