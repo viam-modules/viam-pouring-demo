@@ -8,7 +8,12 @@
         {
             "api": "rdk:service:generic",
             "model": "viam:pouring-demo:pour"
+        },
+        {
+            "api": "rdk:component:sensor",
+            "model": "viam:pouring-demo:pouring-weight-smoother"
         }
+
     ],
     "entrypoint": "bin/viam-pouring-demo",
     "build": {

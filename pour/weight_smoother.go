@@ -75,6 +75,10 @@ func (ws *WeightSmoother) Name() resource.Name {
 }
 
 func (ws *WeightSmoother) Readings(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
+	if extra == nil {
+		extra = map[string]interface{}{}
+	}
+
 	cycles, ok := vmodutils.GetIntFromMap(extra, "cycles")
 	if !ok {
 		cycles = 10

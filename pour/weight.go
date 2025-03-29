@@ -56,7 +56,15 @@ func getAngleAndSleep(bottleWeight int) []float64 {
 }
 
 func (g *Gen) getWeight(ctx context.Context) (int, error) {
-	readings1, _ := g.weight.Readings(ctx, nil)
+	field := "mass_kg"
+	readings1, err := g.weight.Readings(ctx, map[string]interface{}{
+		"field":  field,
+		"sleep":  25,
+		"cycles": 10,
+	})
+	if err != nil {
+		return 0, err
+	}
 	mass1 := readings1["mass_kg"].(float64)
 	massInGrams1 := math.Round(mass1 * 1000)
 	return int(massInGrams1), nil
