@@ -579,31 +579,31 @@ func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, af
 func GenerateTransforms(parent, armName string, pose spatialmath.Pose, bottleGrabPoint r3.Vector, bottleHeight float64) []*referenceframe.LinkInFrame {
 
 	transforms := []*referenceframe.LinkInFrame{}
-	/*
-		// frame 1
-		bottleOffsetFrame := referenceframe.NewLinkInFrame(
-			parent,
-			pose,
-			"bottle_offset",
-			nil,
-		)
-		transforms = append(transforms, bottleOffsetFrame)
 
-		// frame 2
-		bottleCenterZ := bottleHeight / 2.
+	// frame 1
+	bottleOffsetFrame := referenceframe.NewLinkInFrame(
+		parent,
+		pose,
+		"bottle_offset",
+		nil,
+	)
+	transforms = append(transforms, bottleOffsetFrame)
 
-		bottleLinkLen := r3.Vector{X: 0, Y: 0, Z: bottleHeight - bottleGrabPoint.Z}
+	// frame 2
+	bottleCenterZ := bottleHeight / 2.
 
-		bottleGeom, _ := spatialmath.NewCapsule(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -bottleCenterZ}), 35, 260, "bottle")
+	bottleLinkLen := r3.Vector{X: 0, Y: 0, Z: bottleHeight - bottleGrabPoint.Z}
 
-		bottleFrame := referenceframe.NewLinkInFrame(
-			"bottle_offset",
-			spatialmath.NewPoseFromPoint(bottleLinkLen),
-			"bottle",
-			bottleGeom,
-		)
-		transforms = append(transforms, bottleFrame)
-	*/
+	bottleGeom, _ := spatialmath.NewCapsule(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -bottleCenterZ}), 35, 260, "bottle")
+
+	bottleFrame := referenceframe.NewLinkInFrame(
+		"bottle_offset",
+		spatialmath.NewPoseFromPoint(bottleLinkLen),
+		"bottle",
+		bottleGeom,
+	)
+	transforms = append(transforms, bottleFrame)
+
 	// frame 3
 	gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 160}, "gripper")
 	gripperFrame := referenceframe.NewLinkInFrame(
