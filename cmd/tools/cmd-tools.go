@@ -30,9 +30,16 @@ func realMain() error {
 	ctx := context.Background()
 	logger := logging.NewLogger("cup")
 
+	debug := false
 	ms := vmodutils.AddMachineFlags()
 
+	flag.BoolVar(&debug, "debug", false, "")
+
 	flag.Parse()
+
+	if debug {
+		logger.SetLevel(logging.DEBUG)
+	}
 
 	client, err := ms.Connect(ctx, logger)
 	if err != nil {
@@ -78,6 +85,8 @@ func realMain() error {
 		return g.ResetArmToHome(ctx)
 	case "pick-far":
 		return g.PickFarBottle(ctx)
+	case "pick-mid":
+		return g.PickMiddleBottle(ctx)
 	case "visWorldState":
 		return visObstacles(arm)
 	default:

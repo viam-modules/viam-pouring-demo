@@ -43,10 +43,6 @@ var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
 func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector, doPour bool) error {
 	numPlans := 3 + 3*len(cupLocations)
 
-	// Compute orientation to approach bottle. We may also just want to hardcode rather than depending on the start position
-	vectorArmToBottle := r3.Vector{X: -1, Y: 0, Z: 0}
-	grabVectorOrient := &spatialmath.OrientationVector{OX: vectorArmToBottle.X, OY: vectorArmToBottle.Y, OZ: vectorArmToBottle.Z}
-
 	// Define an orientation constraint so that the bottle is not flipped over when moving
 	orientationConst := motionplan.OrientationConstraint{OrientationToleranceDegs: 30}
 	orientationConstraint := motionplan.NewConstraints(nil, nil, []motionplan.OrientationConstraint{orientationConst}, nil)
@@ -581,28 +577,34 @@ func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, af
 
 // Generate any transforms needed. Pass parent to parent the bottle to world or the arm
 func GenerateTransforms(parent, armName string, pose spatialmath.Pose, bottleGrabPoint r3.Vector, bottleHeight float64) []*referenceframe.LinkInFrame {
-	bottleOffsetFrame := referenceframe.NewLinkInFrame(
-		parent,
-		pose,
-		"bottle_offset",
-		nil,
-	)
-	transforms := []*referenceframe.LinkInFrame{bottleOffsetFrame}
 
-	bottleCenterZ := bottleHeight / 2.
+	transforms := []*referenceframe.LinkInFrame{}
+	/*
+		// frame 1
+		bottleOffsetFrame := referenceframe.NewLinkInFrame(
+			parent,
+			pose,
+			"bottle_offset",
+			nil,
+		)
+		transforms = append(transforms, bottleOffsetFrame)
 
-	bottleLinkLen := r3.Vector{X: 0, Y: 0, Z: bottleHeight - bottleGrabPoint.Z}
+		// frame 2
+		bottleCenterZ := bottleHeight / 2.
 
-	bottleGeom, _ := spatialmath.NewCapsule(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -bottleCenterZ}), 35, 260, "bottle")
+		bottleLinkLen := r3.Vector{X: 0, Y: 0, Z: bottleHeight - bottleGrabPoint.Z}
 
-	bottleFrame := referenceframe.NewLinkInFrame(
-		"bottle_offset",
-		spatialmath.NewPoseFromPoint(bottleLinkLen),
-		"bottle",
-		bottleGeom,
-	)
-	transforms = append(transforms, bottleFrame)
+		bottleGeom, _ := spatialmath.NewCapsule(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -bottleCenterZ}), 35, 260, "bottle")
 
+		bottleFrame := referenceframe.NewLinkInFrame(
+			"bottle_offset",
+			spatialmath.NewPoseFromPoint(bottleLinkLen),
+			"bottle",
+			bottleGeom,
+		)
+		transforms = append(transforms, bottleFrame)
+	*/
+	// frame 3
 	gripperGeom, _ := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 160}, "gripper")
 	gripperFrame := referenceframe.NewLinkInFrame(
 		armName,
@@ -617,8 +619,6 @@ func GenerateTransforms(parent, armName string, pose spatialmath.Pose, bottleGra
 
 // Create the obstacles for things not to hit
 func GenerateObstacles() []*referenceframe.GeometriesInFrame {
-	obstaclesInFrame := []*referenceframe.GeometriesInFrame{}
-
 	obstacles := []spatialmath.Geometry{}
 
 	tableOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -428, Y: 0, Z: -550})
@@ -626,13 +626,13 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 	tableObj, _ := spatialmath.NewBox(tableOrigin, tableDims, "table")
 	obstacles = append(obstacles, tableObj)
 
-	sideWallOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -428, Y: 585, Z: 0})
+	sideWallOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -428, Y: 655, Z: 0})
 	sideWallDims := r3.Vector{X: 856, Y: 120, Z: 960.0}
 	sideWallObj, _ := spatialmath.NewBox(sideWallOrigin, sideWallDims, "sideWall")
 	obstacles = append(obstacles, sideWallObj)
 
 	elevatedTableCenterOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -400, Y: 0, Z: 0})
-	elevatedTableCenterDims := r3.Vector{X: 660, Y: 200, Z: 50.0}
+	elevatedTableCenterDims := r3.Vector{X: 660, Y: 100, Z: 25.0}
 	elevatedTableCenterObj, _ := spatialmath.NewBox(elevatedTableCenterOrigin, elevatedTableCenterDims, "elevatedTableCenter")
 	obstacles = append(obstacles, elevatedTableCenterObj)
 
@@ -656,6 +656,7 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 	weightSensorObj, _ := spatialmath.NewBox(weightSensorOrigin, weightSensorDims, "weightSensor")
 	obstacles = append(obstacles, weightSensorObj)
 
+	obstaclesInFrame := []*referenceframe.GeometriesInFrame{}
 	obstaclesInFrame = append(obstaclesInFrame, referenceframe.NewGeometriesInFrame(referenceframe.World, obstacles))
 
 	return obstaclesInFrame
@@ -666,12 +667,11 @@ func (g *Gen) getPlan(ctx context.Context, armCurrentInputs []referenceframe.Inp
 	parts := fsCfg.Parts
 	fs, err := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
 	if err != nil {
-		g.logger.Infof("we are logging an error here: %v", err)
 		return nil, err
 	}
 
 	fsInputs := referenceframe.NewZeroInputs(fs)
-	fsInputs[g.conf.ArmName] = armCurrentInputs
+	fsInputs[g.arm.Name().ShortName()] = armCurrentInputs
 	g.logger.Infof("rseed: %d", rseed)
 
 	return motionplan.PlanMotion(ctx, &motionplan.PlanRequest{

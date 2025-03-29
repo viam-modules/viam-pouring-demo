@@ -26,13 +26,10 @@ func (g *Gen) startPouringProcess(ctx context.Context, doPour bool) error {
 	// order the cups so that we got the farthest one first and the closest one last
 	pourPositions = sortByDistance(pourPositions)
 
-	// HARDCODE FOR NOW
-	wineBottlePoint := r3.Vector{X: -255, Y: 334, Z: 108}
-
 	g.setStatus("found the positions of the cups, will do planning now")
 
 	// execute the demo
-	return g.demoPlanMovements(ctx, wineBottlePoint, pourPositions, doPour)
+	return g.demoPlanMovements(ctx, wineBottleMeasurePoint, pourPositions, doPour)
 }
 
 // cupLocations is in the frame of the camefra

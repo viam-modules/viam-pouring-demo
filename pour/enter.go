@@ -281,5 +281,5 @@ func (g *Gen) ResetArmToHome(ctx context.Context) error {
 		return err
 	}
 
-	return nil
+	return g.gripper.Open(ctx, nil)
 }

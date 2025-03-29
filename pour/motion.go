@@ -1,7 +1,10 @@
 package pour
 
 import (
+	"github.com/golang/geo/r3"
+
 	"go.viam.com/rdk/motionplan"
+	"go.viam.com/rdk/spatialmath"
 )
 
 // Move linearly allowing no collisions
@@ -30,3 +33,11 @@ var linearAndBottleConstraint = motionplan.Constraints{
 		}},
 	},
 }
+
+// Compute orientation to approach bottle. We may also just want to hardcode rather than depending on the start position
+var vectorArmToBottle = r3.Vector{X: -1, Y: 0, Z: 0}
+var grabVectorOrient = &spatialmath.OrientationVector{OX: vectorArmToBottle.X, OY: vectorArmToBottle.Y, OZ: vectorArmToBottle.Z}
+
+// HARDCODE FOR NOW
+// where to measure the wine bottled
+var wineBottleMeasurePoint = r3.Vector{X: -255, Y: 334, Z: 108}
