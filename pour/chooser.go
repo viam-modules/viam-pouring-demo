@@ -93,7 +93,7 @@ func (g *Gen) eliotMoveArm(ctx context.Context, what resource.Name, goal spatial
 	if err != nil {
 		return err
 	}
-	plan, err := g.getPlan(ctx, current, what, goal, worldState, nil, 0, 100)
+	plan, err := g.getPlan(ctx, current, what, goal, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		return fmt.Errorf("failing to get plan: %v", err)
 	}
