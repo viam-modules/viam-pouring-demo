@@ -47,6 +47,12 @@ func (g *Gen) pickupBottle(ctx context.Context, pickupSpot r3.Vector) error {
 	}
 
 	// move to actual spot
+	transforms = GenerateTransforms("gripper", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(pickupSpot), pickupSpot, g.conf.BottleHeight)
+
+	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
+	if err != nil {
+		return fmt.Errorf("cannot create world state %v", err)
+	}
 	err = g.eliotMoveArm(ctx, g.arm.Name(), spatialmath.NewPose(pickupSpot, grabVectorOrient), worldState)
 	if err != nil {
 		return err
