@@ -38,12 +38,34 @@ var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
 	-2.7665438651969944672,
 })
 
-func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector, doPour bool) error {
+func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, options PouringOptions) error {
+
+	thePlan, err := g.startPlan(ctx)
+	if err != nil {
+		return err
+	}
+
+	// first we need to make sure that the griper is open
+	thePlan.add(newGripperOpen(g.gripper))
+
+	prepPhaseStartPostion := thePlan.size()
+
+	if options.PickupFromFar && options.PickupFromMid {
+		return fmt.Errorf("cannot pickup from both locations")
+	}
+
+	if options.PickupFromFar {
+		err = g.addBottleFetch(ctx, thePlan, farBottlePickup)
+	}
+	if options.PickupFromMid {
+		err = g.addBottleFetch(ctx, thePlan, middleBottlePick)
+	}
+
 	// Define the resource names of bottle and gripper as they do not exist in the config
 	bottleResource := resource.Name{Name: "bottle"}
 	gripperResource := resource.Name{Name: "gripper"}
 
-	transforms := GenerateTransforms("world", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(bottleGrabPoint), bottleGrabPoint, g.conf.BottleHeight)
+	transforms := GenerateTransforms("world", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(wineBottleMeasurePoint), wineBottleMeasurePoint, g.conf.BottleHeight)
 
 	// GenerateObstacles returns a slice of geometries we are supposed to avoid at plan time
 	obstacles := GenerateObstacles()
@@ -71,15 +93,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	// THE FIRST PLAN IS MOVING THE ARM TO BE IN THE NEUTRAL POSITION
 	g.logger.Info("PLANNING the prep")
 
-	thePlan, err := g.startPlan(ctx)
-	if err != nil {
-		return err
-	}
-
-	// first we need to make sure that the griper is open
-	thePlan.add(newGripperOpen(g.gripper))
-
-	err = g.getPlanAndAdd(ctx, thePlan, gripperResource, spatialmath.NewPose(bottleGrabPoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
+	err = g.getPlanAndAdd(ctx, thePlan, gripperResource, spatialmath.NewPose(wineBottleMeasurePoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		return err
 	}
@@ -90,7 +104,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	// ENGAGE BOTTLE
 	g.logger.Info("PLANNING FOR THE 2nd MOVEMENT")
 
-	err = g.getPlanAndAdd(ctx, thePlan, gripperResource, spatialmath.NewPose(bottleGrabPoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
+	err = g.getPlanAndAdd(ctx, thePlan, gripperResource, spatialmath.NewPose(wineBottleMeasurePoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		return err
 	}
@@ -101,7 +115,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 
 	thePlan.add(newGripperGrab(g.gripper))
 
-	transforms = GenerateTransforms("gripper", g.arm.Name().ShortName(), spatialmath.NewPoseFromOrientation(grabVectorOrient), bottleGrabPoint, g.conf.BottleHeight)
+	transforms = GenerateTransforms("gripper", g.arm.Name().ShortName(), spatialmath.NewPoseFromOrientation(grabVectorOrient), wineBottleMeasurePoint, g.conf.BottleHeight)
 	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
 	if err != nil {
 		return err
@@ -110,7 +124,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	// LIFT
 	g.logger.Info("PLANNING FOR THE 3rd MOVEMENT")
 	liftedgoal := spatialmath.NewPose(
-		r3.Vector{X: bottleGrabPoint.X, Y: bottleGrabPoint.Y, Z: bottleGrabPoint.Z + 280},
+		r3.Vector{X: wineBottleMeasurePoint.X, Y: wineBottleMeasurePoint.Y, Z: wineBottleMeasurePoint.Z + 280},
 		grabVectorOrient,
 	)
 
@@ -119,6 +133,8 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 		return err
 	}
 	g.setStatus("done with prep planning")
+
+	prepPhaseEndPosition := thePlan.size() - 1
 
 	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour))
 
@@ -205,17 +221,14 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 	})))
 
 	// go back home
-	err = g.getPlanAndAdd(ctx, thePlan, gripperResource, spatialmath.NewPose(bottleGrabPoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
-	if err != nil {
-		return err
-	}
+	thePlan.addReverse(prepPhaseStartPostion, prepPhaseEndPosition)
 
 	// open
 	thePlan.add(newGripperOpen(g.gripper))
 
 	g.logger.Infof("IT TOOK THIS LONG TO CONSTRUCT ALL PLANS: %v", time.Since(now))
 
-	if !doPour {
+	if !options.DoPour {
 		g.logger.Infof("not moving")
 		return nil
 	}
@@ -232,7 +245,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, 
 }
 
 // Generate any transforms needed. Pass parent to parent the bottle to world or the arm
-func GenerateTransforms(parent, armName string, pose spatialmath.Pose, bottleGrabPoint r3.Vector, bottleHeight float64) []*referenceframe.LinkInFrame {
+func GenerateTransforms(parent, armName string, pose spatialmath.Pose, bottlePosition r3.Vector, bottleHeight float64) []*referenceframe.LinkInFrame {
 
 	transforms := []*referenceframe.LinkInFrame{}
 
@@ -248,7 +261,7 @@ func GenerateTransforms(parent, armName string, pose spatialmath.Pose, bottleGra
 	// frame 2
 	bottleCenterZ := bottleHeight / 2.
 
-	bottleLinkLen := r3.Vector{X: 0, Y: 0, Z: bottleHeight - bottleGrabPoint.Z}
+	bottleLinkLen := r3.Vector{X: 0, Y: 0, Z: bottleHeight - bottlePosition.Z}
 
 	bottleGeom, _ := spatialmath.NewCapsule(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -bottleCenterZ}), 35, 260, "bottle")
 

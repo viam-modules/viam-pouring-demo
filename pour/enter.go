@@ -246,9 +246,12 @@ func (g *Gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 		return map[string]interface{}{"reset": true}, nil
 	}
 
-	doPour, _ := cmd["do-pour"].(bool)
+	options := PouringOptions{}
+	options.DoPour, _ = cmd["do-pour"].(bool)
+	options.PickupFromFar, _ = cmd["far"].(bool)
+	options.PickupFromMid, _ = cmd["mid"].(bool)
 
-	err := g.StartPouringProcess(ctx, doPour)
+	err := g.StartPouringProcess(ctx, options)
 	if err != nil {
 		g.setStatus(fmt.Sprintf("error: %v", err))
 	} else {

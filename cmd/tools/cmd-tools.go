@@ -90,7 +90,11 @@ func realMain() error {
 	case "visWorldState":
 		return visObstacles(arm)
 	case "pour":
-		return g.StartPouringProcess(ctx, true)
+		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true})
+	case "pour-far":
+		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromFar: true})
+	case "pour-mid":
+		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromMid: true})
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}

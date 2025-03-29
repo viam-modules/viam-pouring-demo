@@ -13,7 +13,12 @@ const (
 	cameraToTable = 715
 )
 
-func (g *Gen) StartPouringProcess(ctx context.Context, doPour bool) error {
+type PouringOptions struct {
+	PickupFromFar, PickupFromMid bool // only one of these can be true, if both are false assumes on scale
+	DoPour                       bool // if false just plans
+}
+
+func (g *Gen) StartPouringProcess(ctx context.Context, options PouringOptions) error {
 
 	//cupLocations, err := g.GetCupPositions(ctx)
 	cupLocations, err := g.FindCupsEliot(ctx)
@@ -28,8 +33,8 @@ func (g *Gen) StartPouringProcess(ctx context.Context, doPour bool) error {
 
 	g.setStatus("found the positions of the cups, will do planning now")
 
-	// execute the demo
-	return g.demoPlanMovements(ctx, wineBottleMeasurePoint, pourPositions, doPour)
+	//return g.demoPlanMovements(ctx, wineBottleMeasurePoint, pourPositions, doPour)
+	return g.demoPlanMovements(ctx, pourPositions, options)
 }
 
 // cupLocations is in the frame of the camefra
