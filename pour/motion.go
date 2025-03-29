@@ -1,6 +1,8 @@
 package pour
 
 import (
+	"context"
+
 	"github.com/golang/geo/r3"
 
 	"go.viam.com/rdk/motionplan"
@@ -102,4 +104,12 @@ func reversePlan(originalPlan motionplan.Plan) motionplan.Plan {
 		traj[len(originalPlan.Trajectory())-1-i] = v
 	}
 	return motionplan.NewSimplePlan(path, traj)
+}
+
+func (g *Gen) startPlan(ctx context.Context) (*planBuilder, error) {
+	current, err := g.arm.JointPositions(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return newPlanBuilder(current), nil
 }
