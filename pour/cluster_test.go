@@ -3,6 +3,8 @@ package pour
 import (
 	"testing"
 
+	"github.com/golang/geo/r3"
+
 	"go.viam.com/test"
 )
 
