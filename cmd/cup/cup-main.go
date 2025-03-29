@@ -45,7 +45,7 @@ func realMain() error {
 		return err
 	}
 
-	g := pour.NewCamTesting(cam, camVision, logger)
+	g := pour.NewTesting(logger, nil, nil, cam, nil, nil, camVision)
 	fmt.Printf("g %v\n", g)
 
 	//cups, err := g.GetCupPositions(ctx)

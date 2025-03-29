@@ -125,9 +125,20 @@ type Config struct {
 	CPUThreads int `json:"cpu_threads"`
 }
 
-func NewCamTesting(cam camera.Camera, camVision vision.Service, logger logging.Logger) *Gen {
+func NewTesting(logger logging.Logger,
+	arm arm.Arm,
+	gripper gripper.Gripper,
+	cam camera.Camera,
+	weight sensor.Sensor,
+	motion motion.Service,
+	camVision vision.Service,
+) *Gen {
 	return &Gen{
+		arm:       arm,
+		gripper:   gripper,
 		cam:       cam,
+		weight:    weight,
+		motion:    motion,
 		camVision: camVision,
 		logger:    logger,
 		conf:      &Config{},
@@ -177,7 +188,6 @@ func (g *Gen) setupRobotClient(ctx context.Context) error {
 		return err
 	}
 
-	g.logger.Warnf("hi %#v", r)
 	g.address = r.FQDN
 
 	machine, err := client.New(
@@ -224,7 +234,7 @@ func (g *Gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 	}
 
 	if _, ok := cmd["reset"]; ok {
-		err := ResetArmToHome(ctx, g.logger, g.arm)
+		err := g.ResetArmToHome(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -256,14 +266,14 @@ func (g *Gen) getStatus() string {
 	return g.status
 }
 
-func ResetArmToHome(ctx context.Context, logger logging.Logger, arm arm.Arm) error {
+func (g *Gen) ResetArmToHome(ctx context.Context) error {
 
-	err := arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
+	err := g.arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
 	if err != nil {
 		return err
 	}
 
-	err = arm.MoveToJointPositions(ctx, JointPositionsPickUp, nil)
+	err = g.arm.MoveToJointPositions(ctx, JointPositionsPickUp, nil)
 	if err != nil {
 		return err
 	}

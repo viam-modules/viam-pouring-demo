@@ -2,7 +2,6 @@ package pour
 
 import (
 	"context"
-	"image"
 	"sort"
 
 	"github.com/golang/geo/r3"
@@ -14,11 +13,6 @@ const (
 	cameraToTable = 715
 	cupHeight     = 170
 )
-
-type Circle struct {
-	center image.Point
-	radius int
-}
 
 func (g *Gen) startPouringProcess(ctx context.Context, doPour bool) error {
 

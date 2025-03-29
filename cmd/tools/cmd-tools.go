@@ -8,7 +8,12 @@ import (
 	"github.com/erh/vmodutils"
 
 	"go.viam.com/rdk/components/arm"
+	"go.viam.com/rdk/components/camera"
+	"go.viam.com/rdk/components/gripper"
+	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/services/motion"
+	"go.viam.com/rdk/services/vision"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
@@ -36,13 +41,40 @@ func realMain() error {
 
 	arm, err := arm.FromRobot(client, "arm")
 	if err != nil {
-		return err
+		logger.Warnf("no arm: %v", err)
 	}
+
+	gripper, err := gripper.FromRobot(client, "gripper")
+	if err != nil {
+		logger.Warnf("no gripper: %v", err)
+	}
+
+	cam, err := camera.FromRobot(client, "cam1")
+	if err != nil {
+		logger.Warnf("no camera: %v", err)
+	}
+
+	weight, err := sensor.FromRobot(client, "scale")
+	if err != nil {
+		logger.Warnf("no weight: %v", err)
+	}
+
+	motion, err := motion.FromRobot(client, "builtin")
+	if err != nil {
+		logger.Warnf("no motion: %v", err)
+	}
+
+	camVision, err := vision.FromRobot(client, "circle-service")
+	if err != nil {
+		logger.Warnf("no vision service: %v", err)
+	}
+
+	g := pour.NewTesting(logger, arm, gripper, cam, weight, motion, camVision)
 
 	cmd := flag.Arg(0)
 	switch cmd {
 	case "reset":
-		return pour.ResetArmToHome(ctx, logger, arm)
+		return g.ResetArmToHome(ctx)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}
