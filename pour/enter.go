@@ -144,7 +144,10 @@ func NewTesting(logger logging.Logger,
 		motion:      motion,
 		camVision:   camVision,
 		logger:      logger,
-		conf:        &Config{},
+		conf: &Config{
+			BottleHeight: 310,
+			CupHeight:    170,
+		},
 	}
 }
 
@@ -226,7 +229,6 @@ func (g *Gen) Close(ctx context.Context) error {
 func (g *Gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	// TODO-eliot cancel old movement
 
-	g.logger.Infof("cmd: %v", cmd)
 	if _, ok := cmd["stop"]; ok {
 		g.logger.Info("WE ARE INSIDE THE STOP CONDITIONAL AND ARE ABOUT TO RETURN")
 		return nil, g.arm.Stop(ctx, nil)
@@ -246,7 +248,7 @@ func (g *Gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 
 	doPour, _ := cmd["do-pour"].(bool)
 
-	err := g.startPouringProcess(ctx, doPour)
+	err := g.StartPouringProcess(ctx, doPour)
 	if err != nil {
 		g.setStatus(fmt.Sprintf("error: %v", err))
 	} else {

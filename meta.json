@@ -12,7 +12,12 @@
         {
             "api": "rdk:component:sensor",
             "model": "viam:pouring-demo:pouring-weight-smoother"
+        },
+        {
+            "api": "rdk:component:sensor",
+            "model": "viam:pouring-demo:pouring-weight-hardcoded"
         }
+
 
     ],
     "entrypoint": "bin/viam-pouring-demo",

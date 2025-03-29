@@ -13,7 +13,7 @@ const (
 	cameraToTable = 715
 )
 
-func (g *Gen) startPouringProcess(ctx context.Context, doPour bool) error {
+func (g *Gen) StartPouringProcess(ctx context.Context, doPour bool) error {
 
 	//cupLocations, err := g.GetCupPositions(ctx)
 	cupLocations, err := g.FindCupsEliot(ctx)

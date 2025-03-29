@@ -89,6 +89,8 @@ func realMain() error {
 		return g.PickMiddleBottle(ctx)
 	case "visWorldState":
 		return visObstacles(arm)
+	case "pour":
+		return g.StartPouringProcess(ctx, true)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}
