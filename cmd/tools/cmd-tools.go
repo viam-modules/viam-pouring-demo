@@ -7,6 +7,7 @@ import (
 
 	"github.com/erh/vmodutils"
 
+	vizClient "github.com/viam-labs/motion-tools/client"
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
@@ -75,8 +76,32 @@ func realMain() error {
 	switch cmd {
 	case "reset":
 		return g.ResetArmToHome(ctx)
+	case "visWorldState":
+		return visObstacles(arm)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
+	}
+
+	return nil
+}
+
+func visObstacles(arm arm.Arm) error {
+
+	armGeoms, err := arm.Geometries(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+
+	for _, g := range armGeoms {
+		vizClient.DrawGeometry(g, "blue")
+	}
+
+	gifs := pour.GenerateObstacles()
+
+	for _, g := range gifs {
+		for _, actualGeom := range g.Geometries() {
+			vizClient.DrawGeometry(actualGeom, "red")
+		}
 	}
 
 	return nil

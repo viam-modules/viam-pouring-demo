@@ -649,7 +649,7 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 
 	obstacles := []spatialmath.Geometry{}
 
-	tableOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -428, Y: 0, Z: -510})
+	tableOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -428, Y: 0, Z: -550})
 	tableDims := r3.Vector{X: 856, Y: 1170, Z: 960.0}
 	tableObj, _ := spatialmath.NewBox(tableOrigin, tableDims, "table")
 	obstacles = append(obstacles, tableObj)

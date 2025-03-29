@@ -121,6 +121,7 @@ type Config struct {
 	GripperName            string `json:"gripper_name"`
 
 	BottleHeight float64 `json:"bottle_height"`
+	CupHeight    float64 `json:"cup_height"`
 
 	CPUThreads int `json:"cpu_threads"`
 }

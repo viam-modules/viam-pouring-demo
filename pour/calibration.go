@@ -11,7 +11,6 @@ import (
 
 const (
 	cameraToTable = 715
-	cupHeight     = 170
 )
 
 func (g *Gen) startPouringProcess(ctx context.Context, doPour bool) error {
