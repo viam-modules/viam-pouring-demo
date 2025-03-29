@@ -218,8 +218,17 @@ func (g *Gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 		g.logger.Info("WE ARE INSIDE THE STOP CONDITIONAL AND ARE ABOUT TO RETURN")
 		return nil, g.arm.Stop(ctx, nil)
 	}
+
 	if _, ok := cmd["status"]; ok {
 		return map[string]interface{}{"status": g.getStatus()}, nil
+	}
+
+	if _, ok := cmd["reset"]; ok {
+		err := ResetArmToHome(ctx, g.logger, g.arm)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"reset": true}, nil
 	}
 
 	doPour, _ := cmd["do-pour"].(bool)
@@ -245,4 +254,19 @@ func (g *Gen) getStatus() string {
 	g.statusLock.Lock()
 	defer g.statusLock.Unlock()
 	return g.status
+}
+
+func ResetArmToHome(ctx context.Context, logger logging.Logger, arm arm.Arm) error {
+
+	err := arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
+	if err != nil {
+		return err
+	}
+
+	err = arm.MoveToJointPositions(ctx, JointPositionsPickUp, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -22,6 +22,24 @@ const (
 	emptyBottleWeight = 675
 )
 
+var JointPositionsPickUp = referenceframe.FloatsToInputs([]float64{
+	1.595939040184021,
+	0.4438844323158264,
+	-0.6554062962532043,
+	1.5953776836395264,
+	1.5655426979064941,
+	-2.9301466941833496,
+})
+
+var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
+	3.9929597377678049952,
+	-0.31163778901022853862,
+	-0.40986624359982865018,
+	2.8722410201955117515,
+	-0.28700971603322356085,
+	-2.7665438651969944672,
+})
+
 func (g *Gen) demoPlanMovements(ctx context.Context, bottleGrabPoint r3.Vector, cupLocations []r3.Vector, doPour bool) error {
 	numPlans := 3 + 3*len(cupLocations)
 
@@ -513,17 +531,7 @@ func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, af
 		}
 	}
 
-	// here we move to the intermediate jointPositions
-	intermediateJP := referenceframe.FloatsToInputs([]float64{
-		3.9929597377678049952,
-		-0.31163778901022853862,
-		-0.40986624359982865018,
-		2.8722410201955117515,
-		-0.28700971603322356085,
-		-2.7665438651969944672,
-	})
-
-	err = g.arm.MoveToJointPositions(ctx, intermediateJP, nil)
+	err = g.arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
 	if err != nil {
 		return err
 	}
@@ -564,7 +572,7 @@ func (g *Gen) executeDemo(ctx context.Context, beforePourPlans, pouringPlans, af
 		}
 	}
 
-	err = g.arm.MoveToJointPositions(ctx, intermediateJP, nil)
+	err = g.arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
 	if err != nil {
 		return err
 	}
