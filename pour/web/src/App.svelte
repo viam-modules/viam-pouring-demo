@@ -77,36 +77,33 @@
   });
 </script>
 
-<section class="p-4 flex flex-col gap-4 w-full">
-  <h1 class="text-2xl font-bold ">Wine Pouring Demo</h1>
-  <p class="text-xl text-center">Arrange your cups as-desired on the table.<br/>
-    Ensure that they are detected in the camera view. Then press start.</p>
+<section class="">
+  <h1>Wine Pouring Demo</h1>
+  <h2>Arrange your cups as-desired on the table.</h2>
+  <h2>Ensure that they are detected in the camera view. Then press start.</h2>
   {#if pouringClient}
     <StartButton client={pouringClient} />
   {:else}
     <div>pouring service connecting...</div>
   {/if}
-  <div class="flex grow w-full gap-4 ">
-    <div class="bg-gradient-2 w-full rounded">
-      {#if houghClient}
-        <ImageDisplay client={houghClient} />
-      {:else}
-        <div>vision service connecting...</div>
-      {/if}
-    </div>
-    <div class="bg-gradient-2 w-full rounded p-3 flex flex-col">
-      {#if weightClient}
-        <WeightSensor client={weightClient} />
-        <p class="text-sm mt-auto">The weight is used to calculate how much wine is left in the bottle. This is important for controlling the pouring angle and duration.</p>
-      {:else}
-        <div>weight sensor connecting...</div>
-      {/if}
-    </div>
+
+  <div>
+    <h4>Camera</h4>
+    {#if houghClient}
+      <ImageDisplay client={houghClient} />
+    {:else}
+      <div>connecting...</div>
+    {/if}
+  </div>
+  
+  <div>
+    <h4>Weight Sensor</h4>
+    {#if weightClient}
+      <WeightSensor client={weightClient} />
+    {:else}
+      <div>connecting...</div>
+    {/if}      
+    <p>The weight is used to calculate how much wine is left in the bottle. This is important for controlling the pouring angle and duration.</p>
   </div>
 </section>
 
-<style>
-  .bg-gradient-2 {
-    background: linear-gradient(120deg, #3a4145 0%, #4a5152 100%);
-  }
-</style>

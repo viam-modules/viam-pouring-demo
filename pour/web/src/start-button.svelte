@@ -4,12 +4,20 @@
  import { Struct, type GenericService } from "@viamrobotics/sdk";
  import StatusReading from "./status-reading.svelte";
  export let client: GenericService;
+
  let isRunning = false;
- const onClick = async () => {
+
+ async function onClick(params) {
+   if (!params) {
+     params = {};
+   }
+   params["do-pour"] = true;
+
+   console.log("pout do command", params);
+
    try {
      isRunning = true;
-     var x = VIAM.Struct.fromJson({"do-pour" : true});
-     console.log("doCommand cmd", x);
+     var x = VIAM.Struct.fromJson(params);
      const res = await client.doCommand(x);
      console.log(res);
    } catch (error) {
@@ -20,24 +28,22 @@
  };
 </script>
 
-<div class="flex flex-col gap-4 bg-gradient-2 p-4 rounded h-[100px]">
-{#if isRunning}
-    <div class="relative w-full">
-        <div class="absolute top-2 right-2 w-8 h-8 bg-red-600 rounded-full animate-pulse"></div>
-        <StatusReading {client} />
-    </div>
-{:else}
-<button 
-    on:click={onClick}
-    class="bg-[#547aa5] text-white h-full p-3 text-3xl rounded w-full transition-colors" 
->
-    Start Pouring
-</button>
-{/if}
+<div class="">
+  <div class="">
+    <div class=""></div>
+    <StatusReading {client} />
+  </div>
+  <button on:click={() => {onClick({})}}>
+    Start Pouring from scale
+  </button>
+  <button on:click={() => {onClick({"far" : true})}}>
+    Start Pouring from far bottle
+  </button>
+  <button on:click={() => {onClick({"mid" : true})}}>
+    Start Pouring from middle bottle
+  </button>
+
+  <span>Is Running: {isRunning}</span>
 </div>
 
-<style>
-  .bg-gradient-2 {
-    background: linear-gradient(135deg, #3a4142 100%, #4a5152 100%);
-  }
-</style>
+

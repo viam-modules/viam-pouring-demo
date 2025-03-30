@@ -28,4 +28,4 @@
   });
 </script>
 
-<p class="text-xl font-mono">Detected Bottle Weight: <br/>{weight?.toPrecision(3)} kg</p>
+<p>Detected Bottle Weight: {weight?.toPrecision(3)} kg</p>
