@@ -175,7 +175,6 @@ func (gg *gripperGrabAction) do(ctx context.Context) error {
 		return fmt.Errorf("didn't grab")
 	}
 	time.Sleep(time.Millisecond * 500) // TODO fix in ufactory gripper
-
 	return err
 }
 func (gg *gripperGrabAction) reverse() action {
@@ -197,7 +196,9 @@ func (gg *gripperOpenAction) position() []referenceframe.Input {
 	return nil
 }
 func (gg *gripperOpenAction) do(ctx context.Context) error {
-	return gg.g.Open(ctx, nil)
+	err := gg.g.Open(ctx, nil)
+	time.Sleep(time.Millisecond * 150)
+	return err
 }
 func (gg *gripperOpenAction) reverse() action {
 	return newGripperGrab(gg.g)

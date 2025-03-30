@@ -141,8 +141,6 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	// AT THIS POINT IN THE PLAN GENERATION, WE'VE LIFTED THE BOTTLE INTO THE ARM AND ARE NOW READY TO
 	// MOVE IT TO THE POUR READY POSITION(S)
 
-	cupPouringPlans := []motionplan.Plan{}
-
 	// here we add the cups as obstacles to be avoided
 	cupGeoms := []spatialmath.Geometry{}
 	for i, cupLoc := range cupLocations {
@@ -161,8 +159,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	}
 
 	for i, cupLoc := range cupLocations {
-		minus := len(cupPouringPlans) / 3           // TODO eliot
-		currentBottleWeight := bottleWeight - minus // TODO this is wrong
+		currentBottleWeight := bottleWeight - (150 * i)
 		g.logger.Infof("currentBottleWeight: %d", currentBottleWeight)
 
 		// if there is not enough liquid in the bottle do not pour anything out

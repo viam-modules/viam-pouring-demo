@@ -89,6 +89,8 @@ func realMain() error {
 		return g.PickMiddleBottle(ctx)
 	case "visWorldState":
 		return visObstacles(arm)
+	case "plan":
+		return g.StartPouringProcess(ctx, pour.PouringOptions{})
 	case "pour":
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true})
 	case "pour-far":
