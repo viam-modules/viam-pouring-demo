@@ -4,7 +4,7 @@ set -eux
 
 make -B module.tar.gz
 scp module.tar.gz viam@mac-waiter.local:/Users/viam/pour-local.tar.gz
-viam module reload --part-id 7c2729a4-7bed-4699-a431-821abb26c468 --restart-only --id viam:pouring-demo
+viam module reload --part-id 7c2729a4-7bed-4699-a431-821abb26c468 --restart-only --name pouring-local-tmp
 
 # note: this relies on the reload_path + reload_enabled fields here in config:
 # {
