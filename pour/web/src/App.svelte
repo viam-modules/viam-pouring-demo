@@ -82,27 +82,37 @@
   });
 </script>
 
-<section
-  class="relative rounded-xl w-fit h-fit max-h-[calc(100vh-100px)] overflow-hidden m-12 flex flex-col gap-4 bg-white p-8"
->
-  <h1 class="text-2xl">Wine Pouring Demo</h1>
-  <h2>Arrange your cups as-desired on the table.</h2>
-  <h2>Ensure that they are detected in the camera view. Then press start.</h2>
-  {#if !pouringClient}
-    <StartButton client={pouringClient} />
-  {:else}
-    <div>pouring service connecting...</div>
-  {/if}
-
-  <!-- <div class="flex gap-4">
+<div class="flex flex-col gap-16">
+  <section
+    class="flex gap-16 relative rounded-xl w-6xl min-w-6xl bg-white px-28 py-12 mt-8"
+  >
+    <div class="flex flex-col gap-4 self-center">
+      <h1 class="text-4xl font-light">Red or white wine?</h1>
+      <h2 class="mb-4 text-4xl font-medium leading-[0.5em]">
+        Poured by AI, picked by you.
+      </h2>
+      <ol class="mb-4 text-xl leading-8 list-decimal pl-5 font-light">
+        <li>Grab a glass.</li>
+        <li>Place on table in view of robot camera.</li>
+        <li>Select a wine below and enjoy!</li>
+      </ol>
+      {#if pouringClient}
+        <StartButton client={pouringClient} />
+      {:else}
+        <div>pouring service connecting...</div>
+      {/if}
+      <p class="font-light text-lg">Share on social and tag @viamrobotics</p>
+    </div>
+    <div>
+      <!-- <div class="flex gap-4">
     <div class="w-1/2"> -->
-  <h4>Camera</h4>
-  {#if houghClient}
-    <ImageDisplay client={houghClient} />
-  {:else}
-    <div>connecting...</div>
-  {/if}
-  <!-- </div>
+      <!-- <h4>Camera</h4> -->
+      {#if houghClient}
+        <ImageDisplay client={houghClient} />
+      {:else}
+        <div>connecting...</div>
+      {/if}
+      <!-- </div>
 
     <div class="w-1/2">
       <h4>Weight Sensor</h4>
@@ -117,4 +127,13 @@
       </p>
     </div>
   </div> -->
-</section>
+    </div>
+  </section>
+  <div class="center">
+    <img
+      src="/static/viam-winedemo-interface-lockup.png"
+      alt="Viam Wine Demo Interface"
+      class="mx-auto w-auto mt-8 max-w-[600px]"
+    />
+  </div>
+</div>

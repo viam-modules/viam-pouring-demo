@@ -31,10 +31,10 @@
 </script>
 
 <div class="text-md">
-  <StatusReading {client} />
+  <!-- <StatusReading {client} /> -->
 
-  <div class="flex gap-4">
-    <div class="grow">
+  <div class="mb-4 flex gap-4">
+    <div class="grow flex gap-4">
       <!-- <button
         class="bg-gray-9 border border-gray-9 px-4 py-2 text-white"
         on:click={() => {
@@ -44,32 +44,32 @@
         Start Pouring from scale
       </button> -->
       <button
-        class="bg-gray-9 border border-gray-9 px-4 py-2 text-white"
+        class="bg-[#fffef7] border border-[#ffd800] transition-all hover:rounded-3xl px-16 py-3"
         on:click={() => {
           onClick({ far: true });
         }}
       >
         {#if !isRunning}
-          Start Pouring from far bottle
+          WHITE WINE
         {:else if isRunning && buttonClicked === "far"}
           Pouring wine from far bottle
         {/if}
       </button>
       <button
-        class="bg-gray-9 border border-gray-9 px-4 py-2 text-white"
+        class="bg-[#fcf2f6] border border-[#b90045] px-16 py-3"
         on:click={() => {
           onClick({ mid: true });
         }}
       >
         {#if !isRunning}
-          Start Pouring from middle bottle
+          RED WINE
         {:else if isRunning && buttonClicked === "mid"}
           Pouring wine from middle bottle
         {/if}
       </button>
     </div>
 
-    {#if isRunning}
+    <!-- {#if isRunning}
       <p
         class="flex border rounded-2xl px-4 py-1 text-md border-success-medium bg-success-light text-success-dark"
       >
@@ -81,6 +81,6 @@
       >
         Stopped
       </p>
-    {/if}
+    {/if} -->
   </div>
 </div>
