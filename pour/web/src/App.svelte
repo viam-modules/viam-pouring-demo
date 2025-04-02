@@ -88,21 +88,21 @@
   <h1 class="text-2xl">Wine Pouring Demo</h1>
   <h2>Arrange your cups as-desired on the table.</h2>
   <h2>Ensure that they are detected in the camera view. Then press start.</h2>
-  {#if pouringClient}
+  {#if !pouringClient}
     <StartButton client={pouringClient} />
   {:else}
     <div>pouring service connecting...</div>
   {/if}
 
-  <div class="flex gap-4">
-    <div class="w-1/2">
-      <h4>Camera</h4>
-      {#if houghClient}
-        <ImageDisplay client={houghClient} />
-      {:else}
-        <div>connecting...</div>
-      {/if}
-    </div>
+  <!-- <div class="flex gap-4">
+    <div class="w-1/2"> -->
+  <h4>Camera</h4>
+  {#if houghClient}
+    <ImageDisplay client={houghClient} />
+  {:else}
+    <div>connecting...</div>
+  {/if}
+  <!-- </div>
 
     <div class="w-1/2">
       <h4>Weight Sensor</h4>
@@ -116,5 +116,5 @@
         This is important for controlling the pouring angle and duration.
       </p>
     </div>
-  </div>
+  </div> -->
 </section>

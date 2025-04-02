@@ -6,6 +6,7 @@
   export let client: GenericService;
 
   let isRunning = false;
+  let buttonClicked: "far" | "mid" | undefined = undefined;
 
   async function onClick(params) {
     if (!params) {
@@ -17,6 +18,7 @@
 
     try {
       isRunning = true;
+      buttonClicked = params.far ? "far" : "mid";
       var x = VIAM.Struct.fromJson(params);
       const res = await client.doCommand(x);
       console.log(res);
@@ -33,21 +35,25 @@
 
   <div class="flex gap-4">
     <div class="grow">
-      <button
+      <!-- <button
         class="bg-gray-9 border border-gray-9 px-4 py-2 text-white"
         on:click={() => {
           onClick({});
         }}
       >
         Start Pouring from scale
-      </button>
+      </button> -->
       <button
         class="bg-gray-9 border border-gray-9 px-4 py-2 text-white"
         on:click={() => {
           onClick({ far: true });
         }}
       >
-        Start Pouring from far bottle
+        {#if !isRunning}
+          Start Pouring from far bottle
+        {:else if isRunning && buttonClicked === "far"}
+          Pouring wine from far bottle
+        {/if}
       </button>
       <button
         class="bg-gray-9 border border-gray-9 px-4 py-2 text-white"
@@ -55,7 +61,11 @@
           onClick({ mid: true });
         }}
       >
-        Start Pouring from middle bottle
+        {#if !isRunning}
+          Start Pouring from middle bottle
+        {:else if isRunning && buttonClicked === "mid"}
+          Pouring wine from middle bottle
+        {/if}
       </button>
     </div>
 
