@@ -99,23 +99,19 @@
       {#if pouringClient}
         <StartButton client={pouringClient} />
       {:else}
-        <div>pouring service connecting...</div>
+        <p class="font-light text-lg">Pouring service connecting...</p>
       {/if}
       <p class="font-light text-lg">Share on social and tag @viamrobotics</p>
     </div>
-    <div>
-      <!-- <div class="flex gap-4">
-    <div class="w-1/2"> -->
-      <!-- <h4>Camera</h4> -->
+    <p></p>
+    <div class="relative w-[441px] h-[400px]">
       {#if houghClient}
         <ImageDisplay client={houghClient} />
       {:else}
-        <div>connecting...</div>
+        <p class="font-light text-lg">connecting...</p>
       {/if}
-      <!-- </div>
-
-    <div class="w-1/2">
-      <h4>Weight Sensor</h4>
+    </div>
+    <!-- <h4>Weight Sensor</h4>
       {#if weightClient}
         <WeightSensor client={weightClient} />
       {:else}
@@ -124,10 +120,7 @@
       <p>
         The weight is used to calculate how much wine is left in the bottle.
         This is important for controlling the pouring angle and duration.
-      </p>
-    </div>
-  </div> -->
-    </div>
+      </p> -->
   </section>
   <div class="center">
     <img
