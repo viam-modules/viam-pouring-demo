@@ -82,9 +82,9 @@
   });
 </script>
 
-<div class="flex flex-col gap-16 w-full">
+<div class="flex flex-col gap-12 w-full">
   <section
-    class="min-w-[1028px] flex flex-wrap gap-16 relative rounded-xl bg-white px-14 py-12 mt-8 mx-8"
+    class="w-screen-md lg:w-lg flex gap-16 relative rounded-xl bg-white px-14 py-12 mt-8 mx-8"
   >
     <div class="flex flex-col gap-4 self-center">
       <h1 class="text-4xl font-light">Red or white wine?</h1>
