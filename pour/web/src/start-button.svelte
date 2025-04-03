@@ -29,17 +29,6 @@
     }
   }
 
-  const displayStates: Record<string, string[]> = {
-    THINKING: [
-      "found the positions of the cups, will do planning now",
-      "done with prep planning",
-      "planned cup",
-    ],
-    POURING: ["DONE CONSTRUCTING PLANS -- EXECUTING NOW", "success"],
-    "CHEERS!": ["done running the demo"],
-    "UH OH!": ["error"],
-  };
-
   let status: string | undefined = undefined;
 </script>
 
