@@ -41,18 +41,18 @@ var JointPositionsPickUp = referenceframe.FloatsToInputs([]float64{
 	-2.862619638442993,
 })
 
-var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
-	4.104966640472412,
-	-0.29940700531005854,
-	-0.520090639591217,
-	2.823283672332764,
-	-0.40353041887283325,
-	-2.629184246063233,
-})
-
 // var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
-// 	4.219559192657471, -0.23508255183696747, -0.5131779313087463, 4.919340133666993, 0.7820521593093872, -4.1137566566467285,
+// 	4.104966640472412,
+// 	-0.29940700531005854,
+// 	-0.520090639591217,
+// 	2.823283672332764,
+// 	-0.40353041887283325,
+// 	-2.629184246063233,
 // })
+
+var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
+	3.9580442905426025, -0.189841628074646, -0.8737765550613403, 2.823736429214478, -0.42844274640083313, -2.629254579544068,
+})
 
 func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, options PouringOptions) error {
 	if len(cupLocations) == 0 {
@@ -233,7 +233,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 			r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: cupLoc.Z - 20},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
-		p, err := g.getPlan(ctx, thePlan.current(), bottleResource, pourGoal, worldState, &linearConstraint, 0, 100, 5)
+		p, err := g.getPourPlanAndAdd(ctx, thePlan, bottleResource, pourGoal, worldState, &linearConstraint, 0, 100)
 		if err != nil {
 			return fmt.Errorf("cannot generate pour plan for cup %d %v", i, err)
 		}
@@ -344,6 +344,18 @@ func (g *Gen) getPlanAndAddForCup(ctx context.Context, thePlan *planBuilder, toM
 		}
 	}
 	return err
+}
+
+func (g *Gen) getPourPlanAndAdd(ctx context.Context, thePlan *planBuilder, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) (motionplan.Plan, error) {
+	var err error
+	var p motionplan.Plan
+	for i := 0; i < 20; i++ {
+		p, err = g.getPlan(ctx, thePlan.current(), toMove, goal, worldState, constraint, i, 1000, 1)
+		if err == nil {
+			return p, nil
+		}
+	}
+	return nil, err
 }
 
 func (g *Gen) getPlanAndAdd(ctx context.Context, thePlan *planBuilder, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) error {

@@ -283,8 +283,7 @@ func (g *Gen) getStatus() string {
 }
 
 func (g *Gen) ResetArmToHome(ctx context.Context) error {
-
-	err := g.arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
+	err := g.GoToPrepForPour(ctx)
 	if err != nil {
 		return err
 	}
@@ -295,4 +294,12 @@ func (g *Gen) ResetArmToHome(ctx context.Context) error {
 	}
 
 	return g.gripper.Open(ctx, nil)
+}
+
+func (g *Gen) GoToPrepForPour(ctx context.Context) error {
+	err := g.arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
+	if err != nil {
+		return err
+	}
+	return nil
 }
