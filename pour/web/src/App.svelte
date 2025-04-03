@@ -82,13 +82,13 @@
   });
 </script>
 
-<div class="flex flex-col gap-16">
+<div class="flex flex-col gap-16 w-full">
   <section
-    class="flex gap-16 relative rounded-xl w-6xl min-w-6xl bg-white px-28 py-12 mt-8"
+    class="min-w-[1028px] flex flex-wrap gap-16 relative rounded-xl bg-white px-14 py-12 mt-8 mx-8"
   >
     <div class="flex flex-col gap-4 self-center">
       <h1 class="text-4xl font-light">Red or white wine?</h1>
-      <h2 class="mb-4 text-4xl font-medium leading-[0.5em]">
+      <h2 class="-mt-2 mb-4 text-4xl font-medium">
         Poured by AI, picked by you.
       </h2>
       <ol class="mb-4 text-xl leading-8 list-decimal pl-5 font-light">

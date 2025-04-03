@@ -3,6 +3,7 @@
 
   import { Struct, type GenericService } from "@viamrobotics/sdk";
   import StatusReading from "./status-reading.svelte";
+  import DisplayStates from "./display-states.svelte";
   export let client: GenericService;
 
   let isRunning = false;
@@ -28,11 +29,22 @@
       isRunning = false;
     }
   }
+
+  const displayStates: Record<string, string[]> = {
+    THINKING: [
+      "found the positions of the cups, will do planning now",
+      "done with prep planning",
+      "planned cup",
+    ],
+    POURING: ["DONE CONSTRUCTING PLANS -- EXECUTING NOW", "success"],
+    "CHEERS!": ["done running the demo"],
+    "UH OH!": ["error"],
+  };
+
+  let status: string | undefined = undefined;
 </script>
 
 <div class="text-md">
-  <!-- <StatusReading {client} /> -->
-
   <div class="mb-4 flex gap-4">
     <div class="grow flex gap-4">
       <!-- <button
@@ -51,20 +63,20 @@
       >
         {#if !isRunning}
           WHITE WINE
-        {:else if isRunning && buttonClicked === "far"}
-          Pouring wine from far bottle
+        {:else if buttonClicked === "far"}
+          <StatusReading {client} />
         {/if}
       </button>
       <button
-        class="bg-[#fcf2f6] border border-[#b90045] px-16 py-3"
+        class="bg-[#fcf2f6] border border-[#b90045] transition-all hover:rounded-3xl px-16 py-3"
         on:click={() => {
           onClick({ mid: true });
         }}
       >
         {#if !isRunning}
           RED WINE
-        {:else if isRunning && buttonClicked === "mid"}
-          Pouring wine from middle bottle
+        {:else if buttonClicked === "mid"}
+          <StatusReading {client} />
         {/if}
       </button>
     </div>

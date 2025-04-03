@@ -3,11 +3,26 @@
   import { onDestroy, onMount } from "svelte";
 
   export let client: GenericService;
+
   let status: string | undefined = undefined;
   let interval: number | undefined = undefined;
   type Status = {
     status: string;
   };
+
+  const displayStates: Record<string, string[]> = {
+    THINKING: [
+      "found the positions of the cups, will do planning now",
+      "done with prep planning",
+      "planned cup",
+    ],
+    POURING: ["DONE CONSTRUCTING PLANS -- EXECUTING NOW", "success"],
+    "CHEERS!": ["done running the demo"],
+    "UH OH!": ["error"],
+  };
+
+  let displayStatus: string | undefined = undefined;
+
   const updateStatus = async () => {
     try {
       const res = await client.doCommand(Struct.fromJson({ status: "get" }));
@@ -26,13 +41,22 @@
       clearInterval(interval);
     }
   });
+
+  $: displayStatus = (() => {
+    if (!status) {
+      return "unknown";
+    }
+
+    for (const key in displayStates) {
+      if (displayStates.hasOwnProperty(key)) {
+        const values = displayStates[key];
+        if (values.some((val) => status.includes(val))) {
+          return key;
+        }
+      }
+    }
+    return status;
+  })();
 </script>
 
-<div
-  class="inline-flex mb-4 rounded border py-1.5 pl-2.5 pr-2 text-md hover:bg-gray-8 hover:text-gray-1
-  {status
-    ? 'border-success-medium bg-success-light text-success-dark'
-    : 'border-warning-medium bg-warning-light text-warning-dark'}"
->
-  Status: {status ? status : "unknown"}
-</div>
+{displayStatus}
