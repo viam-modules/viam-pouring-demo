@@ -48,32 +48,37 @@ func realMain() error {
 	defer client.Close(ctx)
 
 	arm, err := arm.FromRobot(client, "arm")
-	if err != nil {
+	if err != nil || arm == nil {
 		logger.Warnf("no arm: %v", err)
 	}
+	j, err := arm.JointPositions(ctx, nil)
+	if err != nil {
+		logger.Warnf("arm erroring: %v", err)
+	}
+	logger.Infof("current positions", j)
 
 	gripper, err := gripper.FromRobot(client, "gripper")
-	if err != nil {
+	if err != nil || gripper == nil {
 		logger.Warnf("no gripper: %v", err)
 	}
 
 	cam, err := camera.FromRobot(client, "cam1")
-	if err != nil {
+	if err != nil || cam == nil {
 		logger.Warnf("no camera: %v", err)
 	}
 
 	weight, err := sensor.FromRobot(client, "scale-hc")
-	if err != nil {
+	if err != nil || weight == nil {
 		logger.Warnf("no weight: %v", err)
 	}
 
 	motion, err := motion.FromRobot(client, "builtin")
-	if err != nil {
+	if err != nil || motion == nil {
 		logger.Warnf("no motion: %v", err)
 	}
 
 	camVision, err := vision.FromRobot(client, "circle-service")
-	if err != nil {
+	if err != nil || camVision == nil {
 		logger.Warnf("no vision service: %v", err)
 	}
 
@@ -100,8 +105,6 @@ func realMain() error {
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}
-
-	return nil
 }
 
 func visObstacles(arm arm.Arm) error {

@@ -1,0 +1,36 @@
+{
+    "$schema": "https://dl.viam.dev/module.schema.json",
+    "module_id": "viam:pouring-demo",
+    "visibility": "public",
+    "url": "https://github.com/viam-modules/viam-pouring-demo",
+    "description": "wine pouring demo",
+    "models": [
+        {
+            "api": "rdk:service:generic",
+            "model": "viam:pouring-demo:pour"
+        },
+        {
+            "api": "rdk:component:sensor",
+            "model": "viam:pouring-demo:pouring-weight-smoother"
+        },
+        {
+            "api": "rdk:component:sensor",
+            "model": "viam:pouring-demo:pouring-weight-hardcoded"
+        }
+
+
+    ],
+    "entrypoint": "bin/viam-pouring-demo",
+    "build": {
+        "build": "make module.tar.gz",
+        "setup": "make setup",
+        "path": "module.tar.gz",
+        "arch": [
+            "linux/amd64",
+            "linux/arm64",
+            "darwin/arm64"
+        ],
+        "darwin_deps" : [ "nlopt-static", "go" ]
+    }
+
+}

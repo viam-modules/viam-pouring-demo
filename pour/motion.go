@@ -10,6 +10,8 @@ import (
 	"go.viam.com/rdk/spatialmath"
 )
 
+const plywoodHeight = 32.8 // mm above the recessed part of table
+
 // Move linearly allowing no collisions
 var linearConstraint = motionplan.Constraints{
 	LinearConstraint: []motionplan.LinearConstraint{
@@ -50,13 +52,25 @@ var grabVectorOrient = &spatialmath.OrientationVector{OX: vectorArmToBottle.X, O
 
 // HARDCODE FOR NOW
 // where to measure the wine bottled
-var wineBottleMeasurePoint = r3.Vector{X: -255, Y: 334, Z: 108}
+// var wineBottleMeasurePoint = r3.Vector{X: -255, Y: 334, Z: 108}
+var wineBottleMeasurePoint = r3.Vector{X: -255, Y: 334, Z: 108 - 29}
 
 // Create the obstacles for things not to hit
 func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 	obstacles := []spatialmath.Geometry{}
 
-	tableOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -428, Y: 0, Z: -550})
+	// these obstacles are for if there is no plywood on the table
+	// tableOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -428, Y: 0, Z: -550})
+	// tableDims := r3.Vector{X: 856, Y: 1170, Z: 960.0}
+	// tableObj, _ := spatialmath.NewBox(tableOrigin, tableDims, "table")
+	// obstacles = append(obstacles, tableObj)
+	// elevatedTableCenterOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -400, Y: 0, Z: 0})
+	// elevatedTableCenterDims := r3.Vector{X: 660, Y: 100, Z: 25.0}
+	// elevatedTableCenterObj, _ := spatialmath.NewBox(elevatedTableCenterOrigin, elevatedTableCenterDims, "elevatedTableCenter")
+	// obstacles = append(obstacles, elevatedTableCenterObj)
+
+	// obstacle for if the table is covered by plywood
+	tableOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -428, Y: 0, Z: -550 + plywoodHeight})
 	tableDims := r3.Vector{X: 856, Y: 1170, Z: 960.0}
 	tableObj, _ := spatialmath.NewBox(tableOrigin, tableDims, "table")
 	obstacles = append(obstacles, tableObj)
@@ -65,11 +79,6 @@ func GenerateObstacles() []*referenceframe.GeometriesInFrame {
 	sideWallDims := r3.Vector{X: 856, Y: 120, Z: 960.0}
 	sideWallObj, _ := spatialmath.NewBox(sideWallOrigin, sideWallDims, "sideWall")
 	obstacles = append(obstacles, sideWallObj)
-
-	elevatedTableCenterOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -400, Y: 0, Z: 0})
-	elevatedTableCenterDims := r3.Vector{X: 660, Y: 100, Z: 25.0}
-	elevatedTableCenterObj, _ := spatialmath.NewBox(elevatedTableCenterOrigin, elevatedTableCenterDims, "elevatedTableCenter")
-	obstacles = append(obstacles, elevatedTableCenterObj)
 
 	protectPowerOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: -125, Y: 0, Z: 0})
 	protectPowerDims := r3.Vector{X: 150, Y: 130, Z: 100.0}

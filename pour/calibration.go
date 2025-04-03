@@ -9,8 +9,8 @@ import (
 	"go.viam.com/rdk/spatialmath"
 )
 
-const (
-	cameraToTable = 715
+var (
+	cameraToTable = 715 - plywoodHeight // this second value is for the plywood cover that sits on top of the table
 )
 
 type PouringOptions struct {
@@ -51,9 +51,9 @@ func (g *Gen) CameraToPourPositions(ctx context.Context, cupLocations []spatialm
 	for i, c := range cupLocations {
 		cupCenterInArm := spatialmath.Compose(tf.Pose(), c)
 		pourLocationInArm := r3.Vector{
-			X: cupCenterInArm.Point().X + 20,
+			X: cupCenterInArm.Point().X + 20, // this param is hardcoded to account for camera skew
 			Y: cupCenterInArm.Point().Y,
-			Z: cupCenterInArm.Point().Z + 25,
+			Z: cupCenterInArm.Point().Z + 35,
 		}
 
 		pourPoints = append(pourPoints, pourLocationInArm)

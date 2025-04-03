@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang/geo/r3"
 
+	vizClient "github.com/viam-labs/motion-tools/client"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
@@ -18,27 +19,45 @@ import (
 const (
 	pourAngleSafe     = 0.5
 	emptyBottleWeight = 675
+	cupRadius         = 50 // mm
+	heightAboveCup    = 50
 )
 
+// var JointPositionsPickUp = referenceframe.FloatsToInputs([]float64{
+// 	1.595939040184021,
+// 	0.4438844323158264,
+// 	-0.6554062962532043,
+// 	1.5953776836395264,
+// 	1.5655426979064941,
+// 	-2.9301466941833496,
+// })
+
 var JointPositionsPickUp = referenceframe.FloatsToInputs([]float64{
-	1.595939040184021,
-	0.4438844323158264,
-	-0.6554062962532043,
-	1.5953776836395264,
-	1.5655426979064941,
-	-2.9301466941833496,
+	1.5965231657028198,
+	0.33616247773170466,
+	-0.6152324676513673,
+	1.5954617261886597,
+	1.5636086463928223,
+	-2.862619638442993,
 })
 
 var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
-	3.9929597377678049952,
-	-0.31163778901022853862,
-	-0.40986624359982865018,
-	2.8722410201955117515,
-	-0.28700971603322356085,
-	-2.7665438651969944672,
+	4.104966640472412,
+	-0.29940700531005854,
+	-0.520090639591217,
+	2.823283672332764,
+	-0.40353041887283325,
+	-2.629184246063233,
 })
 
+// var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
+// 	4.219559192657471, -0.23508255183696747, -0.5131779313087463, 4.919340133666993, 0.7820521593093872, -4.1137566566467285,
+// })
+
 func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, options PouringOptions) error {
+	if len(cupLocations) == 0 {
+		return errors.New("no cups to pour for")
+	}
 
 	thePlan, err := g.startPlan(ctx)
 	if err != nil {
@@ -144,11 +163,9 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	// here we add the cups as obstacles to be avoided
 	cupGeoms := []spatialmath.Geometry{}
 	for i, cupLoc := range cupLocations {
-		cupOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: 60})
-		radius := 45.
-		length := 170.
+		cupOrigin := spatialmath.NewPoseFromPoint(r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: plywoodHeight})
 		label := "cup" + strconv.Itoa(i)
-		cupObj, _ := spatialmath.NewCapsule(cupOrigin, radius, length, label)
+		cupObj, _ := spatialmath.NewCapsule(cupOrigin, cupRadius, g.conf.CupHeight, label)
 		cupGeoms = append(cupGeoms, cupObj)
 	}
 	cupGifs := referenceframe.NewGeometriesInFrame(referenceframe.World, cupGeoms)
@@ -156,6 +173,35 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
 	if err != nil {
 		return err
+	}
+
+	fsCfg, _ := g.robotClient.FrameSystemConfig(ctx)
+	parts := fsCfg.Parts
+	fs, err := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
+	if err != nil {
+		return err
+	}
+	currentInputs, err := g.arm.JointPositions(ctx, nil)
+	if err != nil {
+		return err
+	}
+	ee, err := g.arm.EndPosition(ctx, nil)
+	if err != nil {
+		return err
+	}
+	geometries, err := worldState.ObstaclesInWorldFrame(fs, map[string][]referenceframe.Input{g.conf.ArmName: currentInputs})
+	if err != nil {
+		return err
+	}
+	for _, g := range geometries.Geometries() {
+		vizClient.DrawGeometry(g, "red")
+	}
+	for i := range transforms {
+		smth := transforms[i]
+		fmt.Println(smth.Name())
+		if smth.Name() == "bottle" {
+			vizClient.DrawGeometry(smth.Geometry().Transform(ee), "blue")
+		}
 	}
 
 	for i, cupLoc := range cupLocations {
@@ -175,10 +221,9 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 
 		// MOVE TO POUR READY POSE
 		pourReadyGoal := spatialmath.NewPose(
-			cupLoc,
+			r3.Vector{cupLoc.X, cupLoc.Y, cupLoc.Z + heightAboveCup},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourAngleSafe, Theta: 179},
 		)
-
 		err = g.getPlanAndAddForCup(ctx, thePlan, bottleResource, pourReadyGoal, worldState, &orientationConstraint)
 		if err != nil {
 			return fmt.Errorf("could not plan for cup %d even after retrying %v", i, err)
@@ -188,10 +233,9 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 			r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: cupLoc.Z - 20},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
-		p, err := g.getPlan(ctx, thePlan.current(), bottleResource, pourGoal, worldState, &linearConstraint, 0, 100)
+		p, err := g.getPlan(ctx, thePlan.current(), bottleResource, pourGoal, worldState, &linearConstraint, 0, 100, 5)
 		if err != nil {
 			return fmt.Errorf("cannot generate pour plan for cup %d %v", i, err)
-			return err
 		}
 		thePlan.add(newMotionPlanAction(g.motion, g.arm.Name().ShortName(), p))
 
@@ -286,14 +330,16 @@ func GenerateTransforms(parent, armName string, pose spatialmath.Pose, bottlePos
 func (g *Gen) getPlanAndAddForCup(ctx context.Context, thePlan *planBuilder, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints) error {
 	var err error
 	var p motionplan.Plan
-	for i := 0; i < 20; i++ {
-		p, err = g.getPlan(ctx, thePlan.current(), toMove, goal, worldState, constraint, i, 1000)
+	for i := 0; i < 100; i++ {
+		p, err = g.getPlan(ctx, thePlan.current(), toMove, goal, worldState, constraint, i, 1000, 0.2)
 		if err == nil {
 			armInputs, _ := p.Trajectory().GetFrameInputs(g.arm.Name().ShortName())
-			penultimateJointPosition := armInputs[len(armInputs)-1][4].Value
-			if penultimateJointPosition < 0 {
-				thePlan.add(newMotionPlanAction(g.motion, g.arm.Name().ShortName(), p))
-				return nil
+			for i := range armInputs {
+				penultimateJointPosition := armInputs[i][4].Value
+				if penultimateJointPosition < 0 {
+					thePlan.add(newMotionPlanAction(g.motion, g.arm.Name().ShortName(), p))
+					return nil
+				}
 			}
 		}
 	}
@@ -301,7 +347,7 @@ func (g *Gen) getPlanAndAddForCup(ctx context.Context, thePlan *planBuilder, toM
 }
 
 func (g *Gen) getPlanAndAdd(ctx context.Context, thePlan *planBuilder, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) error {
-	p, err := g.getPlan(ctx, thePlan.current(), toMove, goal, worldState, constraint, rseed, smoothIter)
+	p, err := g.getPlan(ctx, thePlan.current(), toMove, goal, worldState, constraint, rseed, smoothIter, 10)
 	if err != nil {
 		return err
 	}
@@ -309,7 +355,7 @@ func (g *Gen) getPlanAndAdd(ctx context.Context, thePlan *planBuilder, toMove re
 	return nil
 }
 
-func (g *Gen) getPlan(ctx context.Context, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) (motionplan.Plan, error) {
+func (g *Gen) getPlan(ctx context.Context, armCurrentInputs []referenceframe.Input, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int, timeout float64) (motionplan.Plan, error) {
 	fsCfg, _ := g.robotClient.FrameSystemConfig(ctx)
 	parts := fsCfg.Parts
 	fs, err := referenceframe.NewFrameSystem("newFS", parts, worldState.Transforms())
@@ -330,6 +376,6 @@ func (g *Gen) getPlan(ctx context.Context, armCurrentInputs []referenceframe.Inp
 		FrameSystem: fs,
 		WorldState:  worldState,
 		Constraints: constraint,
-		Options:     map[string]interface{}{"rseed": rseed, "timeout": 10, "smooth_iter": smoothIter, "num_threads": g.numThreads},
+		Options:     map[string]interface{}{"rseed": rseed, "timeout": timeout, "smooth_iter": smoothIter, "num_threads": g.numThreads},
 	})
 }
