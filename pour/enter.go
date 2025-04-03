@@ -3,6 +3,7 @@ package pour
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -38,9 +39,11 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 	}
 
 	g := &Gen{
-		name:   conf.ResourceName(),
-		logger: logger,
-		conf:   config,
+		name:              conf.ResourceName(),
+		logger:            logger,
+		conf:              config,
+		redBottleWeight:   fullRedBottleWeight,
+		whiteBottleWeight: fullWhiteBottleWeight,
 	}
 
 	g.arm, err = arm.FromDependencies(deps, config.ArmName)
@@ -151,6 +154,12 @@ func NewTesting(logger logging.Logger,
 	}
 }
 
+const (
+	fullRedBottleWeight   = 1500
+	fullWhiteBottleWeight = 1500
+	pourWeight            = 150
+)
+
 type Gen struct {
 	resource.AlwaysRebuild
 
@@ -177,6 +186,10 @@ type Gen struct {
 	status     string
 
 	numThreads int
+
+	// event_manger state
+	redBottleWeight   float64
+	whiteBottleWeight float64
 }
 
 func (g *Gen) setupRobotClient(ctx context.Context) error {
@@ -228,6 +241,24 @@ func (g *Gen) Close(ctx context.Context) error {
 // DoCommand
 func (g *Gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	// TODO-eliot cancel old movement
+
+	if _, ok := cmd["set_new_bottle"]; ok {
+		color, ok := cmd["color"].(string)
+		if !ok {
+			return nil, errors.New("provide color")
+		}
+		if color != "red" && color != "white" {
+			return nil, errors.New("color must be white or red")
+		}
+		if color == "red" {
+			g.redBottleWeight = fullRedBottleWeight
+		}
+
+		if color == "white" {
+			g.whiteBottleWeight = fullWhiteBottleWeight
+		}
+		return nil, nil
+	}
 
 	if _, ok := cmd["stop"]; ok {
 		g.logger.Info("WE ARE INSIDE THE STOP CONDITIONAL AND ARE ABOUT TO RETURN")

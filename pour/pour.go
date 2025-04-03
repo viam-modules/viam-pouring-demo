@@ -77,6 +77,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	}
 
 	// get the weight of the bottle
+	// replace this
 	bottleWeight, err := g.getWeight(ctx)
 	if err != nil {
 		return err
@@ -158,6 +159,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 		return err
 	}
 
+	numGlassesPoured := len(cupLocations)
 	for i, cupLoc := range cupLocations {
 		currentBottleWeight := bottleWeight - (150 * i)
 		g.logger.Infof("currentBottleWeight: %d", currentBottleWeight)
@@ -165,6 +167,8 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 		// if there is not enough liquid in the bottle do not pour anything out
 		if currentBottleWeight < emptyBottleWeight {
 			g.logger.Info("there are still cups remaining but we will not pour into them since there is not enough liquid left in the bottle")
+			// This will ignore any unpoured glasses greater than 1 from numGlassesPoured
+			numGlassesPoured--
 			break
 		}
 
@@ -203,6 +207,8 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 
 		g.setStatus(fmt.Sprintf("planned cup %d", i+1))
 	}
+	color := "red"
+	// call set_glasses_poured(count)
 
 	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour))
 
