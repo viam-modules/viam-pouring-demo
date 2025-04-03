@@ -3,7 +3,6 @@
 
   import { Struct, type GenericService } from "@viamrobotics/sdk";
   import StatusReading from "./status-reading.svelte";
-  import DisplayStates from "./display-states.svelte";
   export let client: GenericService;
 
   let isRunning = false;

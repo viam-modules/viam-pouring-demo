@@ -39,4 +39,10 @@
   });
 </script>
 
-<img class="h-[360px] rounded-md" alt="vision" src={imageUrl} />
+<div class="relative">
+  <img class="h-[400px] rounded-md" alt="vision" src={imageUrl} />
+  <span
+    class="text-sm absolute top-3 right-4 text-[#00fb7a] shadow-sm whitespace-nowrap"
+    >LIVE FEED</span
+  >
+</div>
