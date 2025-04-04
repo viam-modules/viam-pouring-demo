@@ -44,27 +44,27 @@
         Start Pouring from scale
       </button> -->
       <button
-        class="bg-[#fffef7] border border-[#ffd800] transition-all hover:rounded-3xl px-16 py-3"
+        class="bg-[#fffef7] border border-[#ffd800] transition-all hover:rounded-3xl px-16 py-3 whitespace-nowrap"
         on:click={() => {
           onClick({ far: true });
         }}
       >
-        {#if !isRunning}
-          WHITE WINE
-        {:else if buttonClicked === "far"}
+        {#if isRunning && buttonClicked === "far"}
           <StatusReading {client} />
+        {:else}
+          WHITE WINE
         {/if}
       </button>
       <button
-        class="bg-[#fcf2f6] border border-[#b90045] transition-all hover:rounded-3xl px-16 py-3"
+        class="bg-[#fcf2f6] border border-[#b90045] transition-all hover:rounded-3xl px-16 py-3 whitespace-nowrap"
         on:click={() => {
           onClick({ mid: true });
         }}
       >
-        {#if !isRunning}
-          RED WINE
-        {:else if buttonClicked === "mid"}
+        {#if isRunning && buttonClicked === "mid"}
           <StatusReading {client} />
+        {:else}
+          RED WINE
         {/if}
       </button>
     </div>

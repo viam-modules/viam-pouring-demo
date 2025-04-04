@@ -4,7 +4,7 @@
 
   export let client: GenericService;
 
-  let status: string | undefined = undefined;
+  let status: string | undefined;
   let interval: number | undefined = undefined;
   type Status = {
     status: string;
@@ -43,19 +43,16 @@
   });
 
   $: displayStatus = (() => {
-    if (!status) {
-      return "unknown";
-    }
-
     for (const key in displayStates) {
       if (displayStates.hasOwnProperty(key)) {
         const values = displayStates[key];
-        if (values.some((val) => status.includes(val))) {
+        if (values.some((val) => status?.includes(val))) {
           return key;
         }
       }
     }
-    return status;
+    // Return "THINKING" if we have a status but it doesn't match any in the map
+    return "THINKING";
   })();
 </script>
 
