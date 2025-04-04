@@ -51,6 +51,10 @@ var JointPositionsHome = referenceframe.FloatsToInputs([]float64{
 // })
 
 var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
+	2.071307420730591, -0.39255717396736145, -0.5151031017303467, 1.8614627122879028, 1.1730695962905884, -2.2705657482147217,
+})
+
+var JointPositionsPreppingForPour2 = referenceframe.FloatsToInputs([]float64{
 	3.9580442905426025, -0.189841628074646, -0.8737765550613403, 2.823736429214478, -0.42844274640083313, -2.629254579544068,
 })
 
@@ -137,7 +141,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 
 	// Define the resource names of bottle and gripper as they do not exist in the config
 	bottleResource := resource.Name{Name: "bottle"}
-	gripperResource := resource.Name{Name: "gripper"}
+	// gripperResource := resource.Name{Name: "gripper"}
 
 	// transforms := GenerateTransforms("world", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(wineBottleMeasurePoint), wineBottleMeasurePoint, g.conf.BottleHeight)
 
@@ -208,20 +212,9 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 		return err
 	}
 
-	// LIFT
-	g.logger.Info("PLANNING FOR THE 3rd MOVEMENT")
-	liftedgoal := spatialmath.NewPose(
-		r3.Vector{X: wineBottleMeasurePoint.X, Y: wineBottleMeasurePoint.Y, Z: wineBottleMeasurePoint.Z + 280},
-		grabVectorOrient,
-	)
-
-	err = g.getPlanAndAdd(ctx, thePlan, gripperResource, liftedgoal, worldState, &bottleGripperSpec, 0, 100)
-	if err != nil {
-		return err
-	}
-	g.setStatus("done with prep planning")
-
+	// intermediate poses
 	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour))
+	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour2))
 
 	// AT THIS POINT IN THE PLAN GENERATION, WE'VE LIFTED THE BOTTLE INTO THE ARM AND ARE NOW READY TO
 	// MOVE IT TO THE POUR READY POSITION(S)
@@ -295,6 +288,10 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 			return fmt.Errorf("could not plan for cup %d even after retrying %v", i, err)
 		}
 
+		// testing section
+		// thePlan.do(ctx)
+		// panic("oops")
+
 		pourGoal := spatialmath.NewPose(
 			r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: cupLoc.Z - 20},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
@@ -315,6 +312,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	}
 
 	// back to the prep position
+	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour2))
 	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour))
 
 	// move to above where the bottle is returned
