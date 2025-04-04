@@ -258,33 +258,61 @@ func calculateAverage(numbers []float64) float64 {
 }
 
 func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64) (float64, float64) {
-	deltaXNeg := 0.295 / 2
-	deltaXPos := 0.225 / 2
-	deltaYNeg := 0.295 / 1.5 // @2:58am
-	// deltaYNeg := 0.
-	// deltaYPos := 0.
-	deltaYPos := 0.295 / 1.5
+	// deltaXNeg := 0.295
+	// deltaXPos := 0.295
+	// deltaYNeg := 0.295
+	// deltaYPos := 0.295
+	// deltaXNeg := 0.295
+	// deltaXPos := 0.395
+	// deltaYNeg := 0.295
+	// deltaYPos := 0.295
+	deltaXNeg := 0.295
+	deltaXPos := 0.225
+	deltaYNeg := 0.295
+	deltaYPos := 0.295
 	logger.Infof("deltaXPos: %f", deltaXPos)
 	logger.Infof("deltaYPos: %f", deltaYPos)
 	logger.Infof("deltaXNeg: %f", deltaXNeg)
 	logger.Infof("deltaYNeg: %f", deltaYNeg)
+	logger.Infof("hi there lol")
 
-	deltaX := 320.1 - inputX
-	deltaY := 235.1 - inputY
+	// 313,225
+	deltaX := 313 - inputX
+	deltaY := 225 - inputY
 	logger.Infof("deltaX: %f", deltaX)
 	logger.Infof("deltaY: %f", deltaY)
 	if deltaX > 0 && deltaY > 0 {
 		logger.Info("deltaX > 0 && deltaY > 0")
+		logger.Info("using deltaXPos and deltaYPos")
 		return deltaX * deltaXPos, deltaY * deltaYPos
 	} else if deltaX > 0 && deltaY < 0 {
 		logger.Info("deltaX > 0 && deltaY < 0")
+		logger.Info("using deltaXPos and deltaYNeg")
 		return deltaX * deltaXPos, deltaY * deltaYNeg
 	} else if deltaX < 0 && deltaY < 0 {
 		logger.Info("deltaX < 0 && deltaY < 0")
+		logger.Info("using deltaXNeg and deltaYNeg")
 		return deltaX * deltaXNeg, deltaY * deltaYNeg
+	} else if deltaX == 0 && deltaY < 0 {
+		logger.Info("deltaX == 0 && deltaY < 0")
+		logger.Info("using 0 and deltaYNeg")
+		return deltaX * deltaXNeg, deltaY * deltaYNeg
+	} else if deltaY == 0 && deltaX < 0 {
+		logger.Info("deltaY == 0 && deltaX < 0")
+		logger.Info("using deltaXNeg and 0")
+		return deltaX * deltaXNeg, deltaY * deltaYNeg
+	} else if deltaX == 0 && deltaY > 0 {
+		logger.Info("deltaX == 0 && deltaY > 0")
+		logger.Info("using 0 and deltaYPos")
+		return deltaX * deltaXNeg, deltaY * deltaYPos
+	} else if deltaY == 0 && deltaX > 0 {
+		logger.Info("deltaY == 0 && deltaX > 0")
+		logger.Info("using deltaXPos and 0")
+		return deltaX * deltaXPos, deltaY * deltaYNeg
 	}
 	logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
 	logger.Info("deltaX < 0 && deltaY > 0")
+	logger.Info("using deltaXNeg and deltaYPos")
 	return deltaX * deltaXNeg, deltaY * deltaYPos
 }
 

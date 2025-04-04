@@ -67,7 +67,7 @@ func realMain() error {
 		logger.Fatalf("no camera: %v", err)
 	}
 
-	weight, err := sensor.FromRobot(client, "scale-hc")
+	weight, err := sensor.FromRobot(client, "scale1")
 	if err != nil || weight == nil {
 		logger.Fatalf("no weight: %v", err)
 	}

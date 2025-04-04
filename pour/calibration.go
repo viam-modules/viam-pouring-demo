@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	cameraToTable = 715 - plywoodHeight         // this second value is for the plywood cover that sits on top of the table
-	pourOffset    = r3.Vector{30, 10, 205 - 50} // this variable controls where to pour from relative to the position of the cup as discovered by the camera
+	cameraToTable = 715 - plywoodHeight        // this second value is for the plywood cover that sits on top of the table
+	pourOffset    = r3.Vector{40, 0, 205 - 50} // this variable controls where to pour from relative to the position of the cup as discovered by the camera
 	// pourOffset    = r3.Vector{0, 0, 35} // this variable controls where to pour from relative to the position of the cup as discovered by the camera
 )
 
