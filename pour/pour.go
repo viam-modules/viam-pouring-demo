@@ -84,25 +84,71 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	if options.PickupFromMid {
 		pickupPoint = middleBottlePick
 	}
-	err = g.addBottleFetch(ctx, thePlan, pickupPoint)
+
+	obstacles := GenerateObstacles()
+	transforms := GenerateTransforms("world", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(pickupPoint), pickupPoint, g.conf.BottleHeight)
+
+	worldState, err := referenceframe.NewWorldState(obstacles, transforms)
+	if err != nil {
+		return fmt.Errorf("cannot create world state %v", err)
+	}
+
+	prepSpot := spatialmath.NewPose(r3.Vector{X: pickupPoint.X + 150, Y: pickupPoint.Y, Z: pickupPoint.Z}, grabVectorOrient)
+
+	// move to prep spot
+	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), prepSpot, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		return err
 	}
+	prepJoints := thePlan.current()
+
+	// move to actual spot
+	transforms = GenerateTransforms("gripper", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(pickupPoint), pickupPoint, g.conf.BottleHeight)
+
+	worldState, err = referenceframe.NewWorldState(obstacles, transforms)
+	if err != nil {
+		return fmt.Errorf("cannot create world state %v", err)
+	}
+	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupPoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
+	if err != nil {
+		return err
+	}
+	wineJoints := thePlan.current()
+
+	// grab bottle
+	thePlan.add(newGripperGrab(g.gripper))
+
+	// move to safety
+	safety := spatialmath.NewPose(
+		r3.Vector{X: pickupPoint.X, Y: pickupPoint.Y, Z: pickupPoint.Z + 200},
+		grabVectorOrient,
+	)
+	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), safety, worldState, &linearAndBottleConstraint, 0, 100)
+	if err != nil {
+		return err
+	}
+	safetyJoints := thePlan.current()
+
+	// go to scale
+	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsScale))
+
+	// drop on scale
+	thePlan.add(newGripperOpen(g.gripper))
 
 	// Define the resource names of bottle and gripper as they do not exist in the config
 	bottleResource := resource.Name{Name: "bottle"}
 	gripperResource := resource.Name{Name: "gripper"}
 
-	transforms := GenerateTransforms("world", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(wineBottleMeasurePoint), wineBottleMeasurePoint, g.conf.BottleHeight)
+	// transforms := GenerateTransforms("world", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(wineBottleMeasurePoint), wineBottleMeasurePoint, g.conf.BottleHeight)
 
-	// GenerateObstacles returns a slice of geometries we are supposed to avoid at plan time
-	obstacles := GenerateObstacles()
+	// // GenerateObstacles returns a slice of geometries we are supposed to avoid at plan time
+	// obstacles := GenerateObstacles()
 
-	// worldState combines the obstacles we wish to avoid at plan time with other frames (gripper & bottle) that are found on the robot
-	worldState, err := referenceframe.NewWorldState(obstacles, transforms)
-	if err != nil {
-		return err
-	}
+	// // worldState combines the obstacles we wish to avoid at plan time with other frames (gripper & bottle) that are found on the robot
+	// worldState, err := referenceframe.NewWorldState(obstacles, transforms)
+	// if err != nil {
+	// 	return err
+	// }
 
 	// we need to do the plan thus far in order to weigh the bottle
 	thePlan.do(ctx)
@@ -271,21 +317,30 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	// back to the prep position
 	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour))
 
-	// move back to above rest position
-	plan, err := g.getPlanByTryingRepeatedly(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupPoint.Add(r3.Vector{0, 0, 200}), grabVectorOrient), worldState, &orientationConstraint)
-	if err != nil {
-		return err
-	}
-	thePlan.add(newMotionPlanAction(g.motion, g.arm.Name().ShortName(), plan))
+	// move to above where the bottle is returned
+	thePlan.add(newMoveToJointPositionsAction(g.arm, safetyJoints))
 
-	// place bottle on table
-	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupPoint, grabVectorOrient), worldState, &tableAndBottleConstraint, 0, 100)
-	if err != nil {
-		return err
-	}
+	// // move back to above rest position
+	// plan, err := g.getPlanByTryingRepeatedly(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupPoint.Add(r3.Vector{0, 0, 200}), grabVectorOrient), worldState, &orientationConstraint)
+	// if err != nil {
+	// 	return err
+	// }
+	// thePlan.add(newMotionPlanAction(g.motion, g.arm.Name().ShortName(), plan))
+
+	// return to the wine position
+	thePlan.add(newMoveToJointPositionsAction(g.arm, wineJoints))
+
+	// // place bottle on table
+	// err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupPoint, grabVectorOrient), worldState, &tableAndBottleConstraint, 0, 100)
+	// if err != nil {
+	// 	return err
+	// }
 
 	// open
 	thePlan.add(newGripperOpen(g.gripper))
+
+	// retreat to prep spot
+	thePlan.add(newMoveToJointPositionsAction(g.arm, prepJoints))
 
 	// retreat to neutral position
 	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupPoint.Add(r3.Vector{X: 200}), grabVectorOrient), worldState, nil, 0, 100)
