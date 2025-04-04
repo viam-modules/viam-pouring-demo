@@ -56,7 +56,8 @@
         }
       }
     }
-    return status;
+    // Return "THINKING" if we have a status but it doesn't match any in the map
+    return "THINKING";
   })();
 </script>
 
