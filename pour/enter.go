@@ -129,6 +129,10 @@ type Config struct {
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
 	CupHeight    float64 `json:"cup_height"`
+	DeltaXPos    float64 `json:"deltaxpos"`
+	DeltaYPos    float64 `json:"deltaypos"`
+	DeltaXNeg    float64 `json:"deltaxneg"`
+	DeltaYNeg    float64 `json:"deltayneg"`
 
 	// optional
 	CPUThreads int `json:"cpu_threads,omitempty"`
@@ -155,6 +159,7 @@ func NewTesting(logger logging.Logger,
 		conf: &Config{
 			BottleHeight: 310,
 			CupHeight:    120,
+			// DeltaXPos: ,
 		},
 	}
 }

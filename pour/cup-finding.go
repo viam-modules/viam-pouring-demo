@@ -177,10 +177,18 @@ func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64)
 	// deltaXPos := 0.2
 	// deltaYNeg := 0.295
 	// deltaYPos := 0.295
-	deltaXNeg := 0.2
-	deltaXPos := 0.325
-	deltaYNeg := 0.295
-	deltaYPos := 0.325
+
+	// [aw] consts before moving to config
+	// deltaXNeg := 0.2
+	// deltaXPos := 0.325
+	// deltaYNeg := 0.295
+	// deltaYPos := 0.325
+
+	deltaXNeg := g.conf.DeltaXNeg
+	deltaXPos := g.conf.DeltaXPos
+	deltaYNeg := g.conf.DeltaYNeg
+	deltaYPos := g.conf.DeltaYPos
+
 	logger.Infof("deltaXPos: %f", deltaXPos)
 	logger.Infof("deltaYPos: %f", deltaYPos)
 	logger.Infof("deltaXNeg: %f", deltaXNeg)
