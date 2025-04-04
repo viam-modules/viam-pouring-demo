@@ -43,10 +43,6 @@
   });
 
   $: displayStatus = (() => {
-    if (!status) {
-      return "THINKING";
-    }
-
     for (const key in displayStates) {
       if (displayStates.hasOwnProperty(key)) {
         const values = displayStates[key];
