@@ -259,7 +259,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 		// thePlan.do(ctx)
 		// panic("oops")
 		pourGoal := spatialmath.NewPose(
-			r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: cupLoc.Z + 10},
+			r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: cupLoc.Z},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
 		fmt.Println("planning pourGoal")
