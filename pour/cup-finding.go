@@ -181,7 +181,7 @@ func (g *Gen) getTheDetections(ctx context.Context, logger logging.Logger, amoun
 	}
 	x := []float64{}
 	y := []float64{}
-	for successes := 0; successes < 20; {
+	for successes := 0; successes < 5; {
 		logger.Infof("attempting calibration iteration: %d", successes)
 		detections, err := g.camVision.DetectionsFromCamera(ctx, g.cam.Name().Name, nil)
 		if err != nil {
