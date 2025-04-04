@@ -15,7 +15,6 @@
       "found the positions of the cups, will do planning now",
       "done with prep planning",
       "planned cup",
-      "unknown",
     ],
     POURING: ["DONE CONSTRUCTING PLANS -- EXECUTING NOW", "success"],
     "CHEERS!": ["done running the demo"],
