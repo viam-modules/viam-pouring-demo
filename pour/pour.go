@@ -293,7 +293,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 		// panic("oops")
 
 		pourGoal := spatialmath.NewPose(
-			r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: cupLoc.Z - 20},
+			r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: cupLoc.Z - 10},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
 		p, err := g.getPlanByTryingRepeatedly(ctx, thePlan, bottleResource, pourGoal, worldState, &linearConstraint)

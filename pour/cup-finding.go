@@ -89,6 +89,7 @@ package pour
 import (
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"math"
 	"strconv"
@@ -258,16 +259,12 @@ func calculateAverage(numbers []float64) float64 {
 }
 
 func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64) (float64, float64) {
-	// deltaXNeg := 0.295
-	// deltaXPos := 0.295
+	// deltaXNeg := 0.2
+	// deltaXPos := 0.2
 	// deltaYNeg := 0.295
 	// deltaYPos := 0.295
-	// deltaXNeg := 0.295
-	// deltaXPos := 0.395
-	// deltaYNeg := 0.295
-	// deltaYPos := 0.295
-	deltaXNeg := 0.295
-	deltaXPos := 0.225
+	deltaXNeg := 0.2
+	deltaXPos := 0.2
 	deltaYNeg := 0.295
 	deltaYPos := 0.295
 	logger.Infof("deltaXPos: %f", deltaXPos)
@@ -279,6 +276,9 @@ func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64)
 	// 313,225
 	deltaX := 313 - inputX
 	deltaY := 225 - inputY
+	if math.Abs(deltaX) < 7 {
+		deltaX = 0
+	}
 	logger.Infof("deltaX: %f", deltaX)
 	logger.Infof("deltaY: %f", deltaY)
 	if deltaX > 0 && deltaY > 0 {
@@ -304,7 +304,7 @@ func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64)
 	} else if deltaX == 0 && deltaY > 0 {
 		logger.Info("deltaX == 0 && deltaY > 0")
 		logger.Info("using 0 and deltaYPos")
-		return deltaX * deltaXNeg, deltaY * deltaYPos
+		return 1, deltaY * deltaYPos
 	} else if deltaY == 0 && deltaX > 0 {
 		logger.Info("deltaY == 0 && deltaX > 0")
 		logger.Info("using deltaXPos and 0")
@@ -313,12 +313,14 @@ func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64)
 	logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
 	logger.Info("deltaX < 0 && deltaY > 0")
 	logger.Info("using deltaXNeg and deltaYPos")
-	return deltaX * deltaXNeg, deltaY * deltaYPos
+	return deltaX * 0, deltaY * deltaYPos
 }
 
 func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, xAdjustment, yAdjustment float64) r3.Vector {
 	xmm := (float64(circle.center.X) - intrinsics.Ppx) * (z / intrinsics.Fx)
 	ymm := (float64(circle.center.Y) - intrinsics.Ppy) * (z / intrinsics.Fy)
+	fmt.Println("xAdjustment: ", xAdjustment)
+	fmt.Println("yAdjustment: ", yAdjustment)
 	xmm = xmm + xAdjustment
 	ymm = ymm + yAdjustment
 	return r3.Vector{X: xmm, Y: ymm, Z: z}

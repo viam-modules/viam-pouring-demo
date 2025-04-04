@@ -102,9 +102,10 @@ func (a *setSpeedAction) position() []referenceframe.Input {
 }
 func (a *setSpeedAction) do(ctx context.Context) error {
 	_, err := a.a.DoCommand(ctx, map[string]interface{}{
-		"set_speed":        a.speed,
-		"set_acceleration": a.accel,
+		"set_speed":        float64(a.speed),
+		"set_acceleration": float64(a.accel),
 	})
+	fmt.Println("this is the error from setting the speed and accel: ", err)
 	return err
 }
 func (a *setSpeedAction) reverse() action {
