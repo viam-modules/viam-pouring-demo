@@ -264,9 +264,9 @@ func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64)
 	// deltaYNeg := 0.295
 	// deltaYPos := 0.295
 	deltaXNeg := 0.2
-	deltaXPos := 0.2
+	deltaXPos := 0.325
 	deltaYNeg := 0.295
-	deltaYPos := 0.295
+	deltaYPos := 0.325
 	logger.Infof("deltaXPos: %f", deltaXPos)
 	logger.Infof("deltaYPos: %f", deltaYPos)
 	logger.Infof("deltaXNeg: %f", deltaXNeg)
@@ -288,6 +288,7 @@ func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64)
 	} else if deltaX > 0 && deltaY < 0 {
 		logger.Info("deltaX > 0 && deltaY < 0")
 		logger.Info("using deltaXPos and deltaYNeg")
+		deltaXPos = 0.175
 		return deltaX * deltaXPos, deltaY * deltaYNeg
 	} else if deltaX < 0 && deltaY < 0 {
 		logger.Info("deltaX < 0 && deltaY < 0")
