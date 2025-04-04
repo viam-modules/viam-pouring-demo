@@ -48,33 +48,38 @@ func realMain() error {
 	defer client.Close(ctx)
 
 	arm, err := arm.FromRobot(client, "arm")
-	if err != nil {
-		logger.Warnf("no arm: %v", err)
+	if err != nil || arm == nil {
+		logger.Fatalf("no arm: %v", err)
 	}
+	j, err := arm.JointPositions(ctx, nil)
+	if err != nil {
+		logger.Fatalf("arm erroring: %v", err)
+	}
+	logger.Infof("current positions", j)
 
 	gripper, err := gripper.FromRobot(client, "gripper")
-	if err != nil {
-		logger.Warnf("no gripper: %v", err)
+	if err != nil || gripper == nil {
+		logger.Fatalf("no gripper: %v", err)
 	}
 
 	cam, err := camera.FromRobot(client, "cam1")
-	if err != nil {
-		logger.Warnf("no camera: %v", err)
+	if err != nil || cam == nil {
+		logger.Fatalf("no camera: %v", err)
 	}
 
-	weight, err := sensor.FromRobot(client, "scale-hc")
-	if err != nil {
-		logger.Warnf("no weight: %v", err)
+	weight, err := sensor.FromRobot(client, "scale1")
+	if err != nil || weight == nil {
+		logger.Fatalf("no weight: %v", err)
 	}
 
 	motion, err := motion.FromRobot(client, "builtin")
-	if err != nil {
-		logger.Warnf("no motion: %v", err)
+	if err != nil || motion == nil {
+		logger.Fatalf("no motion: %v", err)
 	}
 
 	camVision, err := vision.FromRobot(client, "circle-service")
-	if err != nil {
-		logger.Warnf("no vision service: %v", err)
+	if err != nil || camVision == nil {
+		logger.Fatalf("no vision service: %v", err)
 	}
 
 	g := pour.NewTesting(logger, client, arm, gripper, cam, weight, motion, camVision)
@@ -83,10 +88,12 @@ func realMain() error {
 	switch cmd {
 	case "reset":
 		return g.ResetArmToHome(ctx)
-	case "pick-far":
-		return g.PickFarBottle(ctx)
-	case "pick-mid":
-		return g.PickMiddleBottle(ctx)
+	case "intermediate":
+		return g.GoToPrepForPour(ctx)
+	// case "pick-far":
+	// 	return g.PickFarBottle(ctx)
+	// case "pick-mid":
+	// 	return g.PickMiddleBottle(ctx)
 	case "visWorldState":
 		return visObstacles(arm)
 	case "plan":
@@ -100,8 +107,6 @@ func realMain() error {
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}
-
-	return nil
 }
 
 func visObstacles(arm arm.Arm) error {

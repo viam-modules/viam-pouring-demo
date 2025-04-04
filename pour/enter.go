@@ -96,7 +96,6 @@ func (cfg *Config) Validate(path string) ([]string, error) {
 	if cfg.ArmName == "" {
 		return nil, fmt.Errorf("need an arm name")
 	}
-
 	if cfg.GripperName == "" {
 		return nil, fmt.Errorf("need a gripper name")
 	}
@@ -110,20 +109,29 @@ func (cfg *Config) Validate(path string) ([]string, error) {
 		return nil, fmt.Errorf("need a circledetectionservice name")
 	}
 
+	if cfg.BottleHeight == 0 {
+		return nil, fmt.Errorf("bottle_height cannot be unset")
+	}
+	if cfg.CupHeight == 0 {
+		return nil, fmt.Errorf("cup_height cannot be unset")
+	}
 	return []string{cfg.ArmName, cfg.GripperName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, nil
 }
 
 type Config struct {
+	// dependencies, required
 	ArmName                string `json:"arm_name"`
 	CameraName             string `json:"camera_name"`
 	CircleDetectionService string `json:"circle_detection_service"`
 	WeightSensorName       string `json:"weight_sensor_name"`
 	GripperName            string `json:"gripper_name"`
 
+	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
 	CupHeight    float64 `json:"cup_height"`
 
-	CPUThreads int `json:"cpu_threads"`
+	// optional
+	CPUThreads int `json:"cpu_threads,omitempty"`
 }
 
 func NewTesting(logger logging.Logger,
@@ -146,7 +154,7 @@ func NewTesting(logger logging.Logger,
 		logger:      logger,
 		conf: &Config{
 			BottleHeight: 310,
-			CupHeight:    170,
+			CupHeight:    120,
 		},
 	}
 }
@@ -275,16 +283,23 @@ func (g *Gen) getStatus() string {
 }
 
 func (g *Gen) ResetArmToHome(ctx context.Context) error {
-
-	err := g.arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
+	err := g.GoToPrepForPour(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = g.arm.MoveToJointPositions(ctx, JointPositionsPickUp, nil)
+	err = g.arm.MoveToJointPositions(ctx, JointPositionsHome, nil)
 	if err != nil {
 		return err
 	}
 
 	return g.gripper.Open(ctx, nil)
+}
+
+func (g *Gen) GoToPrepForPour(ctx context.Context) error {
+	err := g.arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
+	if err != nil {
+		return err
+	}
+	return nil
 }

@@ -102,9 +102,10 @@ func (a *setSpeedAction) position() []referenceframe.Input {
 }
 func (a *setSpeedAction) do(ctx context.Context) error {
 	_, err := a.a.DoCommand(ctx, map[string]interface{}{
-		"set_speed":        a.speed,
-		"set_acceleration": a.accel,
+		"set_speed":        float64(a.speed),
+		"set_acceleration": float64(a.accel),
 	})
+	fmt.Println("this is the error from setting the speed and accel: ", err)
 	return err
 }
 func (a *setSpeedAction) reverse() action {
@@ -197,7 +198,7 @@ func (gg *gripperOpenAction) position() []referenceframe.Input {
 }
 func (gg *gripperOpenAction) do(ctx context.Context) error {
 	err := gg.g.Open(ctx, nil)
-	time.Sleep(time.Millisecond * 150)
+	time.Sleep(time.Millisecond * 500)
 	return err
 }
 func (gg *gripperOpenAction) reverse() action {
@@ -242,6 +243,16 @@ func (pb *planBuilder) current() []referenceframe.Input {
 func (pb *planBuilder) do(ctx context.Context) error {
 	for _, a := range pb.plans {
 		err := a.do(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (pb *planBuilder) reverseDo(ctx context.Context) error {
+	for i := len(pb.plans) - 1; i >= 0; i-- {
+		err := pb.plans[i].reverse().do(ctx)
 		if err != nil {
 			return err
 		}

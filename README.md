@@ -26,10 +26,7 @@ The following attributes must be specified:
 | `arm_name`                 | string  | **Required** | The name of the arm which will do the pouring.                                                         |
 | `camera_name`              | string  | **Required** | The name of the camera which will take images of the table.                                            |
 | `circle_detection_service` | string  | **Required** | The name of the vision service which detects the number of cups and their positions.                   |
-| `weight_sensor_name`       | string  | **Required** | The name of weight sensor which is used to determine how heavy the bottle is.                          |
-| `address`                  | string  | **Required** | The address of the robot.                                                                              |
-| `entity`                   | string  | **Required** | The entity of the robot.                                                                               |
-| `payload`                  | string  | **Required** | The payload of the robot.                                                                              |
+| `weight_sensor_name`       | string  | **Required** | The name of weight sensor which is used to determine how heavy the bottle is.                          |                                                                           |
 | `delta_x_pos`              | float64 | **Required** | A skew parameter used to adjust the postions of cups when translating from pixel space into the world. |
 | `delta_y_pos`              | float64 | **Required** | A skew parameter used to adjust the postions of cups when translating from pixel space into the world. |
 | `delta_x_neg`              | float64 | **Required** | A skew parameter used to adjust the postions of cups when translating from pixel space into the world. |

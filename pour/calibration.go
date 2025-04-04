@@ -5,12 +5,13 @@ import (
 	"sort"
 
 	"github.com/golang/geo/r3"
-	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/spatialmath"
 )
 
-const (
-	cameraToTable = 715
+var (
+	cameraToTable = 715 - plywoodHeight        // this second value is for the plywood cover that sits on top of the table
+	pourOffset    = r3.Vector{40, 0, 205 - 50} // this variable controls where to pour from relative to the position of the cup as discovered by the camera
+	// pourOffset    = r3.Vector{0, 0, 35} // this variable controls where to pour from relative to the position of the cup as discovered by the camera
 )
 
 type PouringOptions struct {
@@ -44,23 +45,22 @@ func (g *Gen) StartPouringProcess(ctx context.Context, options PouringOptions) e
 // return is in frame of arm
 func (g *Gen) CameraToPourPositions(ctx context.Context, cupLocations []spatialmath.Pose) []r3.Vector {
 	// get the transform from camera frame to the world frame
-	tf, _ := g.motion.GetPose(ctx, g.cam.Name(), referenceframe.World, nil, nil)
+	// tf, _ := g.motion.GetPose(ctx, g.cam.Name(), referenceframe.World, nil, nil)
 
 	pourPoints := []r3.Vector{}
 
 	for i, c := range cupLocations {
-		cupCenterInArm := spatialmath.Compose(tf.Pose(), c)
-		pourLocationInArm := r3.Vector{
-			X: cupCenterInArm.Point().X + 20,
-			Y: cupCenterInArm.Point().Y,
-			Z: cupCenterInArm.Point().Z + 25,
-		}
+		// cupCenterInArm := spatialmath.Compose(tf.Pose(), c)
+		pourLocationInArm := c.Point().Add(pourOffset)
 
 		pourPoints = append(pourPoints, pourLocationInArm)
 
-		g.logger.Infof("cup %d\n - cup center: %v\n - cup center in arm: %v\n - pour center in arm: %v",
-			i, c, cupCenterInArm, pourLocationInArm)
+		// g.logger.Infof("cup %d\n - cup center: %v\n - cup center in arm: %v\n - pour center in arm: %v",
+		// 	i, c, cupCenterInArm, pourLocationInArm)
+		g.logger.Infof("cup %d\n - cup center: %v\n - pour center in arm: %v",
+			i, c, pourLocationInArm)
 	}
+	// panic("stop2")
 
 	return pourPoints
 }
