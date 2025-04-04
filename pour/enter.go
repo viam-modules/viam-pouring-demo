@@ -288,7 +288,7 @@ func (g *Gen) ResetArmToHome(ctx context.Context) error {
 		return err
 	}
 
-	err = g.arm.MoveToJointPositions(ctx, JointPositionsPickUp, nil)
+	err = g.arm.MoveToJointPositions(ctx, JointPositionsHome, nil)
 	if err != nil {
 		return err
 	}

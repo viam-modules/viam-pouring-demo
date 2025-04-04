@@ -32,7 +32,7 @@ const (
 // 	-2.9301466941833496,
 // })
 
-var JointPositionsPickUp = referenceframe.FloatsToInputs([]float64{
+var JointPositionsHome = referenceframe.FloatsToInputs([]float64{
 	1.5965231657028198,
 	0.33616247773170466,
 	-0.6152324676513673,
@@ -54,6 +54,10 @@ var JointPositionsPreppingForPour = referenceframe.FloatsToInputs([]float64{
 	3.9580442905426025, -0.189841628074646, -0.8737765550613403, 2.823736429214478, -0.42844274640083313, -2.629254579544068,
 })
 
+var JointPositionsScale = referenceframe.FloatsToInputs([]float64{
+	2.4994733333587646, 0.6651768088340759, -1.2272746562957764, 2.416159152984619, 1.1277557611465454, -2.765428304672241,
+})
+
 func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, options PouringOptions) error {
 	if len(cupLocations) == 0 {
 		return errors.New("no cups to pour for")
@@ -66,18 +70,23 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 
 	// first we need to make sure that the griper is open
 	thePlan.add(newGripperOpen(g.gripper))
-
-	prepPhaseStartPostion := thePlan.size()
+	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsHome))
 
 	if options.PickupFromFar && options.PickupFromMid {
 		return fmt.Errorf("cannot pickup from both locations")
 	}
 
+	// go get the bottle and move it to the scale
+	var pickupPoint r3.Vector
 	if options.PickupFromFar {
-		err = g.addBottleFetch(ctx, thePlan, farBottlePickup)
+		pickupPoint = farBottlePickup
 	}
 	if options.PickupFromMid {
-		err = g.addBottleFetch(ctx, thePlan, middleBottlePick)
+		pickupPoint = middleBottlePick
+	}
+	err = g.addBottleFetch(ctx, thePlan, pickupPoint)
+	if err != nil {
+		return err
 	}
 
 	// Define the resource names of bottle and gripper as they do not exist in the config
@@ -95,6 +104,9 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 		return err
 	}
 
+	// we need to do the plan thus far in order to weigh the bottle
+	thePlan.do(ctx)
+
 	// get the weight of the bottle
 	bottleWeight, err := g.getWeight(ctx)
 	if err != nil {
@@ -103,7 +115,16 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 
 	g.logger.Infof("bottleWeight: %d", bottleWeight)
 	if bottleWeight < emptyBottleWeight {
+		thePlan.reverseDo(ctx)
 		return errors.New("not enough liquid in bottle to pour into any of the given cups -- please refill the bottle")
+
+	}
+
+	// HACKY ALERT (sorry its late)
+	// need to reset the plan now to not repeat steps
+	thePlan, err = g.startPlan(ctx)
+	if err != nil {
+		return err
 	}
 
 	now := time.Now()
@@ -112,10 +133,11 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	// THE FIRST PLAN IS MOVING THE ARM TO BE IN THE NEUTRAL POSITION
 	g.logger.Info("PLANNING the prep")
 
-	err = g.getPlanAndAdd(ctx, thePlan, gripperResource, spatialmath.NewPose(wineBottleMeasurePoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
-	if err != nil {
-		return err
-	}
+	// err = g.getPlanAndAdd(ctx, thePlan, gripperResource, spatialmath.NewPose(wineBottleMeasurePoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
+	// if err != nil {
+	// 	return err
+	// }
+	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsScale))
 
 	// ---------------------------------------------------------------------------------
 	// HERE WE CONSTRUCT THE SECOND PLAN
@@ -123,10 +145,10 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 	// ENGAGE BOTTLE
 	g.logger.Info("PLANNING FOR THE 2nd MOVEMENT")
 
-	err = g.getPlanAndAdd(ctx, thePlan, gripperResource, spatialmath.NewPose(wineBottleMeasurePoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
-	if err != nil {
-		return err
-	}
+	// err = g.getPlanAndAdd(ctx, thePlan, gripperResource, spatialmath.NewPose(wineBottleMeasurePoint, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
+	// if err != nil {
+	// 	return err
+	// }
 
 	// HERE WE CONSTRUCT THE THIRD PLAN
 	// THE THIRD PLAN MOVES THE GRIPPER WHICH CLUTCHES THE BOTTLE INTO THE LIFTED GOAL POSITION
@@ -152,8 +174,6 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 		return err
 	}
 	g.setStatus("done with prep planning")
-
-	prepPhaseEndPosition := thePlan.size() - 1
 
 	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour))
 
@@ -233,7 +253,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 			r3.Vector{X: cupLoc.X, Y: cupLoc.Y, Z: cupLoc.Z - 20},
 			&spatialmath.OrientationVectorDegrees{OX: pourVec.X, OY: pourVec.Y, OZ: pourParameters[0], Theta: 150},
 		)
-		p, err := g.getPourPlanAndAdd(ctx, thePlan, bottleResource, pourGoal, worldState, &linearConstraint, 0, 100)
+		p, err := g.getPlanByTryingRepeatedly(ctx, thePlan, bottleResource, pourGoal, worldState, &linearConstraint)
 		if err != nil {
 			return fmt.Errorf("cannot generate pour plan for cup %d %v", i, err)
 		}
@@ -248,24 +268,33 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 		g.setStatus(fmt.Sprintf("planned cup %d", i+1))
 	}
 
+	// back to the prep position
 	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsPreppingForPour))
 
-	// this should become a plan so that we not knock over cups
-	// this is above the scale about 50cm
-	thePlan.add(newMoveToJointPositionsAction(g.arm, referenceframe.FloatsToInputs([]float64{
-		1.6003754138906833848,
-		-0.39200037717721969432,
-		-0.60418236255495871845,
-		1.58686017989718664,
-		1.5460307598075662128,
-		-2.1456081867164793486,
-	})))
+	// move back to above rest position
+	plan, err := g.getPlanByTryingRepeatedly(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupPoint.Add(r3.Vector{0, 0, 200}), grabVectorOrient), worldState, &orientationConstraint)
+	if err != nil {
+		return err
+	}
+	thePlan.add(newMotionPlanAction(g.motion, g.arm.Name().ShortName(), plan))
 
-	// go back home
-	thePlan.addReverse(prepPhaseStartPostion, prepPhaseEndPosition)
+	// place bottle on table
+	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupPoint, grabVectorOrient), worldState, &tableAndBottleConstraint, 0, 100)
+	if err != nil {
+		return err
+	}
 
 	// open
 	thePlan.add(newGripperOpen(g.gripper))
+
+	// retreat to neutral position
+	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupPoint.Add(r3.Vector{X: 200}), grabVectorOrient), worldState, nil, 0, 100)
+	if err != nil {
+		return err
+	}
+
+	// and finally go back home
+	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsHome))
 
 	g.logger.Infof("IT TOOK THIS LONG TO CONSTRUCT ALL PLANS: %v", time.Since(now))
 
@@ -346,11 +375,11 @@ func (g *Gen) getPlanAndAddForCup(ctx context.Context, thePlan *planBuilder, toM
 	return err
 }
 
-func (g *Gen) getPourPlanAndAdd(ctx context.Context, thePlan *planBuilder, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints, rseed, smoothIter int) (motionplan.Plan, error) {
+func (g *Gen) getPlanByTryingRepeatedly(ctx context.Context, thePlan *planBuilder, toMove resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState, constraint *motionplan.Constraints) (motionplan.Plan, error) {
 	var err error
 	var p motionplan.Plan
 	for i := 0; i < 20; i++ {
-		p, err = g.getPlan(ctx, thePlan.current(), toMove, goal, worldState, constraint, i, 1000, 1)
+		p, err = g.getPlan(ctx, thePlan.current(), toMove, goal, worldState, constraint, i, 1000, 2)
 		if err == nil {
 			return p, nil
 		}

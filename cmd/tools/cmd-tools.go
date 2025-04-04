@@ -49,37 +49,37 @@ func realMain() error {
 
 	arm, err := arm.FromRobot(client, "arm")
 	if err != nil || arm == nil {
-		logger.Warnf("no arm: %v", err)
+		logger.Fatalf("no arm: %v", err)
 	}
 	j, err := arm.JointPositions(ctx, nil)
 	if err != nil {
-		logger.Warnf("arm erroring: %v", err)
+		logger.Fatalf("arm erroring: %v", err)
 	}
 	logger.Infof("current positions", j)
 
 	gripper, err := gripper.FromRobot(client, "gripper")
 	if err != nil || gripper == nil {
-		logger.Warnf("no gripper: %v", err)
+		logger.Fatalf("no gripper: %v", err)
 	}
 
 	cam, err := camera.FromRobot(client, "cam1")
 	if err != nil || cam == nil {
-		logger.Warnf("no camera: %v", err)
+		logger.Fatalf("no camera: %v", err)
 	}
 
 	weight, err := sensor.FromRobot(client, "scale-hc")
 	if err != nil || weight == nil {
-		logger.Warnf("no weight: %v", err)
+		logger.Fatalf("no weight: %v", err)
 	}
 
 	motion, err := motion.FromRobot(client, "builtin")
 	if err != nil || motion == nil {
-		logger.Warnf("no motion: %v", err)
+		logger.Fatalf("no motion: %v", err)
 	}
 
 	camVision, err := vision.FromRobot(client, "circle-service")
 	if err != nil || camVision == nil {
-		logger.Warnf("no vision service: %v", err)
+		logger.Fatalf("no vision service: %v", err)
 	}
 
 	g := pour.NewTesting(logger, client, arm, gripper, cam, weight, motion, camVision)

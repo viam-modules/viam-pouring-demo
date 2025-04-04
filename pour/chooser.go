@@ -7,7 +7,6 @@ import (
 	"github.com/golang/geo/r3"
 
 	"go.viam.com/rdk/referenceframe"
-	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/spatialmath"
 )
 
@@ -46,7 +45,6 @@ func (g *Gen) pickupBottle(ctx context.Context, pickupSpot r3.Vector) error {
 }
 
 func (g *Gen) addBottleFetch(ctx context.Context, thePlan *planBuilder, pickupSpot r3.Vector) error {
-
 	obstacles := GenerateObstacles()
 	transforms := GenerateTransforms("world", g.arm.Name().ShortName(), spatialmath.NewPoseFromPoint(pickupSpot), pickupSpot, g.conf.BottleHeight)
 
@@ -58,7 +56,7 @@ func (g *Gen) addBottleFetch(ctx context.Context, thePlan *planBuilder, pickupSp
 	prepSpot := spatialmath.NewPose(r3.Vector{X: pickupSpot.X + 150, Y: pickupSpot.Y, Z: pickupSpot.Z}, grabVectorOrient)
 
 	// move to prep spot
-	err = g.eliotMoveArm(ctx, thePlan, g.arm.Name(), prepSpot, worldState)
+	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), prepSpot, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		return err
 	}
@@ -70,7 +68,7 @@ func (g *Gen) addBottleFetch(ctx context.Context, thePlan *planBuilder, pickupSp
 	if err != nil {
 		return fmt.Errorf("cannot create world state %v", err)
 	}
-	err = g.eliotMoveArm(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupSpot, grabVectorOrient), worldState)
+	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(pickupSpot, grabVectorOrient), worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		return err
 	}
@@ -79,28 +77,19 @@ func (g *Gen) addBottleFetch(ctx context.Context, thePlan *planBuilder, pickupSp
 	thePlan.add(newGripperGrab(g.gripper))
 
 	// move to safety
-	err = g.eliotMoveArm(ctx, thePlan, g.arm.Name(), prepSpot, worldState)
-	if err != nil {
-		return err
-	}
-
-	err = g.eliotMoveArm(ctx, thePlan, g.arm.Name(), spatialmath.NewPose(r3.Vector{X: pickupSpot.X + 150, Y: pickupSpot.Y, Z: pickupSpot.Z + 200}, grabVectorOrient), worldState)
+	safety := spatialmath.NewPose(
+		r3.Vector{X: pickupSpot.X, Y: pickupSpot.Y, Z: pickupSpot.Z + 200},
+		grabVectorOrient,
+	)
+	err = g.getPlanAndAdd(ctx, thePlan, g.arm.Name(), safety, worldState, &linearAndBottleConstraint, 0, 100)
 	if err != nil {
 		return err
 	}
 
 	// go to scale
-	err = g.eliotMoveArm(ctx, thePlan, g.gripper.Name(), spatialmath.NewPose(wineBottleMeasurePoint, grabVectorOrient), worldState)
-	if err != nil {
-		return err
-	}
+	thePlan.add(newMoveToJointPositionsAction(g.arm, JointPositionsScale))
 
 	// drop on scale
 	thePlan.add(newGripperOpen(g.gripper))
-
 	return nil
-}
-
-func (g *Gen) eliotMoveArm(ctx context.Context, thePlan *planBuilder, what resource.Name, goal spatialmath.Pose, worldState *referenceframe.WorldState) error {
-	return g.getPlanAndAdd(ctx, thePlan, what, goal, worldState, &linearAndBottleConstraint, 0, 100)
 }

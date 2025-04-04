@@ -39,6 +39,20 @@ var linearAndBottleConstraint = motionplan.Constraints{
 	},
 }
 
+var tableAndBottleConstraint = motionplan.Constraints{
+	LinearConstraint: []motionplan.LinearConstraint{
+		{LineToleranceMm: 1},
+	},
+	CollisionSpecification: []motionplan.CollisionSpecification{
+		{Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
+			{Frame1: "table", Frame2: "bottle_origin"},
+		}},
+	},
+	OrientationConstraint: []motionplan.OrientationConstraint{
+		{OrientationToleranceDegs: 30},
+	},
+}
+
 // Define an orientation constraint so that the bottle is not flipped over when moving
 var orientationConstraint = motionplan.Constraints{
 	OrientationConstraint: []motionplan.OrientationConstraint{
@@ -52,8 +66,8 @@ var grabVectorOrient = &spatialmath.OrientationVector{OX: vectorArmToBottle.X, O
 
 // HARDCODE FOR NOW
 // where to measure the wine bottled
-// var wineBottleMeasurePoint = r3.Vector{X: -255, Y: 334, Z: 108}
-var wineBottleMeasurePoint = r3.Vector{X: -255, Y: 334, Z: 108 - 29}
+// var wineBottleMeasurePoint = r3.Vector{X: -255, Y: 334, Z: 108 - 29}
+var wineBottleMeasurePoint = r3.Vector{X: -470, Y: 305, Z: 138}
 
 // Create the obstacles for things not to hit
 func GenerateObstacles() []*referenceframe.GeometriesInFrame {
