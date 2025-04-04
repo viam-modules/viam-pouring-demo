@@ -4,7 +4,7 @@
 
   export let client: GenericService;
 
-  let status: string | undefined = undefined;
+  let status: string | undefined;
   let interval: number | undefined = undefined;
   type Status = {
     status: string;
@@ -15,6 +15,7 @@
       "found the positions of the cups, will do planning now",
       "done with prep planning",
       "planned cup",
+      "unknown",
     ],
     POURING: ["DONE CONSTRUCTING PLANS -- EXECUTING NOW", "success"],
     "CHEERS!": ["done running the demo"],
@@ -44,13 +45,13 @@
 
   $: displayStatus = (() => {
     if (!status) {
-      return "unknown";
+      return "THINKING";
     }
 
     for (const key in displayStates) {
       if (displayStates.hasOwnProperty(key)) {
         const values = displayStates[key];
-        if (values.some((val) => status.includes(val))) {
+        if (values.some((val) => status?.includes(val))) {
           return key;
         }
       }
