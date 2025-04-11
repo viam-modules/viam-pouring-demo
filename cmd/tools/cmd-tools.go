@@ -104,6 +104,10 @@ func realMain() error {
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromFar: true})
 	case "pour-mid":
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromMid: true})
+	case "camera-calibrate-skew":
+		return g.CameraCalibrate(ctx, 0.295, 0.295, 0.295, 0.295)
+	case "camera-calibrate-no-skew":
+		return g.CameraCalibrate(ctx, 0, 0, 0, 0)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}

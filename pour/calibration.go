@@ -22,7 +22,7 @@ type PouringOptions struct {
 func (g *Gen) StartPouringProcess(ctx context.Context, options PouringOptions) error {
 
 	//cupLocations, err := g.GetCupPositions(ctx)
-	cupLocations, err := g.FindCupsEliot(ctx)
+	cupLocations, err := g.FindCupsEliot(ctx, 0.295, 0.295, 0.295, 0.295)
 	if err != nil {
 		return err
 	}
@@ -96,4 +96,25 @@ func sortByDistance(vectors []r3.Vector) []r3.Vector {
 	}
 
 	return sortedVectors
+}
+
+func (g *Gen) CameraCalibrate(ctx context.Context, deltaXPos, deltaYPos, deltaXNeg, deltaYNeg float64) error {
+	cupLocations, err := g.FindCupsEliot(ctx, deltaXPos, deltaYPos, deltaXNeg, deltaYNeg)
+	if err != nil {
+		return err
+	}
+
+	pourPositions := g.CameraToPourPositions(ctx, cupLocations)
+
+	// order the cups so that we got the farthest one first and the closest one last
+	pourPositions = sortByDistance(pourPositions)
+
+	for _, position := range pourPositions {
+		g.logger.Infof("position: %v", position)
+		g.arm.MoveToPosition(ctx, spatialmath.NewPose(
+			position,
+			&spatialmath.OrientationVectorDegrees{OX: -1},
+		), nil)
+	}
+	return nil
 }
