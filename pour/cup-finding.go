@@ -3,7 +3,6 @@ package pour
 import (
 	"context"
 	"errors"
-	"fmt"
 	"image"
 	"math"
 	"strconv"
@@ -95,8 +94,10 @@ func (g *Gen) getTheDetections(ctx context.Context, logger logging.Logger, amoun
 	}
 	x := []float64{}
 	y := []float64{}
+	xAdjustment := []float64{}
+	yAdjustment := []float64{}
 	for successes := 0; successes < 5; {
-		logger.Infof("attempting calibration iteration: %d", successes)
+		// logger.Infof("attempting calibration iteration: %d", successes)
 		detections, err := g.camVision.DetectionsFromCamera(ctx, g.cam.Name().Name, nil)
 		if err != nil {
 			logger.Fatal(err)
@@ -115,26 +116,30 @@ func (g *Gen) getTheDetections(ctx context.Context, logger logging.Logger, amoun
 		}
 		if successes == 0 {
 			for i := range len(clusters) {
-				logger.Infof("circles[0].center: %v", circles[i].center)
+				// logger.Infof("circles[0].center: %v", circles[i].center)
 				x = append(x, float64(circles[i].center.X))
 				y = append(y, float64(circles[i].center.Y))
 				logger.Infof(" ")
-				xAdj, yAdj := g.determineAdjustment(logger, float64(circles[i].center.X), float64(circles[i].center.Y))
-				logger.Infof("xAdj %f", xAdj)
-				logger.Infof("yAdj %f", yAdj)
-				pt := circleToPt(*properties.IntrinsicParams, circles[i], 715, xAdj, yAdj)
+				// xAdj, yAdj := g.determineAdjustment(logger, float64(circles[i].center.X), float64(circles[i].center.Y), deltaXPos, deltaYPos, deltaXNeg, deltaYNeg)
+				// xAdjustment = append(xAdjustment, xAdj)
+				// yAdjustment = append(yAdjustment, yAdj)
+				// logger.Infof("xAdj %f", xAdj)
+				// logger.Infof("yAdj %f", yAdj)
+				pt := circleToPt(*properties.IntrinsicParams, circles[i], 715)
 				clusters[i].include(pt)
 			}
 		} else {
 			for _, circle := range circles {
-				logger.Infof("circle.center: %v", circle.center)
-				logger.Infof(" ")
+				// logger.Infof("circle.center: %v", circle.center)
+				// logger.Infof(" ")
 				x = append(x, float64(circle.center.X))
 				y = append(y, float64(circle.center.Y))
-				xAdj, yAdj := g.determineAdjustment(logger, float64(circle.center.X), float64(circle.center.Y))
-				logger.Infof("xAdj %f", xAdj)
-				logger.Infof("yAdj %f", yAdj)
-				pt := circleToPt(*properties.IntrinsicParams, circle, 715, xAdj, yAdj)
+				// xAdj, yAdj := g.determineAdjustment(logger, float64(circle.center.X), float64(circle.center.Y), deltaXPos, deltaYPos, deltaXNeg, deltaYNeg)
+				// xAdjustment = append(xAdjustment, xAdj)
+				// yAdjustment = append(yAdjustment, yAdj)
+				// logger.Infof("xAdj %f", xAdj)
+				// logger.Infof("yAdj %f", yAdj)
+				pt := circleToPt(*properties.IntrinsicParams, circle, 715)
 
 				min := math.Inf(1)
 				minIdx := 0
@@ -153,8 +158,12 @@ func (g *Gen) getTheDetections(ctx context.Context, logger logging.Logger, amoun
 
 	xAvg := calculateAverage(x)
 	yAvg := calculateAverage(y)
+	xAdjAvg := calculateAverage(xAdjustment)
+	yAdjAvg := calculateAverage(yAdjustment)
 	logger.Infof("xAvg: %f", xAvg)
 	logger.Infof("yAvg: %f", yAvg)
+	logger.Infof("xAdjAvg: %f", xAdjAvg)
+	logger.Infof("yAdjAvg: %f", yAdjAvg)
 
 	return clusters
 }
@@ -172,79 +181,83 @@ func calculateAverage(numbers []float64) float64 {
 	return sum / float64(len(numbers))
 }
 
-func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64) (float64, float64) {
-	// deltaXNeg := 0.2
-	// deltaXPos := 0.2
-	// deltaYNeg := 0.295
-	// deltaYPos := 0.295
+// func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY, deltaXPos, deltaYPos, deltaXNeg, deltaYNeg float64) (float64, float64) {
+// 	// deltaXNeg := 0.2
+// 	// deltaXPos := 0.2
+// 	// deltaYNeg := 0.295
+// 	// deltaYPos := 0.295
 
-	// [aw] consts before moving to config
-	// deltaXNeg := 0.2
-	// deltaXPos := 0.325
-	// deltaYNeg := 0.295
-	// deltaYPos := 0.325
+// 	// [aw] consts before moving to config
+// 	// deltaXNeg := 0.295
+// 	// deltaXPos := 0.295
+// 	// deltaYNeg := 0.295
+// 	// deltaYPos := 0.295
+// 	// deltaXNeg := 0.
+// 	// deltaXPos := 0.
+// 	// deltaYNeg := 0.
+// 	// deltaYPos := 0.
 
-	deltaXNeg := g.conf.DeltaXNeg
-	deltaXPos := g.conf.DeltaXPos
-	deltaYNeg := g.conf.DeltaYNeg
-	deltaYPos := g.conf.DeltaYPos
+// 	// deltaXNeg := g.conf.DeltaXNeg
+// 	// deltaXPos := g.conf.DeltaXPos
+// 	// deltaYNeg := g.conf.DeltaYNeg
+// 	// deltaYPos := g.conf.DeltaYPos
 
-	logger.Infof("deltaXPos: %f", deltaXPos)
-	logger.Infof("deltaYPos: %f", deltaYPos)
-	logger.Infof("deltaXNeg: %f", deltaXNeg)
-	logger.Infof("deltaYNeg: %f", deltaYNeg)
-	logger.Infof("hi there lol")
+// 	logger.Infof("deltaXPos: %f", deltaXPos)
+// 	logger.Infof("deltaYPos: %f", deltaYPos)
+// 	logger.Infof("deltaXNeg: %f", deltaXNeg)
+// 	logger.Infof("deltaYNeg: %f", deltaYNeg)
+// 	// logger.Infof("hi there lol")
 
-	// 313,225
-	deltaX := 313 - inputX
-	deltaY := 225 - inputY
-	if math.Abs(deltaX) < 7 {
-		deltaX = 0
-	}
-	logger.Infof("deltaX: %f", deltaX)
-	logger.Infof("deltaY: %f", deltaY)
-	if deltaX > 0 && deltaY > 0 {
-		logger.Info("deltaX > 0 && deltaY > 0")
-		logger.Info("using deltaXPos and deltaYPos")
-		return deltaX * deltaXPos, deltaY * deltaYPos
-	} else if deltaX > 0 && deltaY < 0 {
-		logger.Info("deltaX > 0 && deltaY < 0")
-		logger.Info("using deltaXPos and deltaYNeg")
-		deltaXPos = 0.22
-		return deltaX * deltaXPos, deltaY * deltaYNeg
-	} else if deltaX < 0 && deltaY < 0 {
-		logger.Info("deltaX < 0 && deltaY < 0")
-		logger.Info("using deltaXNeg and deltaYNeg")
-		return deltaX * deltaXNeg, deltaY * deltaYNeg
-	} else if deltaX == 0 && deltaY < 0 {
-		logger.Info("deltaX == 0 && deltaY < 0")
-		logger.Info("using 0 and deltaYNeg")
-		return deltaX * deltaXNeg, deltaY * deltaYNeg
-	} else if deltaY == 0 && deltaX < 0 {
-		logger.Info("deltaY == 0 && deltaX < 0")
-		logger.Info("using deltaXNeg and 0")
-		return deltaX * deltaXNeg, deltaY * deltaYNeg
-	} else if deltaX == 0 && deltaY > 0 {
-		logger.Info("deltaX == 0 && deltaY > 0")
-		logger.Info("using 0 and deltaYPos")
-		return 1, deltaY * deltaYPos
-	} else if deltaY == 0 && deltaX > 0 {
-		logger.Info("deltaY == 0 && deltaX > 0")
-		logger.Info("using deltaXPos and 0")
-		return deltaX * deltaXPos, deltaY * deltaYNeg
-	}
-	logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
-	logger.Info("deltaX < 0 && deltaY > 0")
-	logger.Info("using deltaXNeg and deltaYPos")
-	return deltaX * 0, deltaY * deltaYPos
-}
+// 	// 313,225
+// 	deltaX := 313 - inputX
+// 	deltaY := 225 - inputY
+// 	if math.Abs(deltaX) < 7 {
+// 		deltaX = 0
+// 	}
+// 	// logger.Infof("deltaX: %f", deltaX)
+// 	// logger.Infof("deltaY: %f", deltaY)
+// 	if deltaX > 0 && deltaY > 0 {
+// 		// logger.Info("deltaX > 0 && deltaY > 0")
+// 		// logger.Info("using deltaXPos and deltaYPos")
+// 		return deltaX * deltaXPos, deltaY * deltaYPos
+// 	} else if deltaX > 0 && deltaY < 0 {
+// 		// logger.Info("deltaX > 0 && deltaY < 0")
+// 		// logger.Info("using deltaXPos and deltaYNeg")
+// 		deltaXPos = 0.22
+// 		return deltaX * deltaXPos, deltaY * deltaYNeg
+// 	} else if deltaX < 0 && deltaY < 0 {
+// 		// logger.Info("deltaX < 0 && deltaY < 0")
+// 		// logger.Info("using deltaXNeg and deltaYNeg")
+// 		return deltaX * deltaXNeg, deltaY * deltaYNeg
+// 	} else if deltaX == 0 && deltaY < 0 {
+// 		// logger.Info("deltaX == 0 && deltaY < 0")
+// 		// logger.Info("using 0 and deltaYNeg")
+// 		return deltaX * deltaXNeg, deltaY * deltaYNeg
+// 	} else if deltaY == 0 && deltaX < 0 {
+// 		// logger.Info("deltaY == 0 && deltaX < 0")
+// 		// logger.Info("using deltaXNeg and 0")
+// 		return deltaX * deltaXNeg, deltaY * deltaYNeg
+// 	} else if deltaX == 0 && deltaY > 0 {
+// 		// logger.Info("deltaX == 0 && deltaY > 0")
+// 		// logger.Info("using 0 and deltaYPos")
+// 		return 1, deltaY * deltaYPos
+// 	} else if deltaY == 0 && deltaX > 0 {
+// 		// logger.Info("deltaY == 0 && deltaX > 0")
+// 		// logger.Info("using deltaXPos and 0")
+// 		return deltaX * deltaXPos, deltaY * deltaYNeg
+// 	}
+// 	// logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
+// 	// logger.Info("deltaX < 0 && deltaY > 0")
+// 	// logger.Info("using deltaXNeg and deltaYPos")
+// 	return deltaX * 0, deltaY * deltaYPos
+// }
 
-func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, xAdjustment, yAdjustment float64) r3.Vector {
+func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z float64) r3.Vector {
 	xmm := (float64(circle.center.X) - intrinsics.Ppx) * (z / intrinsics.Fx)
 	ymm := (float64(circle.center.Y) - intrinsics.Ppy) * (z / intrinsics.Fy)
-	fmt.Println("xAdjustment: ", xAdjustment)
-	fmt.Println("yAdjustment: ", yAdjustment)
-	xmm = xmm + xAdjustment
-	ymm = ymm + yAdjustment
+	// fmt.Println("xAdjustment: ", xAdjustment)
+	// fmt.Println("yAdjustment: ", yAdjustment)
+	// xmm = xmm + xAdjustment
+	// ymm = ymm + yAdjustment
 	return r3.Vector{X: xmm, Y: ymm, Z: z}
 }
