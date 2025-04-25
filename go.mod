@@ -7,6 +7,7 @@ toolchain go1.23.5
 require (
 	github.com/erh/vmodutils v0.0.0-20250329151436-d45505901666
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
+	github.com/raybjork/apriltag v0.0.7
 	github.com/viam-labs/motion-tools v0.0.0-20250328192156-3d47f696cdd3
 	go.uber.org/multierr v1.11.0
 	go.viam.com/rdk v0.68.1
