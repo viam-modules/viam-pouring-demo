@@ -13,6 +13,8 @@ import (
 	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
 
@@ -90,6 +92,11 @@ func realMain() error {
 		return g.ResetArmToHome(ctx)
 	case "intermediate":
 		return g.GoToPrepForPour(ctx)
+	case "print-world":
+		printPoseInfo(ctx, motion, cam.Name(), logger)
+		printPoseInfo(ctx, motion, arm.Name(), logger)
+		printPoseInfo(ctx, motion, gripper.Name(), logger)
+		return nil
 	case "visWorldState":
 		return visObstacles(arm)
 	case "plan":
@@ -134,4 +141,13 @@ func visObstacles(arm arm.Arm) error {
 	}
 
 	return nil
+}
+
+func printPoseInfo(ctx context.Context, motion motion.Service, name resource.Name, logger logging.Logger) {
+	p, err := motion.GetPose(ctx, name, referenceframe.World, nil, nil)
+	if err != nil {
+		logger.Warnf("cannot get pose for %v : %v", err)
+	} else {
+		fmt.Printf("%v: %v\n", name, p.Pose().Point())
+	}
 }

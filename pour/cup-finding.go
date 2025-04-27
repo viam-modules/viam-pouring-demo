@@ -128,20 +128,15 @@ func findMinMaxIndepth(img image.Image, b *image.Rectangle) (int, int) {
 func (g *Gen) FindCupsMiko(ctx context.Context) ([]spatialmath.Pose, error) {
 	logger := g.logger
 
-	realsense := g.cam
-
 	// here I need to figure out how many cups there are on the table before I proceed to figure out how many cups to look for and their positions
-	dets, err := g.camVision.DetectionsFromCamera(ctx, realsense.Name().Name, nil)
+	dets, err := g.camVision.DetectionsFromCamera(ctx, g.cam.Name().Name, nil)
 	if err != nil {
-		g.setStatus(err.Error())
 		return nil, err
 	}
 	numOfCupsToDetect := len(dets)
 	g.setStatus("found this many cups: " + strconv.Itoa(numOfCupsToDetect) + " will now determine their postions")
 	if numOfCupsToDetect == 0 {
-		statement := "there were no cups placed on the table"
-		g.setStatus(statement)
-		return nil, errors.New(statement)
+		return nil, errors.New("there were no cups placed on the table")
 	}
 
 	g.logger.Infof("WE FOUND THIS MANY CUPS: %d", numOfCupsToDetect)
@@ -153,10 +148,6 @@ func (g *Gen) FindCupsMiko(ctx context.Context) ([]spatialmath.Pose, error) {
 	cupLocations := []spatialmath.Pose{}
 	for _, c := range clusters {
 		cupLocations = append(cupLocations, spatialmath.NewPoseFromPoint(c.mean()))
-	}
-	g.logger.Info("LOCATIONS IN THE FRAME OF THE CAMERA")
-	for i := 0; i < numOfCupsToDetect; i++ {
-		g.logger.Infof("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
 	}
 
 	return cupLocations, nil
@@ -253,28 +244,6 @@ func calculateAverage(numbers []float64) float64 {
 }
 
 func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64) (float64, float64) {
-	// deltaXNeg := 0.2
-	// deltaXPos := 0.2
-	// deltaYNeg := 0.295
-	// deltaYPos := 0.295
-
-	// [aw] consts before moving to config
-	// deltaXNeg := 0.2
-	// deltaXPos := 0.325
-	// deltaYNeg := 0.295
-	// deltaYPos := 0.325
-
-	deltaXNeg := g.conf.DeltaXNeg
-	deltaXPos := g.conf.DeltaXPos
-	deltaYNeg := g.conf.DeltaYNeg
-	deltaYPos := g.conf.DeltaYPos
-
-	logger.Infof("deltaXPos: %f", deltaXPos)
-	logger.Infof("deltaYPos: %f", deltaYPos)
-	logger.Infof("deltaXNeg: %f", deltaXNeg)
-	logger.Infof("deltaYNeg: %f", deltaYNeg)
-	logger.Infof("hi there lol")
-
 	// 313,225
 	deltaX := 313 - inputX
 	deltaY := 225 - inputY
@@ -286,37 +255,36 @@ func (g *Gen) determineAdjustment(logger logging.Logger, inputX, inputY float64)
 	if deltaX > 0 && deltaY > 0 {
 		logger.Info("deltaX > 0 && deltaY > 0")
 		logger.Info("using deltaXPos and deltaYPos")
-		return deltaX * deltaXPos, deltaY * deltaYPos
+		return deltaX * g.conf.DeltaXPos, deltaY * g.conf.DeltaYPos
 	} else if deltaX > 0 && deltaY < 0 {
 		logger.Info("deltaX > 0 && deltaY < 0")
 		logger.Info("using deltaXPos and deltaYNeg")
-		deltaXPos = 0.22
-		return deltaX * deltaXPos, deltaY * deltaYNeg
+		return deltaX * .22, deltaY * g.conf.DeltaYNeg
 	} else if deltaX < 0 && deltaY < 0 {
 		logger.Info("deltaX < 0 && deltaY < 0")
 		logger.Info("using deltaXNeg and deltaYNeg")
-		return deltaX * deltaXNeg, deltaY * deltaYNeg
+		return deltaX * g.conf.DeltaXNeg, deltaY * g.conf.DeltaYNeg
 	} else if deltaX == 0 && deltaY < 0 {
 		logger.Info("deltaX == 0 && deltaY < 0")
 		logger.Info("using 0 and deltaYNeg")
-		return deltaX * deltaXNeg, deltaY * deltaYNeg
+		return deltaX * g.conf.DeltaXNeg, deltaY * g.conf.DeltaYNeg
 	} else if deltaY == 0 && deltaX < 0 {
 		logger.Info("deltaY == 0 && deltaX < 0")
 		logger.Info("using deltaXNeg and 0")
-		return deltaX * deltaXNeg, deltaY * deltaYNeg
+		return deltaX * g.conf.DeltaXNeg, deltaY * g.conf.DeltaYNeg
 	} else if deltaX == 0 && deltaY > 0 {
 		logger.Info("deltaX == 0 && deltaY > 0")
 		logger.Info("using 0 and deltaYPos")
-		return 1, deltaY * deltaYPos
+		return 1, deltaY * g.conf.DeltaYPos
 	} else if deltaY == 0 && deltaX > 0 {
 		logger.Info("deltaY == 0 && deltaX > 0")
 		logger.Info("using deltaXPos and 0")
-		return deltaX * deltaXPos, deltaY * deltaYNeg
+		return deltaX * g.conf.DeltaXPos, deltaY * g.conf.DeltaYNeg
 	}
 	logger.Info("NONE OF THE CONDITINALS HIT, IN ELSE")
 	logger.Info("deltaX < 0 && deltaY > 0")
 	logger.Info("using deltaXNeg and deltaYPos")
-	return deltaX * 0, deltaY * deltaYPos
+	return deltaX * 0, deltaY * g.conf.DeltaYPos
 }
 
 func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, xAdjustment, yAdjustment float64) r3.Vector {
