@@ -92,6 +92,8 @@ func realMain() error {
 		return g.ResetArmToHome(ctx)
 	case "intermediate":
 		return g.GoToPrepForPour(ctx)
+	case "touch-prep":
+		return touchPrep(ctx, client, motion, arm, cam, logger)
 	case "touch":
 		return touch(ctx, client, motion, arm, cam, logger)
 	case "print-world":

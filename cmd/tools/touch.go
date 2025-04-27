@@ -17,7 +17,7 @@ import (
 	"go.viam.com/rdk/spatialmath"
 )
 
-func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, arm arm.Arm, cam camera.Camera, logger logging.Logger) error {
+func touchPrep(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, arm arm.Arm, cam camera.Camera, logger logging.Logger) error {
 
 	start := referenceframe.NewPoseInFrame(
 		"world",
@@ -39,6 +39,16 @@ func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, ar
 	}
 	if !done {
 		return fmt.Errorf("first move didn't finish")
+	}
+
+	return nil
+}
+
+func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, arm arm.Arm, cam camera.Camera, logger logging.Logger) error {
+
+	err := touchPrep(ctx, myRobot, myMotion, arm, cam, logger)
+	if err != nil {
+		return err
 	}
 
 	imgs, _, err := cam.Images(ctx)
@@ -72,7 +82,7 @@ func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, ar
 
 	logger.Infof("touchPoint   : %v", touchPoint)
 
-	done, err = myMotion.Move(
+	done, err := myMotion.Move(
 		ctx,
 		motion.MoveReq{
 			ComponentName: arm.Name(),
