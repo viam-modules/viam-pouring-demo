@@ -92,6 +92,8 @@ func realMain() error {
 		return g.ResetArmToHome(ctx)
 	case "intermediate":
 		return g.GoToPrepForPour(ctx)
+	case "touch":
+		return touch(ctx, client, motion, arm, cam, logger)
 	case "print-world":
 		printPoseInfo(ctx, motion, cam.Name(), logger)
 		printPoseInfo(ctx, motion, arm.Name(), logger)
@@ -148,6 +150,6 @@ func printPoseInfo(ctx context.Context, motion motion.Service, name resource.Nam
 	if err != nil {
 		logger.Warnf("cannot get pose for %v : %v", err)
 	} else {
-		fmt.Printf("%v: %v\n", name, p.Pose().Point())
+		fmt.Printf("%v: %v %T\n", name, p.Pose(), p.Pose())
 	}
 }
