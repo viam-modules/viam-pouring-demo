@@ -55,7 +55,7 @@ func realMain() error {
 	if err != nil {
 		logger.Fatalf("arm erroring: %v", err)
 	}
-	logger.Infof("current positions", j)
+	logger.Infof("arm current positions %v", j)
 
 	gripper, err := gripper.FromRobot(client, "gripper")
 	if err != nil || gripper == nil {
@@ -100,6 +100,15 @@ func realMain() error {
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromFar: true})
 	case "pour-mid":
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromMid: true})
+	case "find-cups":
+		cups, err := g.FindCups(ctx)
+		if err != nil {
+			return err
+		}
+		for idx, c := range cups {
+			logger.Infof("cup %d : %v", idx, c)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}

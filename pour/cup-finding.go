@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"math"
 	"strconv"
 
@@ -20,11 +21,111 @@ type Circle struct {
 	radius int
 }
 
-func calculateThePoseTheArmShouldGoTo(transformBy, clusterPose spatialmath.Pose) spatialmath.Pose {
-	return spatialmath.Compose(transformBy, clusterPose)
+// returns cups in the world frame
+func (g *Gen) FindCups(ctx context.Context) ([]spatialmath.Pose, error) {
+	eliot, err := g.FindCupsEliot(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	eliot, err = g.cameraToWorldPoses(ctx, eliot)
+	if err != nil {
+		return nil, err
+	}
+
+	miko, err := g.FindCupsMiko(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	miko, err = g.cameraToWorldPoses(ctx, miko)
+	if err != nil {
+		return nil, err
+	}
+
+	g.logger.Infof("eliot: %v", eliot)
+	g.logger.Infof("miko: %v", miko)
+
+	return eliot, nil
+}
+
+func (g *Gen) cameraToWorldPoses(ctx context.Context, cam []spatialmath.Pose) ([]spatialmath.Pose, error) {
+	tf, err := g.motion.GetPose(ctx, g.cam.Name(), referenceframe.World, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	world := []spatialmath.Pose{}
+	for _, p := range cam {
+		world = append(world, spatialmath.Compose(tf.Pose(), p))
+	}
+
+	return world, nil
 }
 
 func (g *Gen) FindCupsEliot(ctx context.Context) ([]spatialmath.Pose, error) {
+	properties, err := g.cam.Properties(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	dets, err := g.camVision.DetectionsFromCamera(ctx, "", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	imgs, _, err := g.cam.Images(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(imgs) != 2 {
+		return nil, fmt.Errorf("expecting 2 images, got %d", len(imgs))
+	}
+	if imgs[1].SourceName != "depth" {
+		return nil, fmt.Errorf("img 1 name was %s, not depth", imgs[1].SourceName)
+	}
+
+	res := []spatialmath.Pose{}
+	for _, d := range dets {
+		x := float64((d.BoundingBox().Min.X + d.BoundingBox().Max.X) / 2)
+		y := float64((d.BoundingBox().Min.Y + d.BoundingBox().Max.Y) / 2)
+
+		min, _ := findMinMaxIndepth(imgs[1].Image, d.BoundingBox())
+
+		x, y, z := properties.IntrinsicParams.PixelToPoint(x, y, float64(min))
+
+		p := spatialmath.NewPoseFromPoint(r3.Vector{X: x, Y: y, Z: z})
+
+		g.logger.Infof("detection: %v,%v min: %v", x, y, min)
+
+		res = append(res, p)
+	}
+
+	return res, nil
+}
+
+func findMinMaxIndepth(img image.Image, b *image.Rectangle) (int, int) {
+	min := 100000
+	max := 0
+
+	for x := b.Min.X; x < b.Max.X; x++ {
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			z := int((img.At(x, y).(color.Gray16)).Y)
+			if z == 0 {
+				continue
+			}
+			if z < min {
+				min = z
+			}
+			if z > max {
+				max = z
+			}
+		}
+	}
+	return min, max
+}
+
+func (g *Gen) FindCupsMiko(ctx context.Context) ([]spatialmath.Pose, error) {
 	logger := g.logger
 
 	realsense := g.cam
@@ -58,20 +159,6 @@ func (g *Gen) FindCupsEliot(ctx context.Context) ([]spatialmath.Pose, error) {
 		g.logger.Infof("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
 	}
 
-	motionService := g.motion
-
-	// get the transform from camera frame to the world frame
-	tf, _ := motionService.GetPose(ctx, realsense.Name(), referenceframe.World, nil, nil)
-
-	for i := 0; i < numOfCupsToDetect; i++ {
-		cupLocations[i] = calculateThePoseTheArmShouldGoTo(tf.Pose(), cupLocations[i])
-	}
-
-	g.logger.Info("LOCATIONS IN THE FRAME OF THE ARM")
-	for i := 0; i < numOfCupsToDetect; i++ {
-		g.logger.Infof("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
-	}
-	// panic("stop")
 	return cupLocations, nil
 }
 

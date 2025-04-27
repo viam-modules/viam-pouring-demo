@@ -36,15 +36,12 @@ func (g *Gen) StartPouringProcess(ctx context.Context, options PouringOptions) e
 	return g.demoPlanMovements(ctx, pourPositions, options)
 }
 
-// cupLocations is in the frame of the camefra
+// cupLocations is in the frame of the arm
 //
 //	should be the center of the rim
 //
 // return is in frame of arm
 func (g *Gen) CameraToPourPositions(ctx context.Context, cupLocations []spatialmath.Pose) []r3.Vector {
-	// get the transform from camera frame to the world frame
-	// tf, _ := g.motion.GetPose(ctx, g.cam.Name(), referenceframe.World, nil, nil)
-
 	pourPoints := []r3.Vector{}
 
 	for i, c := range cupLocations {
