@@ -11,7 +11,6 @@ import (
 var (
 	cameraToTable = 715 - plywoodHeight        // this second value is for the plywood cover that sits on top of the table
 	pourOffset    = r3.Vector{40, 0, 205 - 50} // this variable controls where to pour from relative to the position of the cup as discovered by the camera
-	// pourOffset    = r3.Vector{0, 0, 35} // this variable controls where to pour from relative to the position of the cup as discovered by the camera
 )
 
 type PouringOptions struct {
@@ -21,7 +20,6 @@ type PouringOptions struct {
 
 func (g *Gen) StartPouringProcess(ctx context.Context, options PouringOptions) error {
 
-	//cupLocations, err := g.GetCupPositions(ctx)
 	cupLocations, err := g.FindCupsEliot(ctx)
 	if err != nil {
 		return err
@@ -50,13 +48,10 @@ func (g *Gen) CameraToPourPositions(ctx context.Context, cupLocations []spatialm
 	pourPoints := []r3.Vector{}
 
 	for i, c := range cupLocations {
-		// cupCenterInArm := spatialmath.Compose(tf.Pose(), c)
 		pourLocationInArm := c.Point().Add(pourOffset)
 
 		pourPoints = append(pourPoints, pourLocationInArm)
 
-		// g.logger.Infof("cup %d\n - cup center: %v\n - cup center in arm: %v\n - pour center in arm: %v",
-		// 	i, c, cupCenterInArm, pourLocationInArm)
 		g.logger.Infof("cup %d\n - cup center: %v\n - pour center in arm: %v",
 			i, c, pourLocationInArm)
 	}

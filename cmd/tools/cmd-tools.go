@@ -90,10 +90,6 @@ func realMain() error {
 		return g.ResetArmToHome(ctx)
 	case "intermediate":
 		return g.GoToPrepForPour(ctx)
-	// case "pick-far":
-	// 	return g.PickFarBottle(ctx)
-	// case "pick-mid":
-	// 	return g.PickMiddleBottle(ctx)
 	case "visWorldState":
 		return visObstacles(arm)
 	case "plan":

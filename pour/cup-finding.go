@@ -27,7 +27,6 @@ func calculateThePoseTheArmShouldGoTo(transformBy, clusterPose spatialmath.Pose)
 func (g *Gen) FindCupsEliot(ctx context.Context) ([]spatialmath.Pose, error) {
 	logger := g.logger
 
-	// Get the camera from the robot
 	realsense := g.cam
 
 	// here I need to figure out how many cups there are on the table before I proceed to figure out how many cups to look for and their positions
@@ -54,18 +53,12 @@ func (g *Gen) FindCupsEliot(ctx context.Context) ([]spatialmath.Pose, error) {
 	for _, c := range clusters {
 		cupLocations = append(cupLocations, spatialmath.NewPoseFromPoint(c.mean()))
 	}
-	g.logger.Info(" ")
-	g.logger.Info(" ")
 	g.logger.Info("LOCATIONS IN THE FRAME OF THE CAMERA")
 	for i := 0; i < numOfCupsToDetect; i++ {
 		g.logger.Infof("cupLocations[%d]: %v\n", i, spatialmath.PoseToProtobuf(cupLocations[i]))
 	}
 
 	motionService := g.motion
-	g.logger.Info(" ")
-	g.logger.Info(" ")
-	g.logger.Info(" ")
-	g.logger.Info(" ")
 
 	// get the transform from camera frame to the world frame
 	tf, _ := motionService.GetPose(ctx, realsense.Name(), referenceframe.World, nil, nil)
