@@ -151,16 +151,12 @@ func findTouchPoint2d(ctx context.Context, myRobot robot.Robot, cam camera.Camer
 	closest, distance := findClosestPoint(imgs[1].Image, centerPlus(imgs[1].Image, 40))
 	logger.Infof("closest: %v distance: %v", closest, distance)
 
-	return camToWorld(ctx, myRobot, cam, closest, distance)
-}
-
-func camToWorld(ctx context.Context, myRobot robot.Robot, cam camera.Camera, pt image.Point, distance int) (*referenceframe.PoseInFrame, error) {
 	properties, err := cam.Properties(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	x, y, z := properties.IntrinsicParams.PixelToPoint(float64(pt.X), float64(pt.X), float64(distance))
+	x, y, z := properties.IntrinsicParams.PixelToPoint(float64(closest.X), float64(closest.X), float64(distance))
 	p := spatialmath.NewPoseFromPoint(r3.Vector{X: x, Y: y, Z: z})
 	return myRobot.TransformPose(ctx, referenceframe.NewPoseInFrame(cam.Name().ShortName(), p), "world", nil)
 }
