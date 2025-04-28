@@ -877,6 +877,8 @@ github.com/viam-labs/motion-tools v0.0.0-20250423162246-2b29bec642d2 h1:2A/TwKA3
 github.com/viam-labs/motion-tools v0.0.0-20250423162246-2b29bec642d2/go.mod h1:hyBYFSjS7Vf6R28CDqVOngSnX1vFHQpZQqkNmdByOD4=
 github.com/viam-labs/motion-tools v0.0.0-20250428032713-919634ed4286 h1:q+HiCY1OkaOYkL+OtDbHiFIP5wDEdMKaBVcXAbWn7qc=
 github.com/viam-labs/motion-tools v0.0.0-20250428032713-919634ed4286/go.mod h1:hyBYFSjS7Vf6R28CDqVOngSnX1vFHQpZQqkNmdByOD4=
+github.com/viam-labs/motion-tools v0.0.0-20250428163038-321ad25750f6 h1:jXG9EFx1sTUpC9hCPBDYLFeTMkfHa73WKqL5JIHeTJo=
+github.com/viam-labs/motion-tools v0.0.0-20250428163038-321ad25750f6/go.mod h1:LGkTHW+CerrOf0tk6A5OCYuSr2Yb9xjwfuBImU5A8fI=
 github.com/viamrobotics/evdev v0.1.3 h1:mR4HFafvbc5Wx4Vp1AUJp6/aITfVx9AKyXWx+rWjpfc=
 github.com/viamrobotics/evdev v0.1.3/go.mod h1:N6nuZmPz7HEIpM7esNWwLxbYzqWqLSZkfI/1Sccckqk=
 github.com/viamrobotics/webrtc/v3 v3.99.10 h1:ykE14wm+HkqMD5Ozq4rvhzzfvnXAu14ak/HzA1OCzfY=
