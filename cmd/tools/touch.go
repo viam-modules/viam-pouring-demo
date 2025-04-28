@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"time"
 
 	"github.com/golang/geo/r3"
 
@@ -68,39 +69,13 @@ func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, ar
 
 	logger.Infof("touchPointRaw3d: %v", touchPointRaw3d)
 
-	gripperGeom, err := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 160}, "gripper")
-	if err != nil {
-		return err
-	}
+	worldState, err := referenceframe.NewWorldState(nil, nil)
 
-	transforms := []*referenceframe.LinkInFrame{
-		referenceframe.NewLinkInFrame(
-			arm.Name().ShortName(),
-			spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 150}),
-			"gripper_grab",
-			gripperGeom,
-		),
-	}
-
-	worldState, err := referenceframe.NewWorldState(nil, transforms)
-
-	if true {
-		x, err := myRobot.TransformPose(
-			ctx,
-			touchPointRaw3d,
-			"world",
-			worldState.Transforms(),
-		)
-		if err != nil {
-			return err
-		}
-		logger.Infof("in world: %v", x)
-	}
-
+	logger.Infof("going to move")
 	done, err := myMotion.Move(
 		ctx,
 		motion.MoveReq{
-			ComponentName: resource.Name{Name: "gripper_grab"},
+			ComponentName: resource.Name{Name: "gripper-tip"},
 			Destination:   touchPointRaw3d,
 			WorldState:    worldState,
 		},
@@ -112,7 +87,9 @@ func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, ar
 		return fmt.Errorf("first move didn't finish")
 	}
 
-	return nil
+	time.Sleep(time.Second * 10)
+
+	return touchPrep(ctx, myRobot, myMotion, arm, cam, logger)
 }
 
 func findTouchPoint3d(ctx context.Context, myRobot robot.Robot, cam camera.Camera, logger logging.Logger) (*referenceframe.PoseInFrame, error) {
