@@ -7,9 +7,9 @@ toolchain go1.23.5
 require (
 	github.com/erh/vmodutils v0.0.0-20250329151436-d45505901666
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
-	github.com/viam-labs/motion-tools v0.0.0-20250328192156-3d47f696cdd3
+	github.com/viam-labs/motion-tools v0.0.0-20250428032713-919634ed4286
 	go.uber.org/multierr v1.11.0
-	go.viam.com/rdk v0.68.1
+	go.viam.com/rdk v0.69.0
 	go.viam.com/test v1.2.4
 	go.viam.com/utils v0.1.137
 	gonum.org/v1/gonum v0.12.0
@@ -171,9 +171,9 @@ require (
 	google.golang.org/api v0.196.0 // indirect
 	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
 	google.golang.org/grpc v1.71.0 // indirect
-	google.golang.org/protobuf v1.36.5 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/src-d/go-billy.v4 v4.3.2 // indirect

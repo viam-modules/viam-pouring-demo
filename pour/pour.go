@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/golang/geo/r3"
-	vizClient "github.com/viam-labs/motion-tools/client"
+	vizClient "github.com/viam-labs/motion-tools/client/client"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"

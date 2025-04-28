@@ -7,7 +7,7 @@ import (
 
 	"github.com/erh/vmodutils"
 
-	vizClient "github.com/viam-labs/motion-tools/client"
+	vizClient "github.com/viam-labs/motion-tools/client/client"
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
@@ -15,6 +15,7 @@ import (
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
+	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
 
@@ -102,7 +103,7 @@ func realMain() error {
 		printPoseInfo(ctx, motion, gripper.Name(), logger)
 		return nil
 	case "visWorldState":
-		return visObstacles(arm)
+		return visObstacles(ctx, client)
 	case "plan":
 		return g.StartPouringProcess(ctx, pour.PouringOptions{})
 	case "pour":
@@ -125,22 +126,24 @@ func realMain() error {
 	}
 }
 
-func visObstacles(arm arm.Arm) error {
+func visObstacles(ctx context.Context, myRobot robot.Robot) error {
 
-	armGeoms, err := arm.Geometries(context.Background(), nil)
+	err := vizClient.RemoveAllSpatialObjects()
 	if err != nil {
 		return err
 	}
 
-	for _, g := range armGeoms {
-		vizClient.DrawGeometry(g, "blue")
+	err = vizClient.DrawRobot(ctx, myRobot, nil)
+	if err != nil {
+		return err
 	}
 
-	gifs := pour.GenerateObstacles()
-
-	for _, g := range gifs {
+	for _, g := range pour.GenerateObstacles() {
 		for _, actualGeom := range g.Geometries() {
-			vizClient.DrawGeometry(actualGeom, "red")
+			err = vizClient.DrawGeometry(actualGeom, "red")
+			if err != nil {
+				return err
+			}
 		}
 	}
 

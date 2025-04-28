@@ -14,6 +14,7 @@ import (
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
@@ -58,10 +59,6 @@ func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, ar
 		return err
 	}
 
-	if touchPointRaw2d.Parent() != "world" {
-		return fmt.Errorf("frame wrong: %v", touchPointRaw2d.Parent())
-	}
-
 	logger.Infof("touchPointRaw: %v", touchPointRaw2d)
 
 	touchPointRaw3d, err := findTouchPoint3d(ctx, myRobot, cam, logger)
@@ -69,29 +66,43 @@ func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, ar
 		return err
 	}
 
-	if touchPointRaw3d.Parent() != "world" {
-		return fmt.Errorf("frame wrong: %v", touchPointRaw3d.Parent())
-	}
-
 	logger.Infof("touchPointRaw3d: %v", touchPointRaw3d)
 
-	touchPointRaw := touchPointRaw3d
+	gripperGeom, err := spatialmath.NewBox(spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: -80}), r3.Vector{X: 50, Y: 170, Z: 160}, "gripper")
+	if err != nil {
+		return err
+	}
 
-	touchPoint := referenceframe.NewPoseInFrame(
-		"world",
-		spatialmath.NewPose(
-			r3.Vector{X: touchPointRaw.Pose().Point().X, Y: touchPointRaw.Pose().Point().Y, Z: touchPointRaw.Pose().Point().Z + 200},
-			&spatialmath.OrientationVectorDegrees{OZ: -1, Theta: 160},
+	transforms := []*referenceframe.LinkInFrame{
+		referenceframe.NewLinkInFrame(
+			arm.Name().ShortName(),
+			spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 150}),
+			"gripper_grab",
+			gripperGeom,
 		),
-	)
+	}
 
-	logger.Infof("touchPoint   : %v", touchPoint)
+	worldState, err := referenceframe.NewWorldState(nil, transforms)
+
+	if true {
+		x, err := myRobot.TransformPose(
+			ctx,
+			touchPointRaw3d,
+			"world",
+			worldState.Transforms(),
+		)
+		if err != nil {
+			return err
+		}
+		logger.Infof("in world: %v", x)
+	}
 
 	done, err := myMotion.Move(
 		ctx,
 		motion.MoveReq{
-			ComponentName: arm.Name(),
-			Destination:   touchPoint,
+			ComponentName: resource.Name{Name: "gripper_grab"},
+			Destination:   touchPointRaw3d,
+			WorldState:    worldState,
 		},
 	)
 	if err != nil {
@@ -124,15 +135,10 @@ func findTouchPoint3d(ctx context.Context, myRobot robot.Robot, cam camera.Camer
 
 	logger.Infof("closest in 3d cam: %v", closest)
 
-	return myRobot.TransformPose(
-		ctx,
-		referenceframe.NewPoseInFrame(
-			cam.Name().ShortName(),
-			spatialmath.NewPoseFromPoint(closest),
-		),
-		"world",
-		nil,
-	)
+	return referenceframe.NewPoseInFrame(
+		cam.Name().ShortName(),
+		spatialmath.NewPoseFromPoint(closest),
+	), nil
 }
 
 func findTouchPoint2d(ctx context.Context, myRobot robot.Robot, cam camera.Camera, logger logging.Logger) (*referenceframe.PoseInFrame, error) {
@@ -158,7 +164,7 @@ func findTouchPoint2d(ctx context.Context, myRobot robot.Robot, cam camera.Camer
 
 	x, y, z := properties.IntrinsicParams.PixelToPoint(float64(closest.X), float64(closest.X), float64(distance))
 	p := spatialmath.NewPoseFromPoint(r3.Vector{X: x, Y: y, Z: z})
-	return myRobot.TransformPose(ctx, referenceframe.NewPoseInFrame(cam.Name().ShortName(), p), "world", nil)
+	return referenceframe.NewPoseInFrame(cam.Name().ShortName(), p), nil
 }
 
 func centerPlus(i image.Image, extra int) image.Rectangle {
