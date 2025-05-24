@@ -89,7 +89,14 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	if cfg.CupHeight == 0 {
 		return nil, nil, fmt.Errorf("cup_height cannot be unset")
 	}
-	return []string{cfg.ArmName, cfg.GripperName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, nil, nil
+
+	optionals := []string{}
+
+	if cfg.CroppedCupCamera != "" {
+		optionals = append(optionals, cfg.CroppedCupCamera)
+	}
+
+	return []string{cfg.ArmName, cfg.GripperName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, optionals, nil
 }
 
 type Config struct {
@@ -99,6 +106,8 @@ type Config struct {
 	CircleDetectionService string `json:"circle_detection_service"`
 	WeightSensorName       string `json:"weight_sensor_name"`
 	GripperName            string `json:"gripper_name"`
+
+	CroppedCupCamera string `json:"cropped_cup_camera"`
 
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
@@ -131,6 +140,8 @@ type Pour1Components struct {
 	Weight    sensor.Sensor
 	Motion    motion.Service
 	CamVision vision.Service
+
+	CroppedCupCamera camera.Camera
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -165,6 +176,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 	c.CamVision, err = vision.FromDependencies(deps, config.CircleDetectionService)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.CroppedCupCamera != "" {
+		c.CroppedCupCamera, err = camera.FromDependencies(deps, config.CroppedCupCamera)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return c, nil

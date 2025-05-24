@@ -32,6 +32,7 @@ func realMain() error {
 
 	flag.BoolVar(&debug, "debug", false, "")
 	host := flag.String("host", "", "host to connect to")
+	configFile := flag.String("config", "", "host to connect to")
 
 	flag.Parse()
 
@@ -39,12 +40,8 @@ func realMain() error {
 		logger.SetLevel(logging.DEBUG)
 	}
 
-	if flag.NArg() == 0 {
-		return fmt.Errorf("need a config file")
-	}
-
 	cfg := &pour.Config{}
-	err := vmodutils.ReadJSONFromFile(flag.Arg(0), cfg)
+	err := vmodutils.ReadJSONFromFile(*configFile, cfg)
 	if err != nil {
 		return err
 	}
@@ -73,8 +70,6 @@ func realMain() error {
 		return g.ResetArmToHome(ctx)
 	case "intermediate":
 		return g.GoToPrepForPour(ctx)
-	case "touch-prep":
-		return touchPrep(ctx, client, p1c, logger)
 	case "touch":
 		return touch(ctx, client, p1c, logger)
 	case "print-world":
