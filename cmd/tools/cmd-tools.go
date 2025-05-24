@@ -34,9 +34,9 @@ func realMain() error {
 	logger := logging.NewLogger("cup")
 
 	debug := false
-	ms := vmodutils.AddMachineFlags()
 
 	flag.BoolVar(&debug, "debug", false, "")
+	host := flag.String("host", "", "host to connect to")
 
 	flag.Parse()
 
@@ -44,7 +44,17 @@ func realMain() error {
 		logger.SetLevel(logging.DEBUG)
 	}
 
-	client, err := ms.Connect(ctx, logger)
+	if flag.NArg() == 0 {
+		return fmt.Errorf("need a config file")
+	}
+
+	cfg := &pour.Config{}
+	err := vmodutils.ReadJSONFromFile(flag.Arg(0), cfg)
+	if err != nil {
+		return err
+	}
+
+	client, err := vmodutils.ConnectToHostFromCLIToken(ctx, *host, logger)
 	if err != nil {
 		return err
 	}

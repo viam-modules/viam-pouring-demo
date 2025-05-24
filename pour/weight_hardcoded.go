@@ -14,8 +14,8 @@ type WeightHardcodedConfig struct {
 	Weight float64
 }
 
-func (c WeightHardcodedConfig) Validate(p string) ([]string, error) {
-	return nil, nil
+func (c WeightHardcodedConfig) Validate(p string) ([]string, []string, error) {
+	return nil, nil, nil
 }
 
 func init() {

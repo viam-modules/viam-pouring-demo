@@ -5,24 +5,23 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"runtime"
 	"sync"
 
 	"go.uber.org/multierr"
 
-	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
-	"go.viam.com/rdk/robot/client"
+	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/generic"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
-	"go.viam.com/utils/rpc"
+
+	"github.com/erh/vmodutils"
 )
 
 var Model = NamespaceFamily.WithModel("pour")
@@ -92,30 +91,30 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 	return g, nil
 }
 
-func (cfg *Config) Validate(path string) ([]string, error) {
+func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	if cfg.ArmName == "" {
-		return nil, fmt.Errorf("need an arm name")
+		return nil, nil, fmt.Errorf("need an arm name")
 	}
 	if cfg.GripperName == "" {
-		return nil, fmt.Errorf("need a gripper name")
+		return nil, nil, fmt.Errorf("need a gripper name")
 	}
 	if cfg.CameraName == "" {
-		return nil, fmt.Errorf("need a camera name")
+		return nil, nil, fmt.Errorf("need a camera name")
 	}
 	if cfg.WeightSensorName == "" {
-		return nil, fmt.Errorf("need a weight name")
+		return nil, nil, fmt.Errorf("need a weight name")
 	}
 	if cfg.CircleDetectionService == "" {
-		return nil, fmt.Errorf("need a circledetectionservice name")
+		return nil, nil, fmt.Errorf("need a circledetectionservice name")
 	}
 
 	if cfg.BottleHeight == 0 {
-		return nil, fmt.Errorf("bottle_height cannot be unset")
+		return nil, nil, fmt.Errorf("bottle_height cannot be unset")
 	}
 	if cfg.CupHeight == 0 {
-		return nil, fmt.Errorf("cup_height cannot be unset")
+		return nil, nil, fmt.Errorf("cup_height cannot be unset")
 	}
-	return []string{cfg.ArmName, cfg.GripperName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, nil
+	return []string{cfg.ArmName, cfg.GripperName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, nil, nil
 }
 
 type Config struct {
@@ -139,7 +138,7 @@ type Config struct {
 }
 
 func NewTesting(logger logging.Logger,
-	client *client.RobotClient,
+	client robot.Robot,
 	arm arm.Arm,
 	gripper gripper.Gripper,
 	cam camera.Camera,
@@ -177,7 +176,7 @@ type Gen struct {
 
 	web *http.Server
 
-	robotClient *client.RobotClient
+	robotClient robot.Robot
 
 	arm       arm.Arm
 	gripper   gripper.Gripper
@@ -193,33 +192,7 @@ type Gen struct {
 }
 
 func (g *Gen) setupRobotClient(ctx context.Context) error {
-	vc, err := app.CreateViamClientFromEnvVars(ctx, nil, g.logger)
-	if err != nil {
-		return err
-	}
-	defer vc.Close()
-
-	g.payload = os.Getenv("VIAM_API_KEY")
-	g.entity = os.Getenv("VIAM_API_KEY_ID")
-
-	r, _, err := vc.AppClient().GetRobotPart(ctx, os.Getenv("VIAM_MACHINE_PART_ID"))
-	if err != nil {
-		return err
-	}
-
-	g.address = r.FQDN
-
-	machine, err := client.New(
-		ctx,
-		g.address,
-		g.logger,
-		client.WithDialOptions(rpc.WithEntityCredentials(
-			g.entity,
-			rpc.Credentials{
-				Type:    rpc.CredentialsTypeAPIKey,
-				Payload: g.payload,
-			})),
-	)
+	machine, err := vmodutils.ConnectToMachineFromEnv(ctx, g.logger)
 	if err != nil {
 		return err
 	}

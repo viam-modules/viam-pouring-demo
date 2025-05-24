@@ -21,12 +21,12 @@ type WeightConfig struct {
 	Scale string
 }
 
-func (c WeightConfig) Validate(p string) ([]string, error) {
+func (c WeightConfig) Validate(p string) ([]string, []string, error) {
 	if c.Scale == "" {
-		return nil, fmt.Errorf("need a scale")
+		return nil, nil, fmt.Errorf("need a scale")
 	}
 
-	return []string{c.Scale}, nil
+	return []string{c.Scale}, nil, nil
 }
 
 func init() {
