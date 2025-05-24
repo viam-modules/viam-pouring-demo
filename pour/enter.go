@@ -42,32 +42,7 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 		conf:   config,
 	}
 
-	g.arm, err = arm.FromDependencies(deps, config.ArmName)
-	if err != nil {
-		return nil, err
-	}
-
-	g.gripper, err = gripper.FromDependencies(deps, config.GripperName)
-	if err != nil {
-		return nil, err
-	}
-
-	g.cam, err = camera.FromDependencies(deps, config.CameraName)
-	if err != nil {
-		return nil, err
-	}
-
-	g.weight, err = sensor.FromDependencies(deps, config.WeightSensorName)
-	if err != nil {
-		return nil, err
-	}
-
-	g.motion, err = motion.FromDependencies(deps, "builtin")
-	if err != nil {
-		return nil, err
-	}
-
-	g.camVision, err = vision.FromDependencies(deps, config.CircleDetectionService)
+	g.c, err = Pour1ComponentsFromDependencies(config, deps)
 	if err != nil {
 		return nil, err
 	}
@@ -137,30 +112,62 @@ type Config struct {
 	CPUThreads int `json:"cpu_threads,omitempty"`
 }
 
-func NewTesting(logger logging.Logger,
-	client robot.Robot,
-	arm arm.Arm,
-	gripper gripper.Gripper,
-	cam camera.Camera,
-	weight sensor.Sensor,
-	motion motion.Service,
-	camVision vision.Service,
-) *Gen {
+func NewTesting(logger logging.Logger, client robot.Robot, c *Pour1Components) *Gen {
 	return &Gen{
 		robotClient: client,
-		arm:         arm,
-		gripper:     gripper,
-		cam:         cam,
-		weight:      weight,
-		motion:      motion,
-		camVision:   camVision,
+		c:           c,
 		logger:      logger,
 		conf: &Config{
 			BottleHeight: 310,
 			CupHeight:    120,
-			// DeltaXPos: ,
 		},
 	}
+}
+
+type Pour1Components struct {
+	Arm       arm.Arm
+	Gripper   gripper.Gripper
+	Cam       camera.Camera
+	Weight    sensor.Sensor
+	Motion    motion.Service
+	CamVision vision.Service
+}
+
+func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
+	var err error
+	c := &Pour1Components{}
+
+	c.Arm, err = arm.FromDependencies(deps, config.ArmName)
+	if err != nil {
+		return nil, err
+	}
+
+	c.Gripper, err = gripper.FromDependencies(deps, config.GripperName)
+	if err != nil {
+		return nil, err
+	}
+
+	c.Cam, err = camera.FromDependencies(deps, config.CameraName)
+	if err != nil {
+		return nil, err
+	}
+
+	c.Weight, err = sensor.FromDependencies(deps, config.WeightSensorName)
+	if err != nil {
+		return nil, err
+	}
+
+	c.Motion, err = motion.FromDependencies(deps, "builtin")
+	if err != nil {
+		return nil, err
+	}
+
+	c.CamVision, err = vision.FromDependencies(deps, config.CircleDetectionService)
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }
 
 type Gen struct {
@@ -178,12 +185,7 @@ type Gen struct {
 
 	robotClient robot.Robot
 
-	arm       arm.Arm
-	gripper   gripper.Gripper
-	cam       camera.Camera
-	weight    sensor.Sensor
-	motion    motion.Service
-	camVision vision.Service
+	c *Pour1Components
 
 	statusLock sync.Mutex
 	status     string
@@ -217,7 +219,7 @@ func (g *Gen) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[st
 
 	if _, ok := cmd["stop"]; ok {
 		g.logger.Info("WE ARE INSIDE THE STOP CONDITIONAL AND ARE ABOUT TO RETURN")
-		return nil, g.arm.Stop(ctx, nil)
+		return nil, g.c.Arm.Stop(ctx, nil)
 	}
 
 	if _, ok := cmd["status"]; ok {
@@ -266,16 +268,16 @@ func (g *Gen) ResetArmToHome(ctx context.Context) error {
 		return err
 	}
 
-	err = g.arm.MoveToJointPositions(ctx, JointPositionsHome, nil)
+	err = g.c.Arm.MoveToJointPositions(ctx, JointPositionsHome, nil)
 	if err != nil {
 		return err
 	}
 
-	return g.gripper.Open(ctx, nil)
+	return g.c.Gripper.Open(ctx, nil)
 }
 
 func (g *Gen) GoToPrepForPour(ctx context.Context) error {
-	err := g.arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
+	err := g.c.Arm.MoveToJointPositions(ctx, JointPositionsPreppingForPour, nil)
 	if err != nil {
 		return err
 	}

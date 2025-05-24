@@ -137,7 +137,7 @@ func reversePlan(originalPlan motionplan.Plan) motionplan.Plan {
 }
 
 func (g *Gen) startPlan(ctx context.Context) (*planBuilder, error) {
-	current, err := g.arm.JointPositions(ctx, nil)
+	current, err := g.c.Arm.JointPositions(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

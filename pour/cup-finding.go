@@ -50,7 +50,7 @@ func (g *Gen) FindCups(ctx context.Context) ([]spatialmath.Pose, error) {
 }
 
 func (g *Gen) cameraToWorldPoses(ctx context.Context, cam []spatialmath.Pose) ([]spatialmath.Pose, error) {
-	tf, err := g.motion.GetPose(ctx, g.cam.Name(), referenceframe.World, nil, nil)
+	tf, err := g.c.Motion.GetPose(ctx, g.c.Cam.Name(), referenceframe.World, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -64,17 +64,17 @@ func (g *Gen) cameraToWorldPoses(ctx context.Context, cam []spatialmath.Pose) ([
 }
 
 func (g *Gen) FindCupsEliot(ctx context.Context) ([]spatialmath.Pose, error) {
-	properties, err := g.cam.Properties(ctx)
+	properties, err := g.c.Cam.Properties(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	dets, err := g.camVision.DetectionsFromCamera(ctx, "", nil)
+	dets, err := g.c.CamVision.DetectionsFromCamera(ctx, "", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	imgs, _, err := g.cam.Images(ctx)
+	imgs, _, err := g.c.Cam.Images(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (g *Gen) FindCupsMiko(ctx context.Context) ([]spatialmath.Pose, error) {
 	logger := g.logger
 
 	// here I need to figure out how many cups there are on the table before I proceed to figure out how many cups to look for and their positions
-	dets, err := g.camVision.DetectionsFromCamera(ctx, g.cam.Name().Name, nil)
+	dets, err := g.c.CamVision.DetectionsFromCamera(ctx, g.c.Cam.Name().Name, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (g *Gen) FindCupsMiko(ctx context.Context) ([]spatialmath.Pose, error) {
 }
 
 func (g *Gen) getTheDetections(ctx context.Context, logger logging.Logger, amountOfClusters int) []*cluster {
-	properties, err := g.cam.Properties(ctx)
+	properties, err := g.c.Cam.Properties(ctx)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func (g *Gen) getTheDetections(ctx context.Context, logger logging.Logger, amoun
 	y := []float64{}
 	for successes := 0; successes < 5; {
 		logger.Infof("attempting calibration iteration: %d", successes)
-		detections, err := g.camVision.DetectionsFromCamera(ctx, g.cam.Name().Name, nil)
+		detections, err := g.c.CamVision.DetectionsFromCamera(ctx, g.c.Cam.Name().Name, nil)
 		if err != nil {
 			logger.Fatal(err)
 		}

@@ -227,6 +227,8 @@ github.com/erh/vmodutils v0.0.0-20250329151436-d45505901666 h1:HZfngbLqfa37/d+IN
 github.com/erh/vmodutils v0.0.0-20250329151436-d45505901666/go.mod h1:EraKW4k3TSIzjUhh+iJrPl5hsJq6tv/+QCz3YgA+0Ec=
 github.com/erh/vmodutils v0.1.4-0.20250524215915-128fc784961b h1:3eL3I5ZVlD3Ap1wcQ5G+VsTkWTXB6B6owR1VkNAUHP8=
 github.com/erh/vmodutils v0.1.4-0.20250524215915-128fc784961b/go.mod h1:iYUfj0rwHWSrbgzDOXEbAi2ArEBu5JssAqbPsVaROrM=
+github.com/erh/vmodutils v0.1.4-0.20250524222851-80952c158c2e h1:qHeFj/J381GrSoewuWARwPddVjt03YPQq745NdJOEno=
+github.com/erh/vmodutils v0.1.4-0.20250524222851-80952c158c2e/go.mod h1:iYUfj0rwHWSrbgzDOXEbAi2ArEBu5JssAqbPsVaROrM=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f h1:Y/CXytFA4m6baUTXGLOoWe4PQhGxaX0KpnayAqC48p4=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f/go.mod h1:vw97MGsxSvLiUE2X8qFplwetxpGLQrlU1Q9AUEIzCaM=
 github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 h1:Yzb9+7DPaBjB8zlTR87/ElzFsnQfuHnVUVqpZZIcV5Y=

@@ -10,7 +10,6 @@ import (
 
 	"github.com/golang/geo/r3"
 
-	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
@@ -19,9 +18,11 @@ import (
 	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
+
+	"github.com/viam-modules/viam-pouring-demo/pour"
 )
 
-func touchPrep(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, arm arm.Arm, cam camera.Camera, logger logging.Logger) error {
+func touchPrep(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
 
 	start := referenceframe.NewPoseInFrame(
 		"world",
@@ -31,10 +32,10 @@ func touchPrep(ctx context.Context, myRobot robot.Robot, myMotion motion.Service
 		),
 	)
 
-	done, err := myMotion.Move(
+	done, err := c.Motion.Move(
 		ctx,
 		motion.MoveReq{
-			ComponentName: arm.Name(),
+			ComponentName: c.Arm.Name(),
 			Destination:   start,
 		},
 	)
@@ -48,21 +49,21 @@ func touchPrep(ctx context.Context, myRobot robot.Robot, myMotion motion.Service
 	return nil
 }
 
-func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, arm arm.Arm, cam camera.Camera, logger logging.Logger) error {
+func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
 
-	err := touchPrep(ctx, myRobot, myMotion, arm, cam, logger)
+	err := touchPrep(ctx, myRobot, c, logger)
 	if err != nil {
 		return err
 	}
 
-	touchPointRaw2d, err := findTouchPoint2d(ctx, myRobot, cam, logger)
+	touchPointRaw2d, err := findTouchPoint2d(ctx, myRobot, c.Cam, logger)
 	if err != nil {
 		return err
 	}
 
 	logger.Infof("touchPointRaw: %v", touchPointRaw2d)
 
-	touchPointRaw3d, err := findTouchPoint3d(ctx, myRobot, cam, logger)
+	touchPointRaw3d, err := findTouchPoint3d(ctx, myRobot, c.Cam, logger)
 	if err != nil {
 		return err
 	}
@@ -72,7 +73,7 @@ func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, ar
 	worldState, err := referenceframe.NewWorldState(nil, nil)
 
 	logger.Infof("going to move")
-	done, err := myMotion.Move(
+	done, err := c.Motion.Move(
 		ctx,
 		motion.MoveReq{
 			ComponentName: resource.Name{Name: "gripper-tip"},
@@ -89,7 +90,7 @@ func touch(ctx context.Context, myRobot robot.Robot, myMotion motion.Service, ar
 
 	time.Sleep(time.Second * 10)
 
-	return touchPrep(ctx, myRobot, myMotion, arm, cam, logger)
+	return touchPrep(ctx, myRobot, c, logger)
 }
 
 func findTouchPoint3d(ctx context.Context, myRobot robot.Robot, cam camera.Camera, logger logging.Logger) (*referenceframe.PoseInFrame, error) {

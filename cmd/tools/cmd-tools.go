@@ -8,16 +8,11 @@ import (
 	"github.com/erh/vmodutils"
 
 	vizClient "github.com/viam-labs/motion-tools/client/client"
-	"go.viam.com/rdk/components/arm"
-	"go.viam.com/rdk/components/camera"
-	"go.viam.com/rdk/components/gripper"
-	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/motion"
-	"go.viam.com/rdk/services/vision"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
@@ -60,42 +55,17 @@ func realMain() error {
 	}
 	defer client.Close(ctx)
 
-	arm, err := arm.FromRobot(client, "arm")
-	if err != nil || arm == nil {
-		logger.Fatalf("no arm: %v", err)
-	}
-	j, err := arm.JointPositions(ctx, nil)
+	deps, err := vmodutils.MachineToDependencies(client)
 	if err != nil {
-		logger.Fatalf("arm erroring: %v", err)
-	}
-	logger.Infof("arm current positions %v", j)
-
-	gripper, err := gripper.FromRobot(client, "gripper")
-	if err != nil || gripper == nil {
-		logger.Fatalf("no gripper: %v", err)
+		return err
 	}
 
-	cam, err := camera.FromRobot(client, "cam1")
-	if err != nil || cam == nil {
-		logger.Fatalf("no camera: %v", err)
+	p1c, err := pour.Pour1ComponentsFromDependencies(cfg, deps)
+	if err != nil {
+		return nil
 	}
 
-	weight, err := sensor.FromRobot(client, "scale1")
-	if err != nil || weight == nil {
-		logger.Fatalf("no weight: %v", err)
-	}
-
-	motion, err := motion.FromRobot(client, "builtin")
-	if err != nil || motion == nil {
-		logger.Fatalf("no motion: %v", err)
-	}
-
-	camVision, err := vision.FromRobot(client, "circle-service")
-	if err != nil || camVision == nil {
-		logger.Fatalf("no vision service: %v", err)
-	}
-
-	g := pour.NewTesting(logger, client, arm, gripper, cam, weight, motion, camVision)
+	g := pour.NewTesting(logger, client, p1c)
 
 	cmd := flag.Arg(0)
 	switch cmd {
@@ -104,13 +74,13 @@ func realMain() error {
 	case "intermediate":
 		return g.GoToPrepForPour(ctx)
 	case "touch-prep":
-		return touchPrep(ctx, client, motion, arm, cam, logger)
+		return touchPrep(ctx, client, p1c, logger)
 	case "touch":
-		return touch(ctx, client, motion, arm, cam, logger)
+		return touch(ctx, client, p1c, logger)
 	case "print-world":
-		printPoseInfo(ctx, motion, cam.Name(), logger)
-		printPoseInfo(ctx, motion, arm.Name(), logger)
-		printPoseInfo(ctx, motion, gripper.Name(), logger)
+		printPoseInfo(ctx, p1c.Motion, p1c.Cam.Name(), logger)
+		printPoseInfo(ctx, p1c.Motion, p1c.Arm.Name(), logger)
+		printPoseInfo(ctx, p1c.Motion, p1c.Gripper.Name(), logger)
 		return nil
 	case "visWorldState":
 		return visObstacles(ctx, client)

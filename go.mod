@@ -5,7 +5,7 @@ go 1.23.8
 toolchain go1.23.9
 
 require (
-	github.com/erh/vmodutils v0.1.4-0.20250524215915-128fc784961b
+	github.com/erh/vmodutils v0.1.4-0.20250524222851-80952c158c2e
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/viam-labs/motion-tools v0.0.0-20250428163038-321ad25750f6
 	go.uber.org/multierr v1.11.0

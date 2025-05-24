@@ -9,7 +9,7 @@
   async function updateImage() {
     try {
       const res = await client.captureAllFromCamera(
-        "wine-pouring-camera-main:realsense",
+        "wine-pouring.c.Camera-main:realsense",
         {
           returnImage: true,
           returnClassifications: false,
