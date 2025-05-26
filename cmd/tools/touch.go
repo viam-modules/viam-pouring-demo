@@ -15,18 +15,26 @@ import (
 	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
+	"go.viam.com/rdk/vision/segmentation"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
 
 func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
 
-	touchPointRaw3d, err := findTouchPoint3d(ctx, myRobot, c.CroppedCupCamera, logger)
+	touchPointRaw3d, err := findTouchPoint3d(ctx, c.CroppedCupCamera, logger)
 	if err != nil {
 		return err
 	}
 
 	logger.Infof("touchPointRaw3d: %v", touchPointRaw3d)
+
+	touchPointRaw3db, err := findTouchPoint3db(ctx, c.CroppedCupCamera, logger)
+	if err != nil {
+		return err
+	}
+
+	logger.Infof("touchPointRaw3db: %v", touchPointRaw3db)
 
 	panic(1)
 
@@ -53,7 +61,7 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 	return nil
 }
 
-func findTouchPoint3d(ctx context.Context, myRobot robot.Robot, cam camera.Camera, logger logging.Logger) (*referenceframe.PoseInFrame, error) {
+func findTouchPoint3d(ctx context.Context, cam camera.Camera, logger logging.Logger) (*referenceframe.PoseInFrame, error) {
 	if cam == nil {
 		return nil, fmt.Errorf("no croppedcupcamera")
 	}
@@ -78,4 +86,29 @@ func findTouchPoint3d(ctx context.Context, myRobot robot.Robot, cam camera.Camer
 		cam.Name().ShortName(),
 		spatialmath.NewPoseFromPoint(closest),
 	), nil
+}
+
+func findTouchPoint3db(ctx context.Context, cam camera.Camera, logger logging.Logger) (*referenceframe.PoseInFrame, error) {
+	cfg := segmentation.RadiusClusteringConfig{
+		MinPtsInPlane:      5,
+		MinPtsInSegment:    5,
+		ClusteringRadiusMm: 100,
+		MaxDistFromPlane:   150,
+	}
+	err := cfg.CheckValid()
+	if err != nil {
+		return nil, err
+	}
+
+	objs, err := cfg.RadiusClustering(ctx, cam)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, o := range objs {
+		logger.Infof("hi %v", o)
+	}
+
+	return nil, fmt.Errorf("finish me")
+
 }
