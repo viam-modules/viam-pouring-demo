@@ -45,3 +45,6 @@ setup:
 
 pour/web/dist/index.html: pour/web/*.json pour/web/*.html pour/web/src/*.ts pour/web/src/*.svelte
 	cd pour/web && npm install && npm run build
+
+bin/tool: cmd/tools/*.go pour/*.go
+	go build -o bin/tool cmd/tools/*.go

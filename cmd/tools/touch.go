@@ -15,7 +15,6 @@ import (
 	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
-	"go.viam.com/rdk/vision/segmentation"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
@@ -89,25 +88,14 @@ func findTouchPoint3d(ctx context.Context, cam camera.Camera, logger logging.Log
 }
 
 func findTouchPoint3db(ctx context.Context, cam camera.Camera, logger logging.Logger) (*referenceframe.PoseInFrame, error) {
-	cfg := segmentation.RadiusClusteringConfig{
-		MinPtsInPlane:      5,
-		MinPtsInSegment:    5,
-		ClusteringRadiusMm: 100,
-		MaxDistFromPlane:   150,
-	}
-	err := cfg.CheckValid()
+	pc, err := cam.NextPointCloud(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	objs, err := cfg.RadiusClustering(ctx, cam)
-	if err != nil {
-		return nil, err
-	}
+	md := pc.MetaData()
 
-	for _, o := range objs {
-		logger.Infof("hi %v", o)
-	}
+	logger.Infof("max side: %v", md.MaxSideLength())
 
 	return nil, fmt.Errorf("finish me")
 

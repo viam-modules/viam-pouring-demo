@@ -40,6 +40,10 @@ func realMain() error {
 		logger.SetLevel(logging.DEBUG)
 	}
 
+	if *configFile == "" {
+		return fmt.Errorf("need a config file")
+	}
+
 	cfg := &pour.Config{}
 	err := vmodutils.ReadJSONFromFile(*configFile, cfg)
 	if err != nil {
