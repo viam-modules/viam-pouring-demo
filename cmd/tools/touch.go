@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
+	"os"
 
 	"github.com/golang/geo/r3"
 
@@ -21,30 +21,40 @@ import (
 
 func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
 
-	touchPointRaw3d, err := findTouchPoint3d(ctx, c.CroppedCupCamera, logger)
-	if err != nil {
-		return err
+	if false {
+		touchPointRaw3d, err := findTouchPoint3d(ctx, c.CroppedCupCamera, logger)
+		if err != nil {
+			return err
+		}
+
+		logger.Infof("touchPointRaw3d: %v", touchPointRaw3d)
 	}
 
-	logger.Infof("touchPointRaw3d: %v", touchPointRaw3d)
+	var touchPointRaw3db *referenceframe.PoseInFrame
+	var err error
 
-	touchPointRaw3db, err := findTouchPoint3db(ctx, c.CroppedCupCamera, logger)
-	if err != nil {
-		return err
+	for i := 0; i < 3 && touchPointRaw3db == nil; i++ {
+		touchPointRaw3db, err = findTouchPoint3db(ctx, c.CroppedCupCamera, logger)
+		if err != nil {
+			return err
+		}
+
+		logger.Infof("touchPointRaw3db: %v", touchPointRaw3db)
 	}
 
-	logger.Infof("touchPointRaw3db: %v", touchPointRaw3db)
+	if touchPointRaw3db == nil {
+		logger.Infof("no where to go!")
+		return nil
+	}
 
-	panic(1)
+	logger.Infof("going to move to %v", touchPointRaw3db)
 
 	worldState, err := referenceframe.NewWorldState(nil, nil)
-
-	logger.Infof("going to move")
 	done, err := c.Motion.Move(
 		ctx,
 		motion.MoveReq{
 			ComponentName: resource.Name{Name: "gripper-tip"},
-			Destination:   touchPointRaw3d,
+			Destination:   touchPointRaw3db,
 			WorldState:    worldState,
 		},
 	)
@@ -54,8 +64,6 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 	if !done {
 		return fmt.Errorf("first move didn't finish")
 	}
-
-	time.Sleep(time.Second * 10)
 
 	return nil
 }
@@ -93,10 +101,33 @@ func findTouchPoint3db(ctx context.Context, cam camera.Camera, logger logging.Lo
 		return nil, err
 	}
 
-	md := pc.MetaData()
+	if true {
+		out, err := os.OpenFile("foo.pcd", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
+			return nil, err
+		}
 
-	logger.Infof("max side: %v", md.MaxSideLength())
+		defer out.Close()
+		err = pointcloud.ToPCD(pc, out, pointcloud.PCDBinary)
+		if err != nil {
+			return nil, err
+		}
+	}
 
-	return nil, fmt.Errorf("finish me")
+	topMiddle, height, ok := pour.FindSingleCupInPointCloud(pc, logger)
+	if !ok {
+		logger.Infof("found nothing in pointcloud")
+		return nil, nil
+	}
 
+	topMiddle.Z += height / 2
+	if topMiddle.Z < 140 {
+		logger.Info("hack - z was too low: %d", topMiddle.Z)
+		topMiddle.Z = 140 // TODO - fix me eliot
+	}
+
+	return referenceframe.NewPoseInFrame(
+		cam.Name().ShortName(),
+		spatialmath.NewPose(topMiddle, &spatialmath.OrientationVectorDegrees{OX: -.5, OY: -.5, OZ: -.5, Theta: 180}),
+	), nil
 }

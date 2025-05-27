@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang/geo/r3"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/rimage/transform"
 	"go.viam.com/rdk/spatialmath"
@@ -295,4 +296,35 @@ func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, 
 	xmm = xmm + xAdjustment
 	ymm = ymm + yAdjustment
 	return r3.Vector{X: xmm, Y: ymm, Z: z}
+}
+
+// return center, overall height, found
+func FindSingleCupInPointCloud(pc pointcloud.PointCloud, logger logging.Logger) (r3.Vector, float64, bool) {
+	{
+		logger.Debugf("size before: %d", pc.Size())
+		temp := pointcloud.NewBasicEmpty()
+		f, err := pointcloud.StatisticalOutlierFilter(1000, 1)
+		if err != nil {
+			panic(err)
+		}
+		err = f(pc, temp)
+		if err != nil {
+			panic(err)
+		}
+		pc = temp
+		logger.Debugf("size after: %d", pc.Size())
+	}
+
+	md := pc.MetaData()
+
+	logger.Infof("metadata: %#v", md)
+
+	sl := md.MaxSideLength()
+
+	if sl < 90 || sl > 110 { // TODO - hack
+		logger.Infof("side length not right %v", sl)
+		return r3.Vector{}, 0, false
+	}
+
+	return md.Center(), md.MaxZ, true
 }
