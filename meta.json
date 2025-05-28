@@ -16,9 +16,11 @@
         {
             "api": "rdk:component:sensor",
             "model": "viam:pouring-demo:pouring-weight-hardcoded"
+        },
+        {
+            "api": "rdk:service:vision",
+            "model": "viam:pouring-demo:vision-cup-finder"
         }
-
-
     ],
     "entrypoint": "bin/viam-pouring-demo",
     "build": {

@@ -298,8 +298,8 @@ func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, 
 	return r3.Vector{X: xmm, Y: ymm, Z: z}
 }
 
-// return center, overall height, found
-func FindSingleCupInPointCloud(pc pointcloud.PointCloud, logger logging.Logger) (r3.Vector, float64, bool) {
+// return center, overall height, radius, found
+func FindSingleCupInPointCloud(pc pointcloud.PointCloud, logger logging.Logger) (r3.Vector, float64, float64, bool) {
 	{
 		logger.Debugf("size before: %d", pc.Size())
 		temp := pointcloud.NewBasicEmpty()
@@ -321,14 +321,16 @@ func FindSingleCupInPointCloud(pc pointcloud.PointCloud, logger logging.Logger) 
 
 	sl := md.MaxSideLength()
 
+	radius := math.Max(md.MaxX-md.MinX, md.MaxY-md.MinY) / 2
+
 	if sl < 90 || sl > 110 { // TODO - hack
 		logger.Infof("side length not right %v", sl)
-		return r3.Vector{}, 0, false
+		return r3.Vector{}, 0, 0, false
 	}
 
 	cc := pointcloud.CloudCentroid(pc)
 
 	cc.Z = md.Center().Z // this is more about min vs max because we're looking for edges
 
-	return cc, md.MaxZ, true
+	return cc, md.MaxZ, radius, true
 }
