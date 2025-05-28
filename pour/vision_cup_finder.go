@@ -28,12 +28,24 @@ func init() {
 }
 
 type VisionCupFinderConfig struct {
-	Input string
+	Input       string
+	HeightMM    float64 `json:"height_mm"`
+	RadiusMM    float64 `json:"radius_mm"`
+	ErrorMargin float64 `json:"error_margin"`
 }
 
 func (c *VisionCupFinderConfig) Validate(_ string) ([]string, []string, error) {
 	if c.Input == "" {
 		return nil, nil, fmt.Errorf("need input")
+	}
+	if c.HeightMM <= 0 {
+		return nil, nil, fmt.Errorf("need height_mm")
+	}
+	if c.RadiusMM <= 0 {
+		return nil, nil, fmt.Errorf("need radius_mm")
+	}
+	if c.ErrorMargin <= 0 {
+		return nil, nil, fmt.Errorf("need error_margin")
 	}
 	return []string{c.Input}, nil, nil
 }
@@ -111,7 +123,7 @@ func (vcf *visionCupFinder) GetObjectPointClouds(ctx context.Context, cameraName
 
 	res := []*viz.Object{}
 
-	center, height, radius, ok := FindSingleCupInPointCloud(pc, vcf.logger)
+	center, height, radius, ok := FindSingleCupInPointCloud(pc, vcf.cfg.RadiusMM, vcf.cfg.HeightMM, vcf.cfg.ErrorMargin, vcf.logger)
 	if ok {
 		c, err := spatialmath.NewCapsule(
 			spatialmath.NewPose(center, &spatialmath.OrientationVectorDegrees{OZ: 1}),

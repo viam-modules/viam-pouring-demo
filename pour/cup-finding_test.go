@@ -95,10 +95,13 @@ func TestFindSingleCupInPointCloud(t *testing.T) {
 	in, err := pointcloud.NewFromFile("data/cupbad1.pcd", "")
 	test.That(t, err, test.ShouldBeNil)
 
-	center, height, radius, ok := FindSingleCupInPointCloud(in, logger)
+	expectedRadius := 85.0
+	expectedHeight := 121.0
+
+	center, height, radius, ok := FindSingleCupInPointCloud(in, expectedRadius, expectedHeight, 16, logger)
 	test.That(t, ok, test.ShouldBeTrue)
-	test.That(t, height, test.ShouldAlmostEqual, 121, 15)
-	test.That(t, radius, test.ShouldAlmostEqual, 60, 15)
+	test.That(t, height, test.ShouldAlmostEqual, expectedHeight, 15)
+	test.That(t, radius, test.ShouldAlmostEqual, expectedRadius, 20)
 
 	test.That(t, center.Z, test.ShouldAlmostEqual, 35+(120-35)/2, 10)
 

@@ -114,13 +114,18 @@ func findTouchPoint3db(ctx context.Context, cam camera.Camera, logger logging.Lo
 		}
 	}
 
-	topMiddle, height, ok := pour.FindSingleCupInPointCloud(pc, logger)
+	//expectedRadius := 85.0
+	expectedRadius := 50.0
+	expectedHeight := 121.0
+
+	topMiddle, height, _, ok := pour.FindSingleCupInPointCloud(pc, expectedRadius, expectedHeight, 20, logger)
 	if !ok {
 		logger.Infof("found nothing in pointcloud")
 		return nil, nil
 	}
 
 	topMiddle.Z += height / 2
+
 	if topMiddle.Z < 140 {
 		logger.Info("hack - z was too low: %d", topMiddle.Z)
 		topMiddle.Z = 140 // TODO - fix me eliot
@@ -128,6 +133,6 @@ func findTouchPoint3db(ctx context.Context, cam camera.Camera, logger logging.Lo
 
 	return referenceframe.NewPoseInFrame(
 		cam.Name().ShortName(),
-		spatialmath.NewPose(topMiddle, &spatialmath.OrientationVectorDegrees{OX: -.5, OY: -.5, OZ: -.5, Theta: 180}),
+		spatialmath.NewPose(topMiddle, &spatialmath.OrientationVectorDegrees{OZ: -1, Theta: 180}),
 	), nil
 }

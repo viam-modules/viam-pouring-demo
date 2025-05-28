@@ -299,11 +299,11 @@ func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, 
 }
 
 // return center, overall height, radius, found
-func FindSingleCupInPointCloud(pc pointcloud.PointCloud, logger logging.Logger) (r3.Vector, float64, float64, bool) {
+func FindSingleCupInPointCloud(pc pointcloud.PointCloud, expectedRadius, expectedHeight, errorMargin float64, logger logging.Logger) (r3.Vector, float64, float64, bool) {
 	{
 		logger.Debugf("size before: %d", pc.Size())
 		temp := pointcloud.NewBasicEmpty()
-		f, err := pointcloud.StatisticalOutlierFilter(1000, 1)
+		f, err := pointcloud.StatisticalOutlierFilter(100, 1.5)
 		if err != nil {
 			panic(err)
 		}
@@ -319,12 +319,18 @@ func FindSingleCupInPointCloud(pc pointcloud.PointCloud, logger logging.Logger) 
 
 	logger.Infof("metadata: %#v", md)
 
-	sl := md.MaxSideLength()
-
 	radius := math.Max(md.MaxX-md.MinX, md.MaxY-md.MinY) / 2
+	height := md.MaxZ
 
-	if sl < 90 || sl > 110 { // TODO - hack
-		logger.Infof("side length not right %v", sl)
+	logger.Debugf("radius: %v height: %v", radius, md.MaxZ)
+
+	if math.Abs(expectedRadius-radius) > errorMargin {
+		logger.Infof("radius wrong, got %v want %v", radius, expectedRadius)
+		return r3.Vector{}, 0, 0, false
+	}
+
+	if math.Abs(expectedHeight-height) > errorMargin {
+		logger.Infof("height wrong, got %v want %v", height, expectedHeight)
 		return r3.Vector{}, 0, 0, false
 	}
 
