@@ -3,58 +3,80 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/golang/geo/r3"
 
-	"go.viam.com/rdk/components/camera"
+	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/logging"
-	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/motion"
+	"go.viam.com/rdk/services/vision"
 	"go.viam.com/rdk/spatialmath"
+	viz "go.viam.com/rdk/vision"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
 
 func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
-
+	logger.Infof("touch called")
 	if false {
-		touchPointRaw3d, err := findTouchPoint3d(ctx, c.CroppedCupCamera, logger)
+		obstacleTable, err := gripper.FromRobot(myRobot, "obstacle-table")
 		if err != nil {
 			return err
 		}
 
-		logger.Infof("touchPointRaw3d: %v", touchPointRaw3d)
-	}
-
-	var touchPointRaw3db *referenceframe.PoseInFrame
-	var err error
-
-	for i := 0; i < 3 && touchPointRaw3db == nil; i++ {
-		touchPointRaw3db, err = findTouchPoint3db(ctx, c.CroppedCupCamera, logger)
+		g, err := obstacleTable.Geometries(ctx, nil)
 		if err != nil {
 			return err
 		}
-
-		logger.Infof("touchPointRaw3db: %v", touchPointRaw3db)
-	}
-
-	if touchPointRaw3db == nil {
-		logger.Infof("no where to go!")
+		logger.Infof("obstacle table: %v", g)
 		return nil
 	}
 
-	logger.Infof("going to move to %v", touchPointRaw3db)
+	cupFinderService, err := vision.FromRobot(myRobot, "cup-finder")
+	if err != nil {
+		return err
+	}
 
-	worldState, err := referenceframe.NewWorldState(nil, nil)
+	objects, err := cupFinderService.GetObjectPointClouds(ctx, "", nil)
+	if err != nil {
+		return err
+	}
+
+	logger.Infof("num objects: %v", len(objects))
+	for _, o := range objects {
+		logger.Infof("\t objects: %v", o)
+	}
+
+	if len(objects) == 0 {
+		return fmt.Errorf("no objects")
+	}
+
+	if len(objects) > 1 {
+		return fmt.Errorf("too many objects %d", len(objects))
+	}
+
+	obj := objects[0]
+
+	approachPose := getApproachPoint(obj)
+
+	logger.Infof("going to move to %v", approachPose)
+
+	obstacles := []*referenceframe.GeometriesInFrame{}
+	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
+	worldState, err := referenceframe.NewWorldState(obstacles, nil)
+
+	if err != nil {
+		return err
+	}
+
 	done, err := c.Motion.Move(
 		ctx,
 		motion.MoveReq{
 			ComponentName: resource.Name{Name: "gripper-tip"},
-			Destination:   touchPointRaw3db,
+			Destination:   approachPose,
 			WorldState:    worldState,
 		},
 	)
@@ -68,71 +90,19 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 	return nil
 }
 
-func findTouchPoint3d(ctx context.Context, cam camera.Camera, logger logging.Logger) (*referenceframe.PoseInFrame, error) {
-	if cam == nil {
-		return nil, fmt.Errorf("no croppedcupcamera")
-	}
-
-	pc, err := cam.NextPointCloud(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	closest := r3.Vector{0, 0, 0}
-
-	pc.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
-		if closest.Z == 0 || p.Z > closest.Z {
-			closest = p
-		}
-		return true
-	})
-
-	logger.Infof("closest in 3d cam: %v", closest)
+func getApproachPoint(obj *viz.Object) *referenceframe.PoseInFrame {
+	md := obj.MetaData()
+	c := md.Center()
 
 	return referenceframe.NewPoseInFrame(
-		cam.Name().ShortName(),
-		spatialmath.NewPoseFromPoint(closest),
-	), nil
-}
+		"world",
+		spatialmath.NewPose(
+			r3.Vector{
+				X: md.MaxX + 50,
+				Y: c.Y,
+				Z: 200,
+			},
+			&spatialmath.OrientationVectorDegrees{OX: -1, Theta: 180}),
+	)
 
-func findTouchPoint3db(ctx context.Context, cam camera.Camera, logger logging.Logger) (*referenceframe.PoseInFrame, error) {
-	pc, err := cam.NextPointCloud(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if true {
-		out, err := os.OpenFile("foo.pcd", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-		if err != nil {
-			return nil, err
-		}
-
-		defer out.Close()
-		err = pointcloud.ToPCD(pc, out, pointcloud.PCDBinary)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	//expectedRadius := 85.0
-	expectedRadius := 50.0
-	expectedHeight := 121.0
-
-	topMiddle, height, _, ok := pour.FindSingleCupInPointCloud(pc, expectedRadius, expectedHeight, 20, logger)
-	if !ok {
-		logger.Infof("found nothing in pointcloud")
-		return nil, nil
-	}
-
-	topMiddle.Z += height / 2
-
-	if topMiddle.Z < 140 {
-		logger.Info("hack - z was too low: %d", topMiddle.Z)
-		topMiddle.Z = 140 // TODO - fix me eliot
-	}
-
-	return referenceframe.NewPoseInFrame(
-		cam.Name().ShortName(),
-		spatialmath.NewPose(topMiddle, &spatialmath.OrientationVectorDegrees{OZ: -1, Theta: 180}),
-	), nil
 }
