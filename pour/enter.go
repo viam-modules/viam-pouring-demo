@@ -82,6 +82,9 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	if cfg.CircleDetectionService == "" {
 		return nil, nil, fmt.Errorf("need a circledetectionservice name")
 	}
+	if cfg.CupFinderService == "" {
+		return nil, nil, fmt.Errorf("need a cupr_finder_service name")
+	}
 
 	if cfg.BottleHeight == 0 {
 		return nil, nil, fmt.Errorf("bottle_height cannot be unset")
@@ -92,8 +95,11 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	optionals := []string{}
 
-	if cfg.CroppedCupCamera != "" {
-		optionals = append(optionals, cfg.CroppedCupCamera)
+	if cfg.CupFinderService != "" {
+		optionals = append(optionals, cfg.CupFinderService)
+	}
+	if cfg.CupTopService != "" {
+		optionals = append(optionals, cfg.CupTopService)
 	}
 
 	return []string{cfg.ArmName, cfg.GripperName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, optionals, nil
@@ -107,7 +113,8 @@ type Config struct {
 	WeightSensorName       string `json:"weight_sensor_name"`
 	GripperName            string `json:"gripper_name"`
 
-	CroppedCupCamera string `json:"cropped_cup_camera"`
+	CupFinderService string `json:"cup_finder_service"`
+	CupTopService    string `json:"cup_top_service"`
 
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
@@ -141,7 +148,8 @@ type Pour1Components struct {
 	Motion    motion.Service
 	CamVision vision.Service
 
-	CroppedCupCamera camera.Camera
+	CupFinder vision.Service
+	CupTop    vision.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -178,8 +186,20 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		return nil, err
 	}
 
-	if config.CroppedCupCamera != "" {
-		c.CroppedCupCamera, err = camera.FromDependencies(deps, config.CroppedCupCamera)
+	c.CamVision, err = vision.FromDependencies(deps, config.CircleDetectionService)
+	if err != nil {
+		return nil, err
+	}
+
+	if config.CupFinderService != "" {
+		c.CupFinder, err = vision.FromDependencies(deps, config.CupFinderService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.CupTopService != "" {
+		c.CupTop, err = vision.FromDependencies(deps, config.CupTopService)
 		if err != nil {
 			return nil, err
 		}

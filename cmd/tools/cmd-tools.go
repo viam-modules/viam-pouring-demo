@@ -76,6 +76,8 @@ func realMain() error {
 		return g.GoToPrepForPour(ctx)
 	case "touch":
 		return touch(ctx, client, p1c, logger)
+	case "align-cup":
+		return alignCup(ctx, client, cfg, p1c, logger)
 	case "print-world":
 		printPoseInfo(ctx, p1c.Motion, p1c.Cam.Name(), logger)
 		printPoseInfo(ctx, p1c.Motion, p1c.Arm.Name(), logger)
