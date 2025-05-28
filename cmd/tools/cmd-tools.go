@@ -63,7 +63,7 @@ func realMain() error {
 
 	p1c, err := pour.Pour1ComponentsFromDependencies(cfg, deps)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	g := pour.NewTesting(logger, client, p1c)
