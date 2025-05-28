@@ -7,6 +7,7 @@ import (
 
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/vision"
 	"go.viam.com/rdk/spatialmath"
@@ -121,9 +122,14 @@ func (vcf *visionCupFinder) GetObjectPointClouds(ctx context.Context, cameraName
 		return nil, err
 	}
 
+	pc, err = cleanPointCloud(pc)
+	if err != nil {
+		return nil, err
+	}
+
 	res := []*viz.Object{}
 
-	center, height, radius, ok := FindSingleCupInPointCloud(pc, vcf.cfg.RadiusMM, vcf.cfg.HeightMM, vcf.cfg.ErrorMargin, vcf.logger)
+	center, height, radius, ok := findSingleCupInCleanedPointCloud(pc, vcf.cfg.RadiusMM, vcf.cfg.HeightMM, vcf.cfg.ErrorMargin, vcf.logger)
 	if ok {
 		c, err := spatialmath.NewCapsule(
 			spatialmath.NewPose(center, &spatialmath.OrientationVectorDegrees{OZ: 1}),
@@ -159,4 +165,18 @@ func (vcf *visionCupFinder) CaptureAllFromCamera(ctx context.Context, cameraName
 
 func (vcf *visionCupFinder) DoCommand(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
 	return nil, nil
+}
+
+func cleanPointCloud(pc pointcloud.PointCloud) (pointcloud.PointCloud, error) {
+	temp := pointcloud.NewBasicEmpty()
+	f, err := pointcloud.StatisticalOutlierFilter(100, 1.5)
+	if err != nil {
+		return nil, err
+	}
+
+	err = f(pc, temp)
+	if err != nil {
+		return nil, err
+	}
+	return temp, nil
 }

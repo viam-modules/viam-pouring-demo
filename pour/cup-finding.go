@@ -299,22 +299,17 @@ func circleToPt(intrinsics transform.PinholeCameraIntrinsics, circle Circle, z, 
 }
 
 // return center, overall height, radius, found
+// TODO - remove
 func FindSingleCupInPointCloud(pc pointcloud.PointCloud, expectedRadius, expectedHeight, errorMargin float64, logger logging.Logger) (r3.Vector, float64, float64, bool) {
-	{
-		logger.Debugf("size before: %d", pc.Size())
-		temp := pointcloud.NewBasicEmpty()
-		f, err := pointcloud.StatisticalOutlierFilter(100, 1.5)
-		if err != nil {
-			panic(err)
-		}
-		err = f(pc, temp)
-		if err != nil {
-			panic(err)
-		}
-		pc = temp
-		logger.Debugf("size after: %d", pc.Size())
+	pc, err := cleanPointCloud(pc)
+	if err != nil {
+		panic(err)
 	}
 
+	return findSingleCupInCleanedPointCloud(pc, expectedRadius, expectedHeight, errorMargin, logger)
+}
+
+func findSingleCupInCleanedPointCloud(pc pointcloud.PointCloud, expectedRadius, expectedHeight, errorMargin float64, logger logging.Logger) (r3.Vector, float64, float64, bool) {
 	md := pc.MetaData()
 
 	logger.Infof("metadata: %#v", md)
