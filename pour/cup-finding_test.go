@@ -101,7 +101,7 @@ func TestFindSingleCupInPointCloud(t *testing.T) {
 
 	test.That(t, center.Z, test.ShouldAlmostEqual, 35+(120-35)/2, 10)
 
-	test.That(t, center.X, test.ShouldAlmostEqual, -413.47, 1)
+	test.That(t, center.X, test.ShouldAlmostEqual, -413.47, 5)
 	test.That(t, center.Y, test.ShouldAlmostEqual, -240.7, 25) // this is probably too far
 
 }

@@ -326,5 +326,9 @@ func FindSingleCupInPointCloud(pc pointcloud.PointCloud, logger logging.Logger) 
 		return r3.Vector{}, 0, false
 	}
 
-	return md.Center(), md.MaxZ, true
+	cc := pointcloud.CloudCentroid(pc)
+
+	cc.Z = md.Center().Z // this is more about min vs max because we're looking for edges
+
+	return cc, md.MaxZ, true
 }
