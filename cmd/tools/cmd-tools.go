@@ -9,10 +9,7 @@ import (
 
 	vizClient "github.com/viam-labs/motion-tools/client/client"
 	"go.viam.com/rdk/logging"
-	"go.viam.com/rdk/referenceframe"
-	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot"
-	"go.viam.com/rdk/services/motion"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
@@ -81,24 +78,25 @@ func realMain() error {
 		return g.GoToPrepForPour(ctx)
 	case "touch":
 		return touch(ctx, client, p1c, logger)
-	case "align-cup":
-		return alignCup(ctx, client, cfg, p1c, logger)
-	case "print-world":
-		printPoseInfo(ctx, p1c.Motion, p1c.Cam.Name(), logger)
-		printPoseInfo(ctx, p1c.Motion, p1c.Arm.Name(), logger)
-		printPoseInfo(ctx, p1c.Motion, p1c.Gripper.Name(), logger)
-		return nil
+	case "pour-prep":
+		return pourPrep(ctx, client, p1c, logger)
+	case "pour-prep-grab":
+		return pourPrepGrab(ctx, client, p1c, logger)
+	case "pour":
+		return pourNew(ctx, client, p1c, logger)
+	case "put-back":
+		return putBack(ctx, client, p1c, logger)
 	case "visWorldState":
 		return visObstacles(ctx, client)
 	case "plan":
 		return g.StartPouringProcess(ctx, pour.PouringOptions{})
-	case "pour":
+	case "pour-old":
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true})
-	case "pour-far":
+	case "pour-old-far":
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromFar: true})
-	case "pour-mid":
+	case "pour-old-mid":
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromMid: true})
-	case "find-cups":
+	case "find-cups-old":
 		cups, err := g.FindCups(ctx)
 		if err != nil {
 			return err
@@ -134,13 +132,4 @@ func visObstacles(ctx context.Context, myRobot robot.Robot) error {
 	}
 
 	return nil
-}
-
-func printPoseInfo(ctx context.Context, motion motion.Service, name resource.Name, logger logging.Logger) {
-	p, err := motion.GetPose(ctx, name, referenceframe.World, nil, nil)
-	if err != nil {
-		logger.Warnf("cannot get pose for %v : %v", err)
-	} else {
-		fmt.Printf("%v: %v %T\n", name, p.Pose(), p.Pose())
-	}
 }

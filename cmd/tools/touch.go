@@ -3,23 +3,24 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
+	"time"
 
 	"github.com/golang/geo/r3"
 
 	"go.viam.com/rdk/components/gripper"
+	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
+	"go.viam.com/rdk/utils"
 	viz "go.viam.com/rdk/vision"
-	"go.viam.com/rdk/vision/viscapture"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
-
-var extra = map[string]interface{}{"num_threads": 50}
 
 func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
 	logger.Infof("touch called")
@@ -82,7 +83,6 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
 			Destination:   goToPose,
 			WorldState:    worldState,
-			Extra:         extra,
 		},
 	)
 	if err != nil {
@@ -100,7 +100,6 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
 			Destination:   goToPose,
 			Constraints:   &pour.LinearConstraint,
-			Extra:         extra,
 		},
 	)
 	if err != nil {
@@ -111,22 +110,21 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 	if err != nil {
 		return err
 	}
+	/*
+		goToPose = getApproachPoint(obj, -30, 100)
+		logger.Infof("going to move to %v", goToPose)
 
-	goToPose = getApproachPoint(obj, -30, 100)
-	logger.Infof("going to move to %v", goToPose)
-
-	_, err = c.Motion.Move(
-		ctx,
-		motion.MoveReq{
-			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
-			Destination:   goToPose,
-			Extra:         extra,
-		},
-	)
-	if err != nil {
-		return err
-	}
-
+		_, err = c.Motion.Move(
+			ctx,
+			motion.MoveReq{
+				ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
+				Destination:   goToPose,
+			},
+		)
+		if err != nil {
+			return err
+		}
+	*/
 	return nil
 }
 
@@ -154,42 +152,135 @@ func getApproachPoint(obj *viz.Object, deltaX, deltaZ float64) *referenceframe.P
 
 }
 
-func alignCup(ctx context.Context, myRobot robot.Robot, cfg *pour.Config, c *pour.Pour1Components, logger logging.Logger) error {
-	if false {
-		res, err := c.CupTop.CaptureAllFromCamera(ctx, cfg.CameraName, viscapture.CaptureOptions{ReturnImage: true, ReturnDetections: true}, nil)
+func doAll(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger, all []toggleswitch.Switch) error {
+	for _, s := range all {
+		err := s.SetPosition(ctx, 2, nil)
 		if err != nil {
-			return nil
-		}
-		logger.Infof("res: %v", res)
-
-		if len(res.Detections) == 0 {
-			return fmt.Errorf("no detections for alignCup")
-		}
-
-		if len(res.Detections) > 1 {
-			return fmt.Errorf("too many detections for alignCup %d", len(res.Detections))
+			return err
 		}
 	}
-	p, err := c.Motion.GetPose(ctx, c.Gripper.Name(), "world", nil, nil)
+	return nil
+}
+
+func pourPrepGrab(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
+
+	positions, err := c.BottleArm.JointPositions(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	logger.Infof("start: %v", p)
-	p = p.Transform(referenceframe.NewPoseInFrame("world", spatialmath.NewPoseFromPoint(r3.Vector{X: -100}))).(*referenceframe.PoseInFrame)
-	logger.Infof("go to: %v", p)
+	orig := positions[0]
 
-	_, err = c.Motion.Move(
-		ctx,
-		motion.MoveReq{
-			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
-			Destination:   p,
-			WorldState:    nil,
-		},
-	)
+	logger.Infof("pourPrepGrab orig: %v", orig)
+	positions[0].Value -= utils.DegToRad(2)
+	logger.Infof("pourPrepGrab hack: %v", positions[0])
+
+	err = c.BottleArm.MoveToJointPositions(ctx, positions, nil)
 	if err != nil {
 		return err
 	}
 
-	return fmt.Errorf("finish me")
+	time.Sleep(50 * time.Millisecond)
+
+	_, err = c.BottleGripper.Grab(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	positions[0] = orig
+	err = c.BottleArm.MoveToJointPositions(ctx, positions, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func pourPrep(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
+	err := doAll(ctx, myRobot, c, logger, c.RightBottlePourPreGrabActions)
+	if err != nil {
+		return err
+	}
+
+	err = pourPrepGrab(ctx, myRobot, c, logger)
+	if err != nil {
+		return err
+	}
+
+	err = doAll(ctx, myRobot, c, logger, c.RightBottlePourPostGrabActions)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func pourNew(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
+	positions, err := c.BottleArm.JointPositions(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	orig := positions[5]
+
+	positions[5].Value = utils.DegToRad(-170)
+
+	err = c.BottleArm.MoveToJointPositions(ctx, positions, nil)
+	if err != nil {
+		return err
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	positions[5] = orig
+
+	err = c.BottleArm.MoveToJointPositions(ctx, positions, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func putBack(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
+	x := append([]toggleswitch.Switch{}, c.RightBottlePourPreGrabActions...)
+	slices.Reverse(x)
+
+	err := x[0].SetPosition(ctx, 2, nil)
+	if err != nil {
+		return err
+	}
+
+	err = c.BottleGripper.Open(ctx, nil)
+	if err != nil {
+		return err
+	}
+	time.Sleep(time.Millisecond * 500)
+
+	err = doAll(ctx, myRobot, c, logger, x)
+
+	err = c.LeftPlace.SetPosition(ctx, 2, nil)
+	if err != nil {
+		return err
+	}
+
+	err = c.Gripper.Open(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	err = c.LeftRetreat.SetPosition(ctx, 2, nil)
+	if err != nil {
+		return err
+	}
+
+	// just to get arms back to home
+	_, err = c.CupFinder.GetObjectPointClouds(ctx, "", nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

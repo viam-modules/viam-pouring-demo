@@ -14,6 +14,7 @@ import (
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/sensor"
+	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot"
@@ -106,6 +107,22 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		deps = append(deps, cfg.CircleDetectionService)
 	}
 
+	if cfg.BottleGripper != "" {
+		deps = append(deps, cfg.BottleGripper)
+	}
+	if cfg.BottleArm != "" {
+		deps = append(deps, cfg.BottleArm)
+	}
+
+	if cfg.LeftPlace != "" {
+		deps = append(deps, cfg.LeftPlace)
+	}
+	if cfg.LeftRetreat != "" {
+		deps = append(deps, cfg.LeftRetreat)
+	}
+
+	deps = append(deps, cfg.RightBottlePourPreGrabActions...)
+	deps = append(deps, cfg.RightBottlePourPostGrabActions...)
 	return deps, optionals, nil
 }
 
@@ -119,6 +136,14 @@ type Config struct {
 
 	CupFinderService string `json:"cup_finder_service"`
 	CupTopService    string `json:"cup_top_service"`
+
+	RightBottlePourPreGrabActions  []string `json:"right_bottle_pour_pre_grab_actions"`
+	RightBottlePourPostGrabActions []string `json:"right_bottle_pour_post_grab_actions"`
+	BottleGripper                  string   `json:"bottle_gripper"`
+	BottleArm                      string   `json:"bottle_arm"`
+
+	LeftPlace   string `json:"left_place"`
+	LeftRetreat string `json:"left_retreat"`
 
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
@@ -154,6 +179,13 @@ type Pour1Components struct {
 
 	CupFinder vision.Service
 	CupTop    vision.Service
+
+	RightBottlePourPreGrabActions  []toggleswitch.Switch
+	RightBottlePourPostGrabActions []toggleswitch.Switch
+	BottleGripper                  gripper.Gripper
+	BottleArm                      arm.Arm
+
+	LeftPlace, LeftRetreat toggleswitch.Switch
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -203,6 +235,50 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.CupTopService != "" {
 		c.CupTop, err = vision.FromDependencies(deps, config.CupTopService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.BottleGripper != "" {
+		c.BottleGripper, err = gripper.FromDependencies(deps, config.BottleGripper)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.BottleArm != "" {
+		c.BottleArm, err = arm.FromDependencies(deps, config.BottleArm)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for _, x := range config.RightBottlePourPreGrabActions {
+		s, err := toggleswitch.FromDependencies(deps, x)
+		if err != nil {
+			return nil, err
+		}
+		c.RightBottlePourPreGrabActions = append(c.RightBottlePourPreGrabActions, s)
+	}
+
+	for _, x := range config.RightBottlePourPostGrabActions {
+		s, err := toggleswitch.FromDependencies(deps, x)
+		if err != nil {
+			return nil, err
+		}
+		c.RightBottlePourPostGrabActions = append(c.RightBottlePourPostGrabActions, s)
+	}
+
+	if config.LeftRetreat != "" {
+		c.LeftRetreat, err = toggleswitch.FromDependencies(deps, config.LeftRetreat)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.LeftPlace != "" {
+		c.LeftPlace, err = toggleswitch.FromDependencies(deps, config.LeftPlace)
 		if err != nil {
 			return nil, err
 		}
