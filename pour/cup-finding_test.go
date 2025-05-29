@@ -101,7 +101,10 @@ func TestFindSingleCupInPointCloud(t *testing.T) {
 	expectedRadius := 85.0
 	expectedHeight := 121.0
 
-	center, height, radius, ok := FindSingleCupInPointCloud(in, expectedRadius, expectedHeight, 16, logger)
+	in, err = cleanPointCloud(in)
+	test.That(t, err, test.ShouldBeNil)
+
+	center, height, radius, ok := findSingleCupInCleanedPointCloud(in, expectedRadius, expectedHeight, 20, logger)
 	test.That(t, ok, test.ShouldBeTrue)
 	test.That(t, height, test.ShouldAlmostEqual, expectedHeight, 15)
 	test.That(t, radius, test.ShouldAlmostEqual, expectedRadius, 20)
