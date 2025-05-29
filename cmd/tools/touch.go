@@ -70,7 +70,7 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 	done, err := c.Motion.Move(
 		ctx,
 		motion.MoveReq{
-			ComponentName: resource.Name{Name: "gripper"},
+			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
 			Destination:   approachPose,
 			WorldState:    worldState,
 		},
@@ -93,11 +93,11 @@ func getApproachPoint(obj *viz.Object) *referenceframe.PoseInFrame {
 		"world",
 		spatialmath.NewPose(
 			r3.Vector{
-				X: md.MaxX + 50,
+				X: md.MinX - 50,
 				Y: c.Y,
 				Z: 90,
 			},
-			&spatialmath.OrientationVectorDegrees{OX: -1, Theta: 180}),
+			&spatialmath.OrientationVectorDegrees{OX: 1, Theta: 180}),
 	)
 
 }
@@ -130,7 +130,7 @@ func alignCup(ctx context.Context, myRobot robot.Robot, cfg *pour.Config, c *pou
 	done, err := c.Motion.Move(
 		ctx,
 		motion.MoveReq{
-			ComponentName: resource.Name{Name: "gripper"},
+			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
 			Destination:   p,
 			WorldState:    nil,
 		},

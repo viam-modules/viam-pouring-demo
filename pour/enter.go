@@ -67,24 +67,22 @@ func newPour(ctx context.Context, deps resource.Dependencies, conf resource.Conf
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
+	deps := []string{motion.Named("builtin").String()}
+
 	if cfg.ArmName == "" {
 		return nil, nil, fmt.Errorf("need an arm name")
 	}
+	deps = append(deps, cfg.ArmName)
+
 	if cfg.GripperName == "" {
 		return nil, nil, fmt.Errorf("need a gripper name")
 	}
+	deps = append(deps, cfg.GripperName)
+
 	if cfg.CameraName == "" {
 		return nil, nil, fmt.Errorf("need a camera name")
 	}
-	if cfg.WeightSensorName == "" {
-		return nil, nil, fmt.Errorf("need a weight name")
-	}
-	if cfg.CircleDetectionService == "" {
-		return nil, nil, fmt.Errorf("need a circledetectionservice name")
-	}
-	if cfg.CupFinderService == "" {
-		return nil, nil, fmt.Errorf("need a cupr_finder_service name")
-	}
+	deps = append(deps, cfg.CameraName)
 
 	if cfg.BottleHeight == 0 {
 		return nil, nil, fmt.Errorf("bottle_height cannot be unset")
@@ -101,8 +99,14 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	if cfg.CupTopService != "" {
 		optionals = append(optionals, cfg.CupTopService)
 	}
+	if cfg.WeightSensorName != "" {
+		deps = append(deps, cfg.WeightSensorName)
+	}
+	if cfg.CircleDetectionService != "" {
+		deps = append(deps, cfg.CircleDetectionService)
+	}
 
-	return []string{cfg.ArmName, cfg.GripperName, cfg.CameraName, cfg.WeightSensorName, motion.Named("builtin").String(), cfg.CircleDetectionService}, optionals, nil
+	return deps, optionals, nil
 }
 
 type Config struct {
@@ -171,9 +175,11 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		return nil, err
 	}
 
-	c.Weight, err = sensor.FromDependencies(deps, config.WeightSensorName)
-	if err != nil {
-		return nil, err
+	if config.WeightSensorName != "" {
+		c.Weight, err = sensor.FromDependencies(deps, config.WeightSensorName)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	c.Motion, err = motion.FromDependencies(deps, "builtin")
@@ -181,14 +187,11 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		return nil, err
 	}
 
-	c.CamVision, err = vision.FromDependencies(deps, config.CircleDetectionService)
-	if err != nil {
-		return nil, err
-	}
-
-	c.CamVision, err = vision.FromDependencies(deps, config.CircleDetectionService)
-	if err != nil {
-		return nil, err
+	if config.CircleDetectionService != "" {
+		c.CamVision, err = vision.FromDependencies(deps, config.CircleDetectionService)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if config.CupFinderService != "" {

@@ -50,6 +50,11 @@ func realMain() error {
 		return err
 	}
 
+	_, _, err = cfg.Validate("")
+	if err != nil {
+		return err
+	}
+
 	client, err := vmodutils.ConnectToHostFromCLIToken(ctx, *host, logger)
 	if err != nil {
 		return err
