@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"image"
 
+	"github.com/golang/geo/r3"
+
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
@@ -131,10 +133,9 @@ func (vcf *visionCupFinder) GetObjectPointClouds(ctx context.Context, cameraName
 
 	center, height, radius, ok := findSingleCupInCleanedPointCloud(pc, vcf.cfg.RadiusMM, vcf.cfg.HeightMM, vcf.cfg.ErrorMargin, vcf.logger)
 	if ok {
-		c, err := spatialmath.NewCapsule(
+		c, err := spatialmath.NewBox(
 			spatialmath.NewPose(center, &spatialmath.OrientationVectorDegrees{OZ: 1}),
-			radius,
-			height,
+			r3.Vector{X: radius * 2, Y: radius * 2, Z: height},
 			"cup",
 		)
 		if err != nil {
