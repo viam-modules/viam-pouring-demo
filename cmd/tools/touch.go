@@ -19,6 +19,8 @@ import (
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
 
+var extra = map[string]interface{}{"num_threads": 50}
+
 func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
 	logger.Infof("touch called")
 	if false {
@@ -40,6 +42,11 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 		return err
 	}
 
+	err = c.Gripper.Open(ctx, nil)
+	if err != nil {
+		return err
+	}
+
 	logger.Infof("num objects: %v", len(objects))
 	for _, o := range objects {
 		logger.Infof("\t objects: %v", o)
@@ -55,48 +62,93 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 
 	obj := objects[0]
 
-	approachPose := getApproachPoint(obj)
+	// -- approach
 
-	logger.Infof("going to move to %v", approachPose)
+	goToPose := getApproachPoint(obj, 100, 0)
+	logger.Infof("going to move to %v", goToPose)
 
 	obstacles := []*referenceframe.GeometriesInFrame{}
 	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
-	worldState, err := referenceframe.NewWorldState(obstacles, nil)
+	logger.Infof("add cup as obstacle %v", obj.Geometry)
 
+	worldState, err := referenceframe.NewWorldState(obstacles, nil)
 	if err != nil {
 		return err
 	}
 
-	done, err := c.Motion.Move(
+	_, err = c.Motion.Move(
 		ctx,
 		motion.MoveReq{
 			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
-			Destination:   approachPose,
+			Destination:   goToPose,
 			WorldState:    worldState,
+			Extra:         extra,
 		},
 	)
 	if err != nil {
 		return err
 	}
-	if !done {
-		return fmt.Errorf("first move didn't finish")
+
+	// ---- go to pick up
+
+	goToPose = getApproachPoint(obj, -30, 0)
+	logger.Infof("going to move to %v", goToPose)
+
+	_, err = c.Motion.Move(
+		ctx,
+		motion.MoveReq{
+			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
+			Destination:   goToPose,
+			Constraints:   &pour.LinearConstraint,
+			Extra:         extra,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.Gripper.Grab(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	goToPose = getApproachPoint(obj, -30, 100)
+	logger.Infof("going to move to %v", goToPose)
+
+	_, err = c.Motion.Move(
+		ctx,
+		motion.MoveReq{
+			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
+			Destination:   goToPose,
+			Extra:         extra,
+		},
+	)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func getApproachPoint(obj *viz.Object) *referenceframe.PoseInFrame {
+func getApproachPoint(obj *viz.Object, deltaX, deltaZ float64) *referenceframe.PoseInFrame {
 	md := obj.MetaData()
 	c := md.Center()
+
+	approachPoint := r3.Vector{
+		Y: c.Y,
+		Z: 95 + deltaZ,
+	}
+
+	if md.MinX > 0 {
+		approachPoint.X = md.MinX - deltaX
+	} else {
+		approachPoint.X = md.MaxX + deltaX
+	}
 
 	return referenceframe.NewPoseInFrame(
 		"world",
 		spatialmath.NewPose(
-			r3.Vector{
-				X: md.MinX - 50,
-				Y: c.Y,
-				Z: 90,
-			},
+			approachPoint,
 			&spatialmath.OrientationVectorDegrees{OX: 1, Theta: 180}),
 	)
 
@@ -127,7 +179,7 @@ func alignCup(ctx context.Context, myRobot robot.Robot, cfg *pour.Config, c *pou
 	p = p.Transform(referenceframe.NewPoseInFrame("world", spatialmath.NewPoseFromPoint(r3.Vector{X: -100}))).(*referenceframe.PoseInFrame)
 	logger.Infof("go to: %v", p)
 
-	done, err := c.Motion.Move(
+	_, err = c.Motion.Move(
 		ctx,
 		motion.MoveReq{
 			ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
@@ -137,9 +189,6 @@ func alignCup(ctx context.Context, myRobot robot.Robot, cfg *pour.Config, c *pou
 	)
 	if err != nil {
 		return err
-	}
-	if !done {
-		return fmt.Errorf("move didn't finish")
 	}
 
 	return fmt.Errorf("finish me")

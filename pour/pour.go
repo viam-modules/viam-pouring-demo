@@ -243,7 +243,7 @@ func (g *Gen) demoPlanMovements(ctx context.Context, cupLocations []r3.Vector, o
 		)
 		fmt.Println("planning pourGoal")
 		fmt.Println("pourGoal: ", spatialmath.PoseToProtobuf(pourGoal))
-		p, err := g.getPlanByTryingRepeatedly(ctx, thePlan, bottleResource, pourGoal, worldState, &linearConstraint)
+		p, err := g.getPlanByTryingRepeatedly(ctx, thePlan, bottleResource, pourGoal, worldState, &LinearConstraint)
 		if err != nil {
 			return fmt.Errorf("cannot generate pour plan for cup %d %v", i, err)
 		}

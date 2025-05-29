@@ -13,7 +13,7 @@ import (
 const plywoodHeight = 32.8 // mm above the recessed part of table
 
 // Move linearly allowing no collisions
-var linearConstraint = motionplan.Constraints{
+var LinearConstraint = motionplan.Constraints{
 	LinearConstraint: []motionplan.LinearConstraint{
 		{LineToleranceMm: 5, OrientationToleranceDegs: 5},
 	},
