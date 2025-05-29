@@ -10,6 +10,10 @@
             "model": "viam:pouring-demo:pour"
         },
         {
+            "api": "rdk:service:generic",
+            "model": "viam:pouring-demo:vinocart"
+        },
+        {
             "api": "rdk:component:sensor",
             "model": "viam:pouring-demo:pouring-weight-smoother"
         },

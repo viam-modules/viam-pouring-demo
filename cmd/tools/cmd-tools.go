@@ -70,6 +70,8 @@ func realMain() error {
 
 	g := pour.NewTesting(logger, client, p1c)
 
+	vc := pour.NewVinoCart(cfg, p1c, client, logger)
+
 	cmd := flag.Arg(0)
 	switch cmd {
 	case "reset":
@@ -77,29 +79,27 @@ func realMain() error {
 	case "intermediate":
 		return g.GoToPrepForPour(ctx)
 	case "touch":
-		return touch(ctx, client, p1c, cfg, logger)
+		return vc.Touch(ctx)
 	case "pour-prep":
-		return pourPrep(ctx, client, p1c, logger)
-	case "pour-prep-grab":
-		return pourPrepGrab(ctx, client, p1c, logger)
+		return vc.PourPrep(ctx)
 	case "pour":
-		return pourNew(ctx, client, p1c, logger)
+		return vc.Pour(ctx)
 	case "put-back":
-		return putBack(ctx, client, p1c, logger)
+		return vc.PutBack(ctx)
 	case "full-demo":
-		err := touch(ctx, client, p1c, cfg, logger)
+		err := vc.Touch(ctx)
 		if err != nil {
 			return err
 		}
-		err = pourPrep(ctx, client, p1c, logger)
+		err = vc.PourPrep(ctx)
 		if err != nil {
 			return err
 		}
-		err = pourNew(ctx, client, p1c, logger)
+		err = vc.Pour(ctx)
 		if err != nil {
 			return err
 		}
-		return putBack(ctx, client, p1c, logger)
+		return vc.PutBack(ctx)
 	case "visWorldState":
 		return visObstacles(ctx, client)
 	case "plan":
