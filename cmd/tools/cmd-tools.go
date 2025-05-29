@@ -77,7 +77,7 @@ func realMain() error {
 	case "intermediate":
 		return g.GoToPrepForPour(ctx)
 	case "touch":
-		return touch(ctx, client, p1c, logger)
+		return touch(ctx, client, p1c, cfg, logger)
 	case "pour-prep":
 		return pourPrep(ctx, client, p1c, logger)
 	case "pour-prep-grab":
@@ -85,6 +85,20 @@ func realMain() error {
 	case "pour":
 		return pourNew(ctx, client, p1c, logger)
 	case "put-back":
+		return putBack(ctx, client, p1c, logger)
+	case "full-demo":
+		err := touch(ctx, client, p1c, cfg, logger)
+		if err != nil {
+			return err
+		}
+		err = pourPrep(ctx, client, p1c, logger)
+		if err != nil {
+			return err
+		}
+		err = pourNew(ctx, client, p1c, logger)
+		if err != nil {
+			return err
+		}
 		return putBack(ctx, client, p1c, logger)
 	case "visWorldState":
 		return visObstacles(ctx, client)

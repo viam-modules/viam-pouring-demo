@@ -5,6 +5,7 @@ import (
 
 	"github.com/golang/geo/r3"
 
+	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/spatialmath"
@@ -142,4 +143,12 @@ func (g *Gen) startPlan(ctx context.Context) (*planBuilder, error) {
 		return nil, err
 	}
 	return newPlanBuilder(current), nil
+}
+
+func SetXarmSpeed(ctx context.Context, a arm.Arm, speed, accel float64) error {
+	_, err := a.DoCommand(ctx, map[string]interface{}{
+		"set_speed":        float64(speed),
+		"set_acceleration": float64(accel),
+	})
+	return err
 }

@@ -153,6 +153,8 @@ type Config struct {
 	DeltaXNeg    float64 `json:"deltaxneg"`
 	DeltaYNeg    float64 `json:"deltayneg"`
 
+	SimoneHack bool `json:"simone_hack"`
+
 	// optional
 	CPUThreads int `json:"cpu_threads,omitempty"`
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/golang/geo/r3"
@@ -22,7 +23,7 @@ import (
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
 
-func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, logger logging.Logger) error {
+func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, cfg *pour.Config, logger logging.Logger) error {
 	logger.Infof("touch called")
 	if false {
 		obstacleTable, err := gripper.FromRobot(myRobot, "obstacle-table")
@@ -38,12 +39,12 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 		return nil
 	}
 
-	objects, err := c.CupFinder.GetObjectPointClouds(ctx, "", nil)
+	err := c.Gripper.Open(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	err = c.Gripper.Open(ctx, nil)
+	objects, err := c.CupFinder.GetObjectPointClouds(ctx, "", nil)
 	if err != nil {
 		return err
 	}
@@ -59,6 +60,25 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 
 	if len(objects) > 1 {
 		return fmt.Errorf("too many objects %d", len(objects))
+	}
+
+	if cfg.SimoneHack {
+		err = c.LeftRetreat.SetPosition(ctx, 2, nil)
+		if err != nil {
+			return err
+		}
+
+		err = c.LeftPlace.SetPosition(ctx, 2, nil)
+		if err != nil {
+			return err
+		}
+
+		_, err = c.Gripper.Grab(ctx, nil)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	}
 
 	obj := objects[0]
@@ -110,21 +130,7 @@ func touch(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, lo
 	if err != nil {
 		return err
 	}
-	/*
-		goToPose = getApproachPoint(obj, -30, 100)
-		logger.Infof("going to move to %v", goToPose)
 
-		_, err = c.Motion.Move(
-			ctx,
-			motion.MoveReq{
-				ComponentName: resource.Name{Name: c.Gripper.Name().ShortName()},
-				Destination:   goToPose,
-			},
-		)
-		if err != nil {
-			return err
-		}
-	*/
 	return nil
 }
 
@@ -223,6 +229,16 @@ func pourNew(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, 
 		return err
 	}
 
+	positionsLeft, err := c.Arm.JointPositions(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	err = pour.SetXarmSpeed(ctx, c.BottleArm, 20, 100) // slow down
+	if err != nil {
+		return err
+	}
+
 	orig := positions[5]
 
 	positions[5].Value = utils.DegToRad(-170)
@@ -236,7 +252,36 @@ func pourNew(ctx context.Context, myRobot robot.Robot, c *pour.Pour1Components, 
 
 	positions[5] = orig
 
-	err = c.BottleArm.MoveToJointPositions(ctx, positions, nil)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err = c.BottleArm.MoveToJointPositions(ctx, positions, nil)
+		logger.Errorf("error tilting bottle: %v", err)
+	}()
+
+	{
+		err = pour.SetXarmSpeed(ctx, c.Arm, 20, 100) // back to default
+		if err != nil {
+			return err
+		}
+
+		positionsLeft[5].Value -= utils.DegToRad(-15)
+		err = c.Arm.MoveToJointPositions(ctx, positionsLeft, nil)
+		if err != nil {
+			return err
+		}
+
+		err = pour.SetXarmSpeed(ctx, c.Arm, 60, 100) // back to default
+		if err != nil {
+			return err
+		}
+
+	}
+
+	wg.Wait()
+
+	err = pour.SetXarmSpeed(ctx, c.BottleArm, 60, 100) // back to default
 	if err != nil {
 		return err
 	}
