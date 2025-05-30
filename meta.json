@@ -26,6 +26,13 @@
             "model": "viam:pouring-demo:vision-cup-finder"
         }
     ],
+    "applications": [
+        {
+            "name": "vinoweb",
+            "type": "single_machine",
+            "entrypoint": "pour/vinoweb/dist/index.html"
+        }
+    ],
     "entrypoint": "bin/viam-pouring-demo",
     "build": {
         "build": "make module.tar.gz",

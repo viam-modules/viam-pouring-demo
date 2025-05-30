@@ -8,7 +8,7 @@ ifeq ($(VIAM_TARGET_OS), windows)
 	MODULE_BINARY = bin/viam-pouring-demo.exe
 endif
 
-$(MODULE_BINARY): bin Makefile go.mod cmd/module/*.go pour/*.go pour/web/dist/index.html
+$(MODULE_BINARY): bin Makefile go.mod cmd/module/*.go pour/*.go pour/web/dist/index.html pour/vinoweb/dist/index.html
 	$(GO_BUILD_ENV) go build $(GO_BUILD_FLAGS) -o $(MODULE_BINARY) cmd/module/main.go
 
 bin:
@@ -31,7 +31,7 @@ ifeq ($(VIAM_TARGET_OS), windows)
 else
 	strip $(MODULE_BINARY)
 endif
-	tar czf $@ meta.json $(MODULE_BINARY)
+	tar czf $@ meta.json $(MODULE_BINARY) pour/vinoweb/dist
 ifeq ($(VIAM_TARGET_OS), windows)
 	git checkout meta.json
 endif
@@ -45,6 +45,9 @@ setup:
 
 pour/web/dist/index.html: pour/web/*.json pour/web/*.html pour/web/src/*.ts pour/web/src/*.svelte
 	cd pour/web && npm install && npm run build
+
+pour/vinoweb/dist/index.html: pour/vinoweb/*.json pour/vinoweb/*.html pour/vinoweb/src/*.ts pour/vinoweb/src/*.svelte pour/vinoweb/src/lib/*.svelte
+	cd pour/vinoweb && npm install && npm run build
 
 bin/tool: cmd/tools/*.go pour/*.go
 	go build -o bin/tool cmd/tools/*.go
