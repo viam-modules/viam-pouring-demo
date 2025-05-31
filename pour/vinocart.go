@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/multierr"
+
 	"github.com/golang/geo/r3"
 
 	"go.viam.com/rdk/components/switch"
@@ -74,6 +76,9 @@ type VinoCart struct {
 	robotClient robot.Robot
 
 	c *Pour1Components
+
+	posLock sync.Mutex
+	posMap  map[string]toggleswitch.Switch
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -128,6 +133,11 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	vc.logger.Infof("touch called")
 
 	err := vc.c.Gripper.Open(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	err = vc.c.BottleGripper.Open(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -228,7 +238,7 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaX, deltaZ float64) *r
 
 	approachPoint := r3.Vector{
 		Y: c.Y,
-		Z: 95 + deltaZ,
+		Z: vc.conf.BottleHeight - 25 + deltaZ,
 	}
 
 	if md.MinX > 0 {
@@ -311,7 +321,121 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	return nil
 }
 
+func (vc *VinoCart) getPositionSwitch(ctx context.Context, pos string) (toggleswitch.Switch, error) {
+	vc.posLock.Lock()
+	s, ok := vc.posMap[pos]
+	vc.posLock.Unlock()
+	if ok {
+		return s, nil
+	}
+
+	s, err := toggleswitch.FromRobot(vc.robotClient, pos)
+	if err != nil {
+		return nil, err
+	}
+
+	vc.posLock.Lock()
+	if vc.posMap == nil {
+		vc.posMap = map[string]toggleswitch.Switch{}
+	}
+	vc.posMap[pos] = s
+	vc.posLock.Unlock()
+
+	return s, nil
+}
+
+func (vc *VinoCart) goToSingle(ctx context.Context, pos string) error {
+	s, err := vc.getPositionSwitch(ctx, pos)
+	if err != nil {
+		return err
+	}
+	return s.SetPosition(ctx, 2, nil)
+}
+
+// TODO - eliot hates this with a burning passion, but expedeiency won our saturday night
+func (vc *VinoCart) goTo(ctx context.Context, poss ...string) error {
+	if len(poss) == 0 {
+		return nil
+	}
+
+	if len(poss) == 1 {
+		return vc.goToSingle(ctx, poss[0])
+	}
+
+	var errorLock sync.Mutex
+	errors := []error{}
+
+	wg := sync.WaitGroup{}
+
+	for _, p := range poss {
+		wg.Add(1)
+		go func(pp string) {
+			defer wg.Done()
+			err := vc.goToSingle(ctx, pp)
+			if err != nil {
+				errorLock.Lock()
+				errors = append(errors, err)
+				errorLock.Unlock()
+			}
+		}(p)
+
+	}
+
+	wg.Wait()
+
+	return multierr.Combine(errors...)
+}
+
 func (vc *VinoCart) Pour(ctx context.Context) error {
+	err := vc.goTo(ctx, "arm-pour-left-prep", "arm-pour-right-prep")
+	if err != nil {
+		return err
+	}
+
+	err = vc.goTo(ctx, "arm-pour-right-pos0")
+	if err != nil {
+		return err
+	}
+
+	start := time.Now()
+	lastMove := time.Now()
+	pos := 0
+
+	for time.Since(start) < 15*time.Second {
+
+		if pos <= 0 || (pos < 4 && time.Since(lastMove) > time.Second*2) {
+			pos++
+			err := vc.goTo(ctx, fmt.Sprintf("arm-pour-right-pos%d", pos))
+			if err != nil {
+				return err
+			}
+			lastMove = time.Now()
+		}
+
+		classifications, err := vc.c.PourGlassFullnessService.ClassificationsFromCamera(ctx, "cam-glass-crop", 1, nil)
+		if err != nil {
+			return err
+		}
+		vc.logger.Infof("classifications: %v", classifications)
+
+		if len(classifications) >= 1 && classifications[0].Label() == "full" && classifications[0].Score() > .6 {
+			break
+		}
+		time.Sleep(time.Millisecond * 200)
+	}
+
+	for pos > 0 {
+		pos--
+		err := vc.goTo(ctx, fmt.Sprintf("arm-pour-right-pos%d", pos))
+		if err != nil {
+			return err
+		}
+	}
+
+	return vc.goTo(ctx, "arm-pour-left-prep", "arm-pour-right-prep")
+}
+
+func (vc *VinoCart) PourOld(ctx context.Context) error {
 	positions, err := vc.c.BottleArm.JointPositions(ctx, nil)
 	if err != nil {
 		return err

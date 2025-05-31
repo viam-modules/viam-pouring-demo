@@ -87,19 +87,7 @@ func realMain() error {
 	case "put-back":
 		return vc.PutBack(ctx)
 	case "full-demo":
-		err := vc.Touch(ctx)
-		if err != nil {
-			return err
-		}
-		err = vc.PourPrep(ctx)
-		if err != nil {
-			return err
-		}
-		err = vc.Pour(ctx)
-		if err != nil {
-			return err
-		}
-		return vc.PutBack(ctx)
+		return vc.FullDemo(ctx)
 	case "visWorldState":
 		return visObstacles(ctx, client)
 	case "plan":

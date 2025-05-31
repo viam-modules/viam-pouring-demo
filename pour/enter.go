@@ -121,6 +121,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		deps = append(deps, cfg.LeftRetreat)
 	}
 
+	if cfg.PourGlassFullnessService != "" {
+		deps = append(deps, cfg.PourGlassFullnessService)
+	}
+
 	deps = append(deps, cfg.RightBottlePourPreGrabActions...)
 	deps = append(deps, cfg.RightBottlePourPostGrabActions...)
 	return deps, optionals, nil
@@ -153,6 +157,8 @@ type Config struct {
 	DeltaXNeg    float64 `json:"deltaxneg"`
 	DeltaYNeg    float64 `json:"deltayneg"`
 
+	PourGlassFullnessService string `json:"pour_glass_fullness_service"`
+
 	SimoneHack bool `json:"simone_hack"`
 
 	// optional
@@ -179,8 +185,9 @@ type Pour1Components struct {
 	Motion    motion.Service
 	CamVision vision.Service
 
-	CupFinder vision.Service
-	CupTop    vision.Service
+	CupFinder                vision.Service
+	CupTop                   vision.Service
+	PourGlassFullnessService vision.Service
 
 	RightBottlePourPreGrabActions  []toggleswitch.Switch
 	RightBottlePourPostGrabActions []toggleswitch.Switch
@@ -237,6 +244,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.CupTopService != "" {
 		c.CupTop, err = vision.FromDependencies(deps, config.CupTopService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.PourGlassFullnessService != "" {
+		c.PourGlassFullnessService, err = vision.FromDependencies(deps, config.PourGlassFullnessService)
 		if err != nil {
 			return nil, err
 		}
