@@ -3,7 +3,6 @@ package pour
 import (
 	"context"
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -76,9 +75,6 @@ type VinoCart struct {
 	robotClient robot.Robot
 
 	c *Pour1Components
-
-	posLock sync.Mutex
-	posMap  map[string]toggleswitch.Switch
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -161,12 +157,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	}
 
 	if vc.conf.SimoneHack {
-		err = vc.c.LeftRetreat.SetPosition(ctx, 2, nil)
-		if err != nil {
-			return err
-		}
-
-		err = vc.c.LeftPlace.SetPosition(ctx, 2, nil)
+		err = vc.doAll(ctx, "touch", "pickup-hack")
 		if err != nil {
 			return err
 		}
@@ -256,9 +247,18 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaX, deltaZ float64) *r
 
 }
 
-func (vc *VinoCart) doAll(ctx context.Context, all []toggleswitch.Switch) error {
-	for _, s := range all {
-		err := s.SetPosition(ctx, 2, nil)
+func (vc *VinoCart) doAll(ctx context.Context, stage, step string) error {
+	steps, ok := vc.c.Positions[stage]
+	if !ok {
+		return fmt.Errorf("no stage %s", stage)
+	}
+	positions, ok := steps[step]
+	if !ok {
+		return fmt.Errorf("no step [%s] in stage [%s]", step, stage)
+	}
+
+	for _, xxx := range positions {
+		err := vc.goTo(ctx, xxx...)
 		if err != nil {
 			return err
 		}
@@ -303,7 +303,7 @@ func (vc *VinoCart) pourPrepGrab(ctx context.Context) error {
 }
 
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
-	err := vc.doAll(ctx, vc.c.RightBottlePourPreGrabActions)
+	err := vc.doAll(ctx, "pour_prep", "prep-grab")
 	if err != nil {
 		return err
 	}
@@ -313,7 +313,12 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.doAll(ctx, vc.c.RightBottlePourPostGrabActions)
+	err = vc.doAll(ctx, "pour_prep", "right-grab")
+	if err != nil {
+		return err
+	}
+
+	err = vc.doAll(ctx, "pour_prep", "post-grab")
 	if err != nil {
 		return err
 	}
@@ -321,45 +326,13 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	return nil
 }
 
-func (vc *VinoCart) getPositionSwitch(ctx context.Context, pos string) (toggleswitch.Switch, error) {
-	vc.posLock.Lock()
-	s, ok := vc.posMap[pos]
-	vc.posLock.Unlock()
-	if ok {
-		return s, nil
-	}
-
-	s, err := toggleswitch.FromRobot(vc.robotClient, pos)
-	if err != nil {
-		return nil, err
-	}
-
-	vc.posLock.Lock()
-	if vc.posMap == nil {
-		vc.posMap = map[string]toggleswitch.Switch{}
-	}
-	vc.posMap[pos] = s
-	vc.posLock.Unlock()
-
-	return s, nil
-}
-
-func (vc *VinoCart) goToSingle(ctx context.Context, pos string) error {
-	s, err := vc.getPositionSwitch(ctx, pos)
-	if err != nil {
-		return err
-	}
-	return s.SetPosition(ctx, 2, nil)
-}
-
-// TODO - eliot hates this with a burning passion, but expedeiency won our saturday night
-func (vc *VinoCart) goTo(ctx context.Context, poss ...string) error {
+func (vc *VinoCart) goTo(ctx context.Context, poss ...toggleswitch.Switch) error {
 	if len(poss) == 0 {
 		return nil
 	}
 
 	if len(poss) == 1 {
-		return vc.goToSingle(ctx, poss[0])
+		return poss[0].SetPosition(ctx, 2, nil)
 	}
 
 	var errorLock sync.Mutex
@@ -369,9 +342,9 @@ func (vc *VinoCart) goTo(ctx context.Context, poss ...string) error {
 
 	for _, p := range poss {
 		wg.Add(1)
-		go func(pp string) {
+		go func(pp toggleswitch.Switch) {
 			defer wg.Done()
-			err := vc.goToSingle(ctx, pp)
+			err := pp.SetPosition(ctx, 2, nil)
 			if err != nil {
 				errorLock.Lock()
 				errors = append(errors, err)
@@ -387,12 +360,7 @@ func (vc *VinoCart) goTo(ctx context.Context, poss ...string) error {
 }
 
 func (vc *VinoCart) Pour(ctx context.Context) error {
-	err := vc.goTo(ctx, "arm-pour-left-prep", "arm-pour-right-prep")
-	if err != nil {
-		return err
-	}
-
-	err = vc.goTo(ctx, "arm-pour-right-pos0")
+	err := vc.doAll(ctx, "pour", "prep")
 	if err != nil {
 		return err
 	}
@@ -401,14 +369,16 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	lastMove := time.Now()
 	pos := 0
 
+	poses := vc.c.Positions["pour"]["pour"]
+
 	for time.Since(start) < 15*time.Second {
 
 		if pos <= 0 || (pos < 4 && time.Since(lastMove) > time.Second*2) {
-			pos++
-			err := vc.goTo(ctx, fmt.Sprintf("arm-pour-right-pos%d", pos))
+			err := vc.goTo(ctx, poses[pos]...)
 			if err != nil {
 				return err
 			}
+			pos++
 			lastMove = time.Now()
 		}
 
@@ -424,15 +394,16 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		time.Sleep(time.Millisecond * 200)
 	}
 
-	for pos > 0 {
-		pos--
-		err := vc.goTo(ctx, fmt.Sprintf("arm-pour-right-pos%d", pos))
+	for pos >= 0 {
+		err := vc.goTo(ctx, poses[pos]...)
 		if err != nil {
 			return err
 		}
+		pos--
+
 	}
 
-	return vc.goTo(ctx, "arm-pour-left-prep", "arm-pour-right-prep")
+	return vc.doAll(ctx, "pour", "finish")
 }
 
 func (vc *VinoCart) PourOld(ctx context.Context) error {
@@ -502,23 +473,12 @@ func (vc *VinoCart) PourOld(ctx context.Context) error {
 }
 
 func (vc *VinoCart) PutBack(ctx context.Context) error {
-	x := append([]toggleswitch.Switch{}, vc.c.RightBottlePourPreGrabActions...)
-	slices.Reverse(x)
-
-	err := x[0].SetPosition(ctx, 2, nil)
+	err := vc.doAll(ctx, "put-back", "before-open")
 	if err != nil {
 		return err
 	}
 
 	err = vc.c.BottleGripper.Open(ctx, nil)
-	if err != nil {
-		return err
-	}
-	time.Sleep(time.Millisecond * 500)
-
-	err = vc.doAll(ctx, x)
-
-	err = vc.c.LeftPlace.SetPosition(ctx, 2, nil)
 	if err != nil {
 		return err
 	}
@@ -528,16 +488,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.c.LeftRetreat.SetPosition(ctx, 2, nil)
-	if err != nil {
-		return err
-	}
+	time.Sleep(time.Millisecond * 500)
 
-	// just to get arms back to home
-	_, err = vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return vc.doAll(ctx, "put-back", "post-open")
 }

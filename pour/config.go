@@ -13,6 +13,39 @@ import (
 	"go.viam.com/rdk/services/vision"
 )
 
+type ConfigStatePostions map[string][][]string
+
+func (csp ConfigStatePostions) All() []string {
+	x := []string{}
+	for _, aa := range csp {
+		for _, bb := range aa {
+			x = append(x, bb...)
+		}
+	}
+	return x
+}
+
+func (csp ConfigStatePostions) setup(deps resource.Dependencies) (StagePositions, error) {
+	m := map[string][][]toggleswitch.Switch{}
+	for k, s := range csp { // stage name
+		a := [][]toggleswitch.Switch{}
+		for _, aa := range s { // parallel set 1
+			b := []toggleswitch.Switch{}
+			for _, bb := range aa { // actual pos
+				sss, err := toggleswitch.FromDependencies(deps, bb)
+				if err != nil {
+					return nil, err
+				}
+				b = append(b, sss)
+			}
+			a = append(a, b)
+		}
+
+		m[k] = a
+	}
+	return m, nil
+}
+
 type Config struct {
 	// dependencies, required
 	ArmName                string `json:"arm_name"`
@@ -24,13 +57,10 @@ type Config struct {
 	CupFinderService string `json:"cup_finder_service"`
 	CupTopService    string `json:"cup_top_service"`
 
-	RightBottlePourPreGrabActions  []string `json:"right_bottle_pour_pre_grab_actions"`
-	RightBottlePourPostGrabActions []string `json:"right_bottle_pour_post_grab_actions"`
-	BottleGripper                  string   `json:"bottle_gripper"`
-	BottleArm                      string   `json:"bottle_arm"`
+	Positions map[string]ConfigStatePostions
 
-	LeftPlace   string `json:"left_place"`
-	LeftRetreat string `json:"left_retreat"`
+	BottleGripper string `json:"bottle_gripper"`
+	BottleArm     string `json:"bottle_arm"`
 
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
@@ -95,21 +125,18 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		deps = append(deps, cfg.BottleArm)
 	}
 
-	if cfg.LeftPlace != "" {
-		deps = append(deps, cfg.LeftPlace)
-	}
-	if cfg.LeftRetreat != "" {
-		deps = append(deps, cfg.LeftRetreat)
-	}
-
 	if cfg.PourGlassFullnessService != "" {
 		deps = append(deps, cfg.PourGlassFullnessService)
 	}
 
-	deps = append(deps, cfg.RightBottlePourPreGrabActions...)
-	deps = append(deps, cfg.RightBottlePourPostGrabActions...)
+	for _, ps := range cfg.Positions {
+		deps = append(deps, ps.All()...)
+	}
+
 	return deps, optionals, nil
 }
+
+type StagePositions map[string][][]toggleswitch.Switch
 
 type Pour1Components struct {
 	Arm       arm.Arm
@@ -123,12 +150,10 @@ type Pour1Components struct {
 	CupTop                   vision.Service
 	PourGlassFullnessService vision.Service
 
-	RightBottlePourPreGrabActions  []toggleswitch.Switch
-	RightBottlePourPostGrabActions []toggleswitch.Switch
-	BottleGripper                  gripper.Gripper
-	BottleArm                      arm.Arm
+	Positions map[string]StagePositions
 
-	LeftPlace, LeftRetreat toggleswitch.Switch
+	BottleGripper gripper.Gripper
+	BottleArm     arm.Arm
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -204,34 +229,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	for _, x := range config.RightBottlePourPreGrabActions {
-		s, err := toggleswitch.FromDependencies(deps, x)
+	c.Positions = map[string]StagePositions{}
+	for k, v := range config.Positions {
+		ps, err := v.setup(deps)
 		if err != nil {
 			return nil, err
 		}
-		c.RightBottlePourPreGrabActions = append(c.RightBottlePourPreGrabActions, s)
-	}
-
-	for _, x := range config.RightBottlePourPostGrabActions {
-		s, err := toggleswitch.FromDependencies(deps, x)
-		if err != nil {
-			return nil, err
-		}
-		c.RightBottlePourPostGrabActions = append(c.RightBottlePourPostGrabActions, s)
-	}
-
-	if config.LeftRetreat != "" {
-		c.LeftRetreat, err = toggleswitch.FromDependencies(deps, config.LeftRetreat)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if config.LeftPlace != "" {
-		c.LeftPlace, err = toggleswitch.FromDependencies(deps, config.LeftPlace)
-		if err != nil {
-			return nil, err
-		}
+		c.Positions[k] = ps
 	}
 
 	return c, nil

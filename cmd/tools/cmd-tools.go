@@ -68,6 +68,8 @@ func realMain() error {
 		return err
 	}
 
+	fmt.Printf("hi %v\n", p1c.PourPrepPostions)
+
 	g := pour.NewTesting(logger, client, p1c)
 
 	vc := pour.NewVinoCart(cfg, p1c, client, logger)
