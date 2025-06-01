@@ -3,6 +3,9 @@ package pour
 import (
 	"context"
 	"fmt"
+	"image"
+	"image/png"
+	"os"
 	"sync"
 	"time"
 
@@ -20,6 +23,8 @@ import (
 	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/rdk/utils"
 	viz "go.viam.com/rdk/vision"
+	"go.viam.com/rdk/vision/classification"
+	"go.viam.com/rdk/vision/viscapture"
 
 	"github.com/erh/vmodutils"
 )
@@ -128,7 +133,12 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 func (vc *VinoCart) Touch(ctx context.Context) error {
 	vc.logger.Infof("touch called")
 
-	err := vc.c.Gripper.Open(ctx, nil)
+	err := vc.doAll(ctx, "touch", "prep")
+	if err != nil {
+		return err
+	}
+
+	err = vc.c.Gripper.Open(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -136,6 +146,20 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	err = vc.c.BottleGripper.Open(ctx, nil)
 	if err != nil {
 		return err
+	}
+
+	if vc.conf.SimoneHack {
+		err = vc.doAll(ctx, "touch", "pickup-hack")
+		if err != nil {
+			return err
+		}
+
+		_, err = vc.c.Gripper.Grab(ctx, nil)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	}
 
 	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
@@ -154,20 +178,6 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	if len(objects) > 1 {
 		return fmt.Errorf("too many objects %d", len(objects))
-	}
-
-	if vc.conf.SimoneHack {
-		err = vc.doAll(ctx, "touch", "pickup-hack")
-		if err != nil {
-			return err
-		}
-
-		_, err = vc.c.Gripper.Grab(ctx, nil)
-		if err != nil {
-			return err
-		}
-
-		return nil
 	}
 
 	obj := objects[0]
@@ -365,15 +375,32 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		return err
 	}
 
+	defer func() {
+		err := vc.doAll(ctx, "pour", "finish")
+		if err != nil {
+			vc.logger.Errorf("error trying to clean up Pour: %v", err)
+		}
+	}()
+
+	time.Sleep(500 * time.Millisecond)
+
 	start := time.Now()
 	lastMove := time.Now()
 	pos := 0
 
 	poses := vc.c.Positions["pour"]["pour"]
 
-	for time.Since(start) < 15*time.Second {
+	loopNumber := 0
 
-		if pos <= 0 || (pos < 4 && time.Since(lastMove) > time.Second*2) {
+	var pd *pourDetector
+
+	totalTime := 15 * time.Second
+	markedDifferent := false
+
+	for time.Since(start) < totalTime {
+		loopStart := time.Now()
+
+		if pos <= 0 || (pos < len(poses) && time.Since(lastMove) > time.Second*2) {
 			err := vc.goTo(ctx, poses[pos]...)
 			if err != nil {
 				return err
@@ -382,16 +409,50 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			lastMove = time.Now()
 		}
 
-		classifications, err := vc.c.PourGlassFullnessService.ClassificationsFromCamera(ctx, "cam-glass-crop", 1, nil)
-		if err != nil {
-			return err
-		}
-		vc.logger.Infof("classifications: %v", classifications)
+		if false {
+			classification, err := vc.pourGlassClassifaction(ctx, loopNumber)
+			if err != nil {
+				return err
+			}
+			vc.logger.Infof("classification: %v", classification)
 
-		if len(classifications) >= 1 && classifications[0].Label() == "full" && classifications[0].Score() > .6 {
-			break
+			if classification.Label() == "full" && classification.Score() > .6 {
+				break
+			}
+		} else {
+			nimgs, _, err := vc.c.GlassPourCam.Images(ctx)
+			if err != nil {
+				return err
+			}
+			if len(nimgs) == 0 {
+				return fmt.Errorf("GlassPourCam returned no images")
+			}
+
+			fn, err := saveImage(nimgs[0].Image, loopNumber)
+			if err != nil {
+				return err
+			}
+
+			if pd == nil {
+				pd = newPourDetector(nimgs[0].Image)
+			} else {
+				delta, different := pd.differentDebug(nimgs[0].Image)
+				vc.logger.Infof("fn: %v delta: %v different: %v", fn, delta, different)
+				if different && !markedDifferent {
+					markedDifferent = true
+					totalTime = time.Since(start) + time.Second
+				}
+			}
 		}
-		time.Sleep(time.Millisecond * 200)
+
+		sleepTime := (200 * time.Millisecond) - time.Since(loopStart)
+		vc.logger.Infof("going to sleep for %v", sleepTime)
+		time.Sleep(sleepTime)
+		loopNumber++
+	}
+
+	for pos >= len(poses) {
+		pos--
 	}
 
 	for pos >= 0 {
@@ -404,6 +465,59 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}
 
 	return vc.doAll(ctx, "pour", "finish")
+}
+
+func saveImage(img image.Image, loopNumber int) (string, error) {
+	fn := fmt.Sprintf("img-%d.png", loopNumber)
+
+	file, err := os.Create(fn)
+	if err != nil {
+		return fn, fmt.Errorf("couldn't create filename %w", err)
+	}
+	defer file.Close()
+	return fn, png.Encode(file, img)
+}
+
+func (vc *VinoCart) pourGlassClassifaction(ctx context.Context, loopNumber int) (classification.Classification, error) {
+	xxx := "cam-glass-crop" // TODO - this should be automatic in service
+
+	if true { // debug
+		all, err := vc.c.PourGlassFullnessService.CaptureAllFromCamera(ctx,
+			xxx,
+			viscapture.CaptureOptions{
+				ReturnImage:           true,
+				ReturnClassifications: true,
+			},
+			nil)
+		if err != nil {
+			return nil, err
+		}
+
+		fn, err := saveImage(all.Image, loopNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		vc.logger.Infof("fn: %v classifications: %v", fn, all.Classifications)
+
+		var best classification.Classification
+		for _, c := range all.Classifications {
+			if best == nil || c.Score() > best.Score() {
+				best = c
+			}
+		}
+		return best, nil
+	}
+
+	classifications, err := vc.c.PourGlassFullnessService.ClassificationsFromCamera(ctx, "cam-glass-crop", 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(classifications) == 0 {
+		return nil, err
+	}
+
+	return classifications[0], nil
 }
 
 func (vc *VinoCart) PourOld(ctx context.Context) error {

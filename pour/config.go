@@ -50,6 +50,7 @@ type Config struct {
 	// dependencies, required
 	ArmName                string `json:"arm_name"`
 	CameraName             string `json:"camera_name"`
+	GlassPourCam           string `json:"glass_pour_cam"`
 	CircleDetectionService string `json:"circle_detection_service"`
 	WeightSensorName       string `json:"weight_sensor_name"`
 	GripperName            string `json:"gripper_name"`
@@ -133,18 +134,23 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		deps = append(deps, ps.All()...)
 	}
 
+	if cfg.GlassPourCam != "" {
+		deps = append(deps, cfg.GlassPourCam)
+	}
+
 	return deps, optionals, nil
 }
 
 type StagePositions map[string][][]toggleswitch.Switch
 
 type Pour1Components struct {
-	Arm       arm.Arm
-	Gripper   gripper.Gripper
-	Cam       camera.Camera
-	Weight    sensor.Sensor
-	Motion    motion.Service
-	CamVision vision.Service
+	Arm          arm.Arm
+	Gripper      gripper.Gripper
+	Cam          camera.Camera
+	GlassPourCam camera.Camera
+	Weight       sensor.Sensor
+	Motion       motion.Service
+	CamVision    vision.Service
 
 	CupFinder                vision.Service
 	CupTop                   vision.Service
@@ -173,6 +179,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 	c.Cam, err = camera.FromDependencies(deps, config.CameraName)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.GlassPourCam != "" {
+		c.GlassPourCam, err = camera.FromDependencies(deps, config.GlassPourCam)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if config.WeightSensorName != "" {

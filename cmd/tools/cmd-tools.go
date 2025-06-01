@@ -82,6 +82,12 @@ func realMain() error {
 		return vc.Touch(ctx)
 	case "pour-prep":
 		return vc.PourPrep(ctx)
+	case "touch-and-prep":
+		err := vc.Touch(ctx)
+		if err != nil {
+			return err
+		}
+		return vc.PourPrep(ctx)
 	case "pour":
 		return vc.Pour(ctx)
 	case "put-back":
