@@ -8,6 +8,7 @@ import (
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/robot"
+	"go.viam.com/rdk/robot/framesystem"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
@@ -37,11 +38,25 @@ func frameSystemWithOnePart(ctx context.Context, myRobot robot.Robot, name strin
 		return nil, err
 	}
 
-	for _, c := range fsc.Parts {
-		if c.FrameConfig.Name() == name {
-			return referenceframe.NewFrameSystem("temp", []*referenceframe.FrameSystemPart{c}, nil)
+	parts := []*referenceframe.FrameSystemPart{}
+
+	for name != "world" {
+		p := findPart(fsc, name)
+		if p == nil {
+			return nil, fmt.Errorf("cannot find frame [%s]", name)
 		}
+		parts = append(parts, p)
+		name = p.FrameConfig.Parent()
 	}
 
-	return nil, fmt.Errorf("cannot find part with name [%s]", name)
+	return referenceframe.NewFrameSystem("temp", parts, nil)
+}
+
+func findPart(fsc *framesystem.Config, name string) *referenceframe.FrameSystemPart {
+	for _, c := range fsc.Parts {
+		if c.FrameConfig.Name() == name {
+			return c
+		}
+	}
+	return nil
 }
