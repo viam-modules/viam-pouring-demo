@@ -11,8 +11,9 @@ import (
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/robot"
-	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/spatialmath"
+
+	"github.com/erh/vmodutils/touch"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
@@ -21,7 +22,7 @@ func plan(ctx context.Context, myRobot robot.Robot, Cfg *pour.Config, p1c *pour.
 
 	name := "arm-left"
 
-	fs, err := frameSystemWithOnePart(ctx, myRobot, name)
+	fs, err := touch.FrameSystemWithOnePart(ctx, myRobot, name)
 	if err != nil {
 		return err
 	}
@@ -81,33 +82,4 @@ func plan(ctx context.Context, myRobot robot.Robot, Cfg *pour.Config, p1c *pour.
 	logger.Infof("sanity check distance: %v", referenceframe.InputsL2Distance(start[name], x))
 
 	return fmt.Errorf("finish plan")
-}
-
-func frameSystemWithOnePart(ctx context.Context, myRobot robot.Robot, name string) (referenceframe.FrameSystem, error) {
-	fsc, err := myRobot.FrameSystemConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	parts := []*referenceframe.FrameSystemPart{}
-
-	for name != "world" {
-		p := findPart(fsc, name)
-		if p == nil {
-			return nil, fmt.Errorf("cannot find frame [%s]", name)
-		}
-		parts = append(parts, p)
-		name = p.FrameConfig.Parent()
-	}
-
-	return referenceframe.NewFrameSystem("temp", parts, nil)
-}
-
-func findPart(fsc *framesystem.Config, name string) *referenceframe.FrameSystemPart {
-	for _, c := range fsc.Parts {
-		if c.FrameConfig.Name() == name {
-			return c
-		}
-	}
-	return nil
 }

@@ -5,13 +5,12 @@ go 1.23.8
 toolchain go1.23.9
 
 require (
-	github.com/erh/vmodutils v0.1.4-0.20250524222851-80952c158c2e
+	github.com/erh/vmodutils v0.1.11
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/viam-labs/motion-tools v0.0.0-20250428163038-321ad25750f6
 	go.uber.org/multierr v1.11.0
 	go.viam.com/rdk v0.75.1-0.20250516132056-f12082cd44bd
 	go.viam.com/test v1.2.4
-	go.viam.com/utils v0.1.142
 	gonum.org/v1/gonum v0.12.0
 )
 
@@ -32,7 +31,6 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
-	github.com/blackjack/webcam v0.6.1 // indirect
 	github.com/bluenviron/gortsplib/v4 v4.8.0 // indirect
 	github.com/bufbuild/protocompile v0.9.0 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
@@ -170,7 +168,6 @@ require (
 	github.com/xtgo/set v1.0.0 // indirect
 	github.com/yosuke-furukawa/json5 v0.1.1 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
-	github.com/zitadel/oidc v1.13.4 // indirect
 	github.com/zitadel/oidc/v3 v3.37.0 // indirect
 	github.com/zitadel/schema v1.3.1 // indirect
 	github.com/ziutek/mymysql v1.5.4 // indirect
@@ -186,6 +183,7 @@ require (
 	go.uber.org/goleak v1.3.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	go.viam.com/api v0.1.435 // indirect
+	go.viam.com/utils v0.1.142 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
@@ -209,7 +207,6 @@ require (
 	google.golang.org/grpc v1.71.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
-	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/src-d/go-billy.v4 v4.3.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorgonia.org/tensor v0.9.24 // indirect
