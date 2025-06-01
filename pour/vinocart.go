@@ -308,12 +308,12 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.pourPrepGrab(ctx)
+	err = vc.doAll(ctx, "pour_prep", "right-grab")
 	if err != nil {
 		return err
 	}
 
-	err = vc.doAll(ctx, "pour_prep", "right-grab")
+	err = vc.pourPrepGrab(ctx)
 	if err != nil {
 		return err
 	}
