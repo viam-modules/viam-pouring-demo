@@ -68,8 +68,6 @@ func realMain() error {
 		return err
 	}
 
-	fmt.Printf("hi %v\n", p1c.PourPrepPostions)
-
 	g := pour.NewTesting(logger, client, p1c)
 
 	vc := pour.NewVinoCart(cfg, p1c, client, logger)
@@ -109,6 +107,8 @@ func realMain() error {
 			logger.Infof("cup %d : %v", idx, c)
 		}
 		return nil
+	case "plantest":
+		return plan(ctx, client, cfg, p1c, logger)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}
