@@ -24,8 +24,6 @@ import (
 	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/rdk/utils"
 	viz "go.viam.com/rdk/vision"
-	"go.viam.com/rdk/vision/classification"
-	"go.viam.com/rdk/vision/viscapture"
 
 	"github.com/erh/vmodutils"
 )
@@ -477,31 +475,19 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			poses = append(poses, inputs)
 		}
 
-		if false {
-			classification, err := vc.pourGlassClassifaction(ctx, loopNumber)
-			if err != nil {
-				return err
-			}
-			vc.logger.Infof("classification: %v", classification)
+		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, -1)
+		if err != nil {
+			return err
+		}
 
-			if classification.Label() == "full" && classification.Score() > .6 {
-				break
-			}
+		if pd == nil {
+			pd = newPourDetector(img)
 		} else {
-			img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, -1)
-			if err != nil {
-				return err
-			}
-
-			if pd == nil {
-				pd = newPourDetector(img)
-			} else {
-				delta, _ := pd.differentDebug(img)
-				vc.logger.Infof("fn: %v delta: %v", fn, delta)
-				if delta > 3 && !markedDifferent {
-					markedDifferent = true
-					totalTime = time.Since(start) + time.Second
-				}
+			delta, _ := pd.differentDebug(img)
+			vc.logger.Infof("fn: %v delta: %v", fn, delta)
+			if delta > 3 && !markedDifferent {
+				markedDifferent = true
+				totalTime = time.Since(start) + time.Second
 			}
 		}
 
@@ -530,48 +516,6 @@ func saveImage(img image.Image, loopNumber int) (string, error) {
 	}
 	defer file.Close()
 	return fn, png.Encode(file, img)
-}
-
-func (vc *VinoCart) pourGlassClassifaction(ctx context.Context, loopNumber int) (classification.Classification, error) {
-	xxx := "cam-glass-crop" // TODO - this should be automatic in service
-
-	if true { // debug
-		all, err := vc.c.PourGlassFullnessService.CaptureAllFromCamera(ctx,
-			xxx,
-			viscapture.CaptureOptions{
-				ReturnImage:           true,
-				ReturnClassifications: true,
-			},
-			nil)
-		if err != nil {
-			return nil, err
-		}
-
-		fn, err := saveImage(all.Image, loopNumber)
-		if err != nil {
-			return nil, err
-		}
-
-		vc.logger.Infof("fn: %v classifications: %v", fn, all.Classifications)
-
-		var best classification.Classification
-		for _, c := range all.Classifications {
-			if best == nil || c.Score() > best.Score() {
-				best = c
-			}
-		}
-		return best, nil
-	}
-
-	classifications, err := vc.c.PourGlassFullnessService.ClassificationsFromCamera(ctx, "cam-glass-crop", 1, nil)
-	if err != nil {
-		return nil, err
-	}
-	if len(classifications) == 0 {
-		return nil, err
-	}
-
-	return classifications[0], nil
 }
 
 func (vc *VinoCart) PutBack(ctx context.Context) error {
