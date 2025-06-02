@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"slices"
 	"sync"
@@ -181,10 +182,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	obj := objects[0]
 
-	// -- approach
-
-	goToPose := vc.getApproachPoint(obj, 100, 0)
-	vc.logger.Infof("going to move to %v", goToPose)
+	// -- setup world frame
 
 	obstacles := []*referenceframe.GeometriesInFrame{}
 	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
@@ -195,21 +193,44 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	_, err = vc.c.Motion.Move(
-		ctx,
-		motion.MoveReq{
-			ComponentName: resource.Name{Name: vc.c.Gripper.Name().ShortName()},
-			Destination:   goToPose,
-			WorldState:    worldState,
-		},
-	)
+	// -- approach
+
+	var o *spatialmath.OrientationVectorDegrees
+
+	choices := []*spatialmath.OrientationVectorDegrees{
+		{OX: 1, Theta: 180},
+		{OX: 1, OY: 1, Theta: 180},
+		{OY: 1, Theta: 180},
+		{OX: -1, Theta: 180},
+		{OX: -1, OY: -1, Theta: 180},
+		{OY: -1, Theta: 180},
+	}
+
+	for _, tryO := range choices {
+		goToPose := vc.getApproachPoint(obj, 100, tryO)
+		vc.logger.Infof("trying to move to %v", goToPose)
+
+		_, err = vc.c.Motion.Move(
+			ctx,
+			motion.MoveReq{
+				ComponentName: resource.Name{Name: vc.c.Gripper.Name().ShortName()},
+				Destination:   goToPose,
+				WorldState:    worldState,
+			},
+		)
+		if err == nil {
+			o = tryO
+			break
+		}
+	}
+
 	if err != nil {
 		return err
 	}
 
 	// ---- go to pick up
 
-	goToPose = vc.getApproachPoint(obj, -30, 0)
+	goToPose := vc.getApproachPoint(obj, -80, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	_, err = vc.c.Motion.Move(
@@ -224,6 +245,8 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
+	// actual grab
+
 	_, err = vc.c.Gripper.Grab(ctx, nil)
 	if err != nil {
 		return err
@@ -232,26 +255,35 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	return nil
 }
 
-func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaX, deltaZ float64) *referenceframe.PoseInFrame {
+func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
 	md := obj.MetaData()
-	c := md.Center()
+
+	d := math.Pow((o.OX*o.OX)+(o.OY*o.OY), .5)
 
 	approachPoint := r3.Vector{
-		Y: c.Y,
-		Z: vc.conf.BottleHeight - 25 + deltaZ,
+		Z: vc.conf.CupHeight - 25,
 	}
 
+	xLinear := (o.OX * deltaLinear / d)
+	yLinear := (o.OY * deltaLinear / d)
+
+	vc.logger.Infof("xLinear: %0.2f yLinear: %0.2f", xLinear, yLinear)
+
 	if md.MinX > 0 {
-		approachPoint.X = md.MinX - deltaX
+		approachPoint.X = md.MinX - xLinear
 	} else {
-		approachPoint.X = md.MaxX + deltaX
+		approachPoint.X = md.MaxX + xLinear
+	}
+
+	if md.MinY > 0 {
+		approachPoint.Y = md.MinY - yLinear
+	} else {
+		approachPoint.Y = md.MaxY + yLinear
 	}
 
 	return referenceframe.NewPoseInFrame(
 		"world",
-		spatialmath.NewPose(
-			approachPoint,
-			&spatialmath.OrientationVectorDegrees{OX: 1, Theta: 180}),
+		spatialmath.NewPose(approachPoint, o),
 	)
 
 }
