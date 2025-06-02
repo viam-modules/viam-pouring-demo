@@ -4,7 +4,6 @@
  
  import logo from './assets/viam.svg'
  import Main from "./main.svelte"
- import Layout from "./layout.svelte"
 
 
  let myState = $state({error : ""});
@@ -67,8 +66,12 @@
 </script>
 
 <main>
+  <h1 style="color: red;">
+    {myState.error}
+  </h1>
+  
   {#if myState.host}
-    <Layout host={myState.host} credentials={myState.credentials} />
+    <Main host={myState.host} credentials={myState.credentials} />
   {:else}
     No host found, want to specify a default?<br>
     Host: <input id="in_host"><br>

@@ -5,7 +5,6 @@
 
  import type { DialConf } from '@viamrobotics/sdk';
  import CameraFeed from './lib/CameraFeed.svelte';
- import CameraFeedA from './lib/CameraFeedA.svelte';
  import Status from './lib/status.svelte';
 
  let { host, credentials, children } = $props();
@@ -29,23 +28,24 @@
     {@render children?.()}
   </div>
 
-  <div class="main">
-    <div class="status-area">
+  <div class="status-area">
       <Status name="xxx" display="connection to {host}"/>
-      <p>216px tall (20% of 1080px)</p>
     </div>
 
+  <div class="main">
     <div class="camera-top">
       <CameraFeed
         name="cam-left"
         partID="xxx"
         displayName="Left Camera"
-        sizeMode="fitHeight"
       />
     </div>
-
     <div class="camera-bottom">
-      <CameraStream name="cam-right" partID="xxx" class="camera-video"/>
+      <CameraFeed
+        name="cam-right"
+        partID="xxx"
+        displayName="Right Camera"
+      />
     </div>
   </div>
 </div>
@@ -53,47 +53,52 @@
 
 
 <style>
+
+  :global(body) {
+  background-image: url('assets/viam-winedemo-interface-dc-16x9-blank.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
   .layout {
     display: grid;
-    grid-template-columns: 640px 1280px; /* Exact pixel widths */
-    height: 1080px; /* Exact screen height */
-    width: 1920px;  /* Exact screen width */
+    grid-template-columns: 700px 1fr;
+    grid-template-rows: 1fr 6fr;
+    grid-template-areas:
+      "sidebar status"
+      "sidebar main";
+    height: 1000px; /* Exact screen height - titlebar */
+    width: 1700px;  /* Exact screen width - some padding */
     overflow: hidden;
   }
 
   .sidebar {
-    background-color: #333;
-    color: white;
     padding: 1rem;
     box-sizing: border-box;
+    grid-area: sidebar;
+    border-right: 3px solid #777;
   }
 
   .main {
+    grid-area: main;
     display: grid;
-    grid-template-rows: 216px 432px 432px; /* Exact pixel heights */
-    background-color: #444;
+    grid-template-columns: 1fr 2fr;  
+    grid-template-rows: 1fr 1fr;
   }
 
   .status-area {
-    background-color: #555;
+    grid-area: status;
     color: white;
     padding: 1rem;
     box-sizing: border-box;
   }
 
   .camera-top, .camera-bottom {
-    background-color: #666;
     color: white;
     padding: 1rem;
     box-sizing: border-box;
     border-bottom: 1px solid #777;
-  }
-
-  .camera-video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    max-width: 100%;
-    max-height: 100%;
+    height: 400px;
   }
 </style>
