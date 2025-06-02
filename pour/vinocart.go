@@ -445,6 +445,11 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		if time.Since(lastMove) > (time.Millisecond * 300) {
 			o.OZ -= .05
 
+			if o.OZ <= -0.15 && !markedDifferent {
+				// when we get near empty, we need to go faster
+				o.OZ -= .05
+			}
+
 			goalPose := referenceframe.NewPoseInFrame("world",
 				spatialmath.NewPose(
 					bottleStart.Pose().Point(),
@@ -452,7 +457,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 				),
 			)
 
-			vc.logger.Infof("going to: %v", goalPose.Pose())
+			vc.logger.Infof("adjusting OZ to: %0.2f", o.OZ)
 
 			_, err = vc.c.BottleMotionService.Move(
 				ctx,
@@ -484,8 +489,9 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			pd = newPourDetector(img)
 		} else {
 			delta, _ := pd.differentDebug(img)
-			vc.logger.Infof("fn: %v delta: %v", fn, delta)
-			if delta > 3 && !markedDifferent {
+			deltaMax := 2.5
+			vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
+			if delta >= deltaMax && !markedDifferent {
 				markedDifferent = true
 				totalTime = time.Since(start) + time.Second
 			}
