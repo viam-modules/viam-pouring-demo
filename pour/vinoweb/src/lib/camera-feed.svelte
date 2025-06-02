@@ -4,17 +4,24 @@
 	let { name, partID, label } = $props();
 </script>
 
-<div class="camera-feed-container">
-    <span class="camera-label">{label}</span>
-    <CameraStream {partID} {name} />
+<div class="camera-feed-alignment">
+    <div class="camera-feed-container">
+        <span class="camera-label">{label}</span>
+        <CameraStream {partID} {name} />
+    </div>
 </div>
 
 <style>
+    .camera-feed-alignment {
+        display: flex;
+        justify-content: center;
+        height: calc((100vh - 150px) / 2 - 40px);
+    }
+
     .camera-feed-container {
         position: relative;
-        display: inline-block;
-        height: 300px; /* Set desired height for aspect ratio control */
     }
+
     .camera-label {
         position: absolute;
         top: 8px;
@@ -32,7 +39,6 @@
         width: auto;
         object-fit: contain;
         display: block;
-        max-width: 100%;
         border-radius: 8px;
     }
 </style>

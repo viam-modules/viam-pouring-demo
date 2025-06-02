@@ -66,10 +66,10 @@
 </script>
 
 <main>
-  <h1 style="color: red;">
+  <!-- <h1 style="color: red;">
     {myState.error}
   </h1>
-  
+   -->
   {#if myState.host}
     <Main host={myState.host} credentials={myState.credentials} />
   {:else}
