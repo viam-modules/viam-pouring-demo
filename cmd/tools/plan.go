@@ -2,84 +2,101 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/golang/geo/r3"
 
+	"go.viam.com/rdk/components/gripper"
+	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
-	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot"
+	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
-
-	"github.com/erh/vmodutils/touch"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
 
-func plan(ctx context.Context, myRobot robot.Robot, Cfg *pour.Config, p1c *pour.Pour1Components, logger logging.Logger) error {
+func plan(ctx context.Context, myRobot robot.Robot, cfg *pour.Config, p1c *pour.Pour1Components, vc *pour.VinoCart, logger logging.Logger) error {
 
-	name := "arm-left"
-
-	fs, err := touch.FrameSystemWithOnePart(ctx, myRobot, name)
-	if err != nil {
-		return err
+	if true {
+		start := time.Now()
+		_, _, err := vc.DebugGetGlassPourCamImage(ctx, 5)
+		if err != nil {
+			return err
+		}
+		logger.Infof("time to get image %v", time.Since(start))
 	}
 
-	start := referenceframe.FrameSystemInputs{}
-	start[name] = []referenceframe.Input{
-		{-4.2271599769592285},
-		{0.4038045108318329},
-		{-0.536893904209137},
-		{4.674395561218262},
-		{1.565266728401184},
-		{-0.1328192502260208},
+	if true {
+		s, err := toggleswitch.FromRobot(myRobot, "arm-pour-right-prep")
+		if err != nil {
+			return err
+		}
+		err = s.SetPosition(ctx, 2, nil)
+		if err != nil {
+			return err
+		}
+
+		s, err = toggleswitch.FromRobot(myRobot, "arm-pour-right-pos0")
+		if err != nil {
+			return err
+		}
+		err = s.SetPosition(ctx, 2, nil)
+		if err != nil {
+			return err
+		}
 	}
 
-	goal := motionplan.NewPlanState(
-		referenceframe.FrameSystemPoses{
-			name: referenceframe.NewPoseInFrame("world",
-				spatialmath.NewPose(r3.Vector{X: 370, Y: 258, Z: 90}, &spatialmath.OrientationVectorDegrees{OX: 1, OY: 0, OZ: 0, Theta: -180})),
-		},
+	bottleName := "bottle-top"
+
+	bottleTop := referenceframe.NewLinkInFrame(
+		cfg.BottleGripper,
+		spatialmath.NewPose(r3.Vector{cfg.BottleHeight - 70, -7, 0}, &spatialmath.OrientationVectorDegrees{OX: 1}),
+		bottleName,
 		nil,
 	)
 
-	req := &motionplan.PlanRequest{
-		Logger:      logger,
-		FrameSystem: fs,
-		Goals:       []*motionplan.PlanState{goal},
-		StartState:  motionplan.NewPlanState(nil, start),
-	}
+	extraFrames := []*referenceframe.LinkInFrame{bottleTop}
 
-	startTime := time.Now()
-	plan, err := motionplan.PlanMotion(ctx, req)
+	pif, err := p1c.BottleMotionService.GetPose(ctx, gripper.Named(bottleName), "world", extraFrames, nil)
 	if err != nil {
 		return err
 	}
 
-	logger.Infof("plan: trajectory length: %d path length: %d, planned in %v", len(plan.Trajectory()), len(plan.Path()), time.Since(startTime))
-	for _, p := range plan.Path() {
-		logger.Infof("\t %v", p[name])
+	logger.Infof("bottleTop: %v", pif.Pose())
+
+	worldState, err := referenceframe.NewWorldState(nil, extraFrames)
+	if err != nil {
+		return err
 	}
 
-	prev := start[name]
-	for _, t := range plan.Trajectory() {
-		distance := referenceframe.InputsL2Distance(prev, t[name])
-		logger.Infof("\t %v distance: %v", t[name], distance)
-		prev = t[name]
+	o := pif.Pose().Orientation().OrientationVectorDegrees()
+
+	for i := 0; i < 20; i++ {
+		o.OZ -= .05
+
+		goalPose := referenceframe.NewPoseInFrame("world",
+			spatialmath.NewPose(
+				pif.Pose().Point(),
+				o,
+			),
+		)
+
+		logger.Infof("going to: %v", goalPose.Pose())
+
+		_, err = p1c.BottleMotionService.Move(
+			ctx,
+			motion.MoveReq{
+				ComponentName: resource.Name{Name: bottleName},
+				Destination:   goalPose,
+				WorldState:    worldState,
+			},
+		)
+		if err != nil {
+			return err
+		}
 	}
-
-	x := []referenceframe.Input{
-		{-4.654025554656983},
-		{0.4523119628429413},
-		{-0.6430479288101195},
-		{4.2544732093811035},
-		{1.4855430126190186},
-		{-0.1708667129278183},
-	}
-
-	logger.Infof("sanity check distance: %v", referenceframe.InputsL2Distance(start[name], x))
-
-	return fmt.Errorf("finish plan")
+	return err
 }

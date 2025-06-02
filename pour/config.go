@@ -73,6 +73,8 @@ type Config struct {
 
 	PourGlassFullnessService string `json:"pour_glass_fullness_service"`
 
+	BottleMotionService string `json:"bottle_motion_service"`
+
 	SimoneHack bool `json:"simone_hack"`
 
 	// optional
@@ -81,6 +83,10 @@ type Config struct {
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	deps := []string{motion.Named("builtin").String()}
+
+	if cfg.BottleMotionService != "" {
+		deps = append(deps, cfg.BottleMotionService)
+	}
 
 	if cfg.ArmName == "" {
 		return nil, nil, fmt.Errorf("need an arm name")
@@ -160,6 +166,8 @@ type Pour1Components struct {
 
 	BottleGripper gripper.Gripper
 	BottleArm     arm.Arm
+
+	BottleMotionService motion.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -198,6 +206,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 	c.Motion, err = motion.FromDependencies(deps, "builtin")
 	if err != nil {
 		return nil, err
+	}
+
+	if config.BottleMotionService != "" {
+		c.BottleMotionService, err = motion.FromDependencies(deps, config.BottleMotionService)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if config.CircleDetectionService != "" {

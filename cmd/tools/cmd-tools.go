@@ -114,7 +114,7 @@ func realMain() error {
 		}
 		return nil
 	case "plantest":
-		return plan(ctx, client, cfg, p1c, logger)
+		return plan(ctx, client, cfg, p1c, vc, logger)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}

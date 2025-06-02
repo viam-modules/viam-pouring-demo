@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/png"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -369,6 +370,26 @@ func (vc *VinoCart) goTo(ctx context.Context, poss ...toggleswitch.Switch) error
 	return multierr.Combine(errors...)
 }
 
+func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, loopNumber int) (image.Image, string, error) {
+	nimgs, _, err := vc.c.GlassPourCam.Images(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(nimgs) == 0 {
+		return nil, "", fmt.Errorf("GlassPourCam returned no images")
+	}
+
+	fn := ""
+	if loopNumber >= 0 {
+		fn, err = saveImage(nimgs[0].Image, loopNumber)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	return nimgs[0].Image, fn, nil
+}
+
 func (vc *VinoCart) Pour(ctx context.Context) error {
 	err := vc.doAll(ctx, "pour", "prep")
 	if err != nil {
@@ -384,29 +405,76 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 	time.Sleep(500 * time.Millisecond)
 
-	start := time.Now()
-	lastMove := time.Now()
-	pos := 0
+	bottleName := "bottle-top"
+	bottleTop := referenceframe.NewLinkInFrame(
+		vc.conf.BottleGripper,
+		spatialmath.NewPose(r3.Vector{vc.conf.BottleHeight - 70, -7, 0}, &spatialmath.OrientationVectorDegrees{OX: 1}),
+		bottleName,
+		nil,
+	)
 
-	poses := vc.c.Positions["pour"]["pour"]
+	extraFrames := []*referenceframe.LinkInFrame{bottleTop}
+
+	bottleStart, err := vc.c.BottleMotionService.GetPose(ctx, resource.Name{Name: bottleName}, "world", extraFrames, nil)
+	if err != nil {
+		return err
+	}
+
+	vc.logger.Infof("bottleStart: %v", bottleStart.Pose())
+
+	worldState, err := referenceframe.NewWorldState(nil, extraFrames)
+	if err != nil {
+		return err
+	}
+
+	o := bottleStart.Pose().Orientation().OrientationVectorDegrees()
+
+	start := time.Now()
+	lastMove := time.Now().Add(-1 * time.Hour)
+
+	poses := [][]referenceframe.Input{}
 
 	loopNumber := 0
 
 	var pd *pourDetector
 
-	totalTime := 15 * time.Second
+	totalTime := 5 * time.Minute
 	markedDifferent := false
 
-	for time.Since(start) < totalTime {
+	for time.Since(start) < totalTime && o.OZ > -0.5 {
 		loopStart := time.Now()
 
-		if pos <= 0 || (pos < len(poses) && time.Since(lastMove) > time.Second*2) {
-			err := vc.goTo(ctx, poses[pos]...)
+		if time.Since(lastMove) > (time.Millisecond * 300) {
+			o.OZ -= .05
+
+			goalPose := referenceframe.NewPoseInFrame("world",
+				spatialmath.NewPose(
+					bottleStart.Pose().Point(),
+					o,
+				),
+			)
+
+			vc.logger.Infof("going to: %v", goalPose.Pose())
+
+			_, err = vc.c.BottleMotionService.Move(
+				ctx,
+				motion.MoveReq{
+					ComponentName: resource.Name{Name: bottleName},
+					Destination:   goalPose,
+					WorldState:    worldState,
+				},
+			)
 			if err != nil {
 				return err
 			}
-			pos++
+
 			lastMove = time.Now()
+
+			inputs, err := vc.c.BottleArm.JointPositions(ctx, nil)
+			if err != nil {
+				return err
+			}
+			poses = append(poses, inputs)
 		}
 
 		if false {
@@ -420,25 +488,17 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 				break
 			}
 		} else {
-			nimgs, _, err := vc.c.GlassPourCam.Images(ctx)
-			if err != nil {
-				return err
-			}
-			if len(nimgs) == 0 {
-				return fmt.Errorf("GlassPourCam returned no images")
-			}
-
-			fn, err := saveImage(nimgs[0].Image, loopNumber)
+			img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, -1)
 			if err != nil {
 				return err
 			}
 
 			if pd == nil {
-				pd = newPourDetector(nimgs[0].Image)
+				pd = newPourDetector(img)
 			} else {
-				delta, different := pd.differentDebug(nimgs[0].Image)
-				vc.logger.Infof("fn: %v delta: %v different: %v", fn, delta, different)
-				if different && !markedDifferent {
+				delta, _ := pd.differentDebug(img)
+				vc.logger.Infof("fn: %v delta: %v", fn, delta)
+				if delta > 3 && !markedDifferent {
 					markedDifferent = true
 					totalTime = time.Since(start) + time.Second
 				}
@@ -446,22 +506,16 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		}
 
 		sleepTime := (200 * time.Millisecond) - time.Since(loopStart)
-		vc.logger.Infof("going to sleep for %v", sleepTime)
+		vc.logger.Debugf("going to sleep for %v", sleepTime)
 		time.Sleep(sleepTime)
 		loopNumber++
 	}
 
-	for pos >= len(poses) {
-		pos--
-	}
+	slices.Reverse(poses)
 
-	for pos >= 0 {
-		err := vc.goTo(ctx, poses[pos]...)
-		if err != nil {
-			return err
-		}
-		pos--
-
+	err = vc.c.BottleArm.MoveThroughJointPositions(ctx, poses, nil, nil)
+	if err != nil {
+		return err
 	}
 
 	return vc.doAll(ctx, "pour", "finish")
