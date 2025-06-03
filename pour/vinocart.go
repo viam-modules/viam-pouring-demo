@@ -20,8 +20,10 @@ import (
 
 	"github.com/golang/geo/r3"
 
+	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot"
@@ -367,11 +369,14 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		{OX: 1, OY: 1, Theta: 180},
 		{OX: 1, OY: -1, Theta: 180},
 		{OY: -1, Theta: 180},
-		{OY: -1, OX: -.5, Theta: 180},
+		{OX: -.5, OY: -1, Theta: 180},
 	}
+
+	approaches := []*referenceframe.PoseInFrame{}
 
 	for _, tryO := range choices {
 		goToPose := vc.getApproachPoint(obj, 100, tryO)
+		approaches = append(approaches, goToPose)
 		vc.logger.Infof("trying to move to %v", goToPose.Pose())
 
 		_, err2 := vc.c.CupMotionService.Move(
@@ -397,23 +402,30 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	}
 
+	if false && err != nil {
+
+		err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, obj)
+		if err2 == nil {
+			return nil
+		}
+
+		return multierr.Combine(err, err2)
+	}
+
 	if err != nil {
 		return err
 	}
 
 	// ---- go to pick up
+	err = SetXarmSpeed(ctx, vc.c.Arm, 25, 25)
+	if err != nil {
+		return err
+	}
 
 	goToPose := vc.getApproachPoint(obj, -50, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
-	_, err = vc.c.CupMotionService.Move(
-		ctx,
-		motion.MoveReq{
-			ComponentName: resource.Name{Name: vc.c.Gripper.Name().ShortName()},
-			Destination:   goToPose,
-			Constraints:   &LinearConstraint,
-		},
-	)
+	err = moveWithLinearConstraint(ctx, vc.c.CupMotionService, vc.c.Gripper, goToPose)
 	if err != nil {
 		return err
 	}
@@ -421,45 +433,111 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	return vc.GrabCup(ctx)
 }
 
+func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *referenceframe.WorldState, approaches []*referenceframe.PoseInFrame, choices []*spatialmath.OrientationVectorDegrees, obj *viz.Object) error {
+	for idx, goToPose := range approaches {
+		vc.logger.Infof("trying to move (2) to %v", goToPose.Pose())
+
+		_, err := vc.c.Motion.Move(
+			ctx,
+			motion.MoveReq{
+				ComponentName: resource.Name{Name: vc.c.BottleGripper.Name().ShortName()},
+				Destination:   goToPose,
+				WorldState:    worldState,
+			},
+		)
+		if err != nil {
+			vc.logger.Infof("error (2): %v", err)
+			continue
+		}
+
+		// we found a path!
+
+		goToPose = vc.getApproachPoint(obj, -50, choices[idx])
+		vc.logger.Infof("going to move (2) to %v", goToPose)
+
+		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper, goToPose)
+		if err != nil {
+			return err
+		}
+
+		got, err := vc.c.BottleGripper.Grab(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if !got {
+			return fmt.Errorf("didn't grab cup from bottlegripper")
+		}
+
+		// move to known spot
+		goToPose = vc.getApproachPoint(obj, -150, choices[idx])
+		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper, goToPose)
+		if err != nil {
+			return err
+		}
+
+		// release
+		err = vc.c.BottleGripper.Open(ctx, nil)
+		if err != nil {
+			return err
+		}
+
+		// backup
+		goToPose = vc.getApproachPoint(obj, -250, choices[idx])
+		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper, goToPose)
+		if err != nil {
+			return err
+		}
+
+		return vc.Touch(ctx)
+	}
+	return fmt.Errorf("no path for handoff")
+}
+
 func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
 	md := obj.MetaData()
 	c := md.Center()
+
+	p := getApproachPoint(md, c, deltaLinear, o, vc.logger)
+	p.Z = vc.conf.CupHeight - 25
+
+	return referenceframe.NewPoseInFrame(
+		"world",
+		spatialmath.NewPose(p, o),
+	)
+}
+
+func getApproachPoint(md pointcloud.MetaData, c r3.Vector, deltaLinear float64, o *spatialmath.OrientationVectorDegrees, logger logging.Logger) r3.Vector {
 
 	d := math.Pow((o.OX*o.OX)+(o.OY*o.OY), .5)
 
 	approachPoint := r3.Vector{
 		X: c.X,
 		Y: c.Y,
-
-		Z: vc.conf.CupHeight - 25,
+		Z: c.Z,
 	}
 
 	xLinear := (o.OX * deltaLinear / d)
 	yLinear := (o.OY * deltaLinear / d)
 
-	vc.logger.Infof("xLinear: %0.2f yLinear: %0.2f", xLinear, yLinear)
+	logger.Infof("xLinear: %0.2f yLinear: %0.2f", xLinear, yLinear)
 
 	if o.OX != 0 {
-		if md.MinX > 0 {
+		if xLinear > 0 {
 			approachPoint.X = md.MinX - xLinear
 		} else {
-			approachPoint.X = md.MaxX + xLinear
+			approachPoint.X = md.MaxX - xLinear
 		}
 	}
 
 	if o.OY != 0 {
-		if md.MinY > 0 {
+		if yLinear > 0 {
 			approachPoint.Y = md.MinY - yLinear
 		} else {
-			approachPoint.Y = md.MaxY + yLinear
+			approachPoint.Y = md.MaxY - yLinear
 		}
 	}
 
-	return referenceframe.NewPoseInFrame(
-		"world",
-		spatialmath.NewPose(approachPoint, o),
-	)
-
+	return approachPoint
 }
 
 func (vc *VinoCart) getPositions(stage, step string) ([][]toggleswitch.Switch, error) {
@@ -913,4 +991,16 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 	vc.pourJoints = joints
 	vc.pourPoses = poses
 	return nil
+}
+
+func moveWithLinearConstraint(ctx context.Context, m motion.Service, grip gripper.Gripper, p *referenceframe.PoseInFrame) error {
+	_, err := m.Move(
+		ctx,
+		motion.MoveReq{
+			ComponentName: resource.Name{Name: grip.Name().ShortName()},
+			Destination:   p,
+			Constraints:   &LinearConstraint,
+		},
+	)
+	return err
 }
