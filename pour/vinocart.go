@@ -35,6 +35,7 @@ import (
 const bottleName = "bottle-top"
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
+var noObjects = fmt.Errorf("no objects")
 
 func init() {
 	resource.RegisterService(generic.API, VinoCartModel, resource.Registration[resource.Resource, *Config]{Constructor: newVinoCart})
@@ -93,6 +94,16 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 		return nil, err
 	}
 
+	if conf.Loop {
+		vc.status = "starting"
+		vc.loopWaitGroup.Add(1)
+		cancelCtx, cancel := context.WithCancel(context.Background())
+		vc.loopCancel = cancel
+		go vc.run(cancelCtx)
+	} else {
+		vc.status = "manual mode"
+	}
+
 	return vc, nil
 }
 
@@ -113,6 +124,12 @@ type VinoCart struct {
 
 	pourJoints [][]referenceframe.Input
 	pourPoses  []*referenceframe.PoseInFrame
+
+	loopCancel    context.CancelFunc
+	loopWaitGroup sync.WaitGroup
+
+	statusLock sync.Mutex
+	status     string
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -120,10 +137,26 @@ func (vc *VinoCart) Name() resource.Name {
 }
 
 func (vc *VinoCart) Close(ctx context.Context) error {
+	if vc.loopCancel != nil {
+		vc.loopCancel()
+		vc.loopWaitGroup.Wait()
+	}
 	return vc.robotClient.Close(ctx)
 }
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+	if cmd["status"] == true {
+		return map[string]interface{}{"status": vc.getStatus()}, nil
+	}
+
+	if vc.loopCancel != nil {
+		return nil, fmt.Errorf("in loop mode, can't do anything but get status")
+	}
+
+	defer func() {
+		vc.setStatus("manual mode")
+	}()
+
 	if cmd["touch"] == true {
 		return nil, vc.Touch(ctx)
 	}
@@ -145,6 +178,62 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	return nil, fmt.Errorf("need a command")
+}
+
+func (vc *VinoCart) run(ctx context.Context) {
+	defer vc.loopWaitGroup.Done()
+	for ctx.Err() == nil {
+		err := vc.WaitForCupAndGo(ctx)
+		if err != nil {
+			vc.logger.Errorf("go error in run: %v", err)
+		}
+	}
+}
+
+func (vc *VinoCart) getStatus() string {
+	vc.statusLock.Lock()
+	defer vc.statusLock.Unlock()
+	return vc.status
+}
+
+func (vc *VinoCart) setStatus(s string) {
+	vc.statusLock.Lock()
+	defer vc.statusLock.Unlock()
+	vc.status = s
+}
+
+func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
+	for {
+		vc.setStatus("standby")
+		err := vc.FullDemo(ctx)
+		if err == nil {
+			break
+		}
+		if err != noObjects {
+			return err
+		}
+		vc.logger.Infof("got %v, looping", err)
+	}
+
+	vc.setStatus("waiting")
+
+	// need to wait till the area is clear
+	vc.logger.Infof("waiting for area to be clear")
+
+	for {
+		objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
+		if err != nil {
+			return err
+		}
+
+		vc.logger.Infof("num objects while waiting: %v", len(objects))
+		for _, o := range objects {
+			vc.logger.Infof("\t objects: %v", o)
+		}
+		if len(objects) == 0 {
+			return nil
+		}
+	}
 }
 
 func (vc *VinoCart) FullDemo(ctx context.Context) error {
@@ -221,12 +310,14 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	}
 
 	if len(objects) == 0 {
-		return fmt.Errorf("no objects")
+		return noObjects
 	}
 
 	if len(objects) > 1 {
 		return fmt.Errorf("too many objects %d", len(objects))
 	}
+
+	vc.setStatus("picking")
 
 	obj := objects[0]
 
@@ -421,6 +512,7 @@ func (vc *VinoCart) pourPrepGrab(ctx context.Context) error {
 }
 
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
+	vc.setStatus("prepping")
 	err := vc.doAll(ctx, "pour_prep", "prep-grab", 80)
 	if err != nil {
 		return err
@@ -498,6 +590,7 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, loopNumber in
 }
 
 func (vc *VinoCart) Pour(ctx context.Context) error {
+	vc.setStatus("pouring")
 	err := vc.doAll(ctx, "pour", "prep", 50)
 	if err != nil {
 		return err
@@ -552,6 +645,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			deltaMax := 2.5
 			vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
 			if delta >= deltaMax && !markedDifferent {
+				vc.logger.Infof(" **** motion detected *** ")
 				markedDifferent = true
 				totalTime = time.Since(start) + time.Second
 			}
@@ -579,6 +673,7 @@ func saveImage(img image.Image, loopNumber int) (string, error) {
 }
 
 func (vc *VinoCart) PutBack(ctx context.Context) error {
+	vc.setStatus("placing")
 	err := vc.doAll(ctx, "put-back", "before-open", 50)
 	if err != nil {
 		return err

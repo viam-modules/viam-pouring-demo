@@ -75,6 +75,7 @@ type Config struct {
 	CupMotionService    string `json:"cup_motion_service"`
 
 	SimoneHack bool `json:"simone_hack"`
+	Loop       bool `json:"loop"`
 
 	// optional
 	CPUThreads int `json:"cpu_threads,omitempty"`

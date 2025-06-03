@@ -105,6 +105,8 @@ func realMain() error {
 		return vc.PutBack(ctx)
 	case "full-demo":
 		return vc.FullDemo(ctx)
+	case "full-demo-wait":
+		return vc.WaitForCupAndGo(ctx)
 	case "visWorldState":
 		return visObstacles(ctx, client)
 	case "plan":
