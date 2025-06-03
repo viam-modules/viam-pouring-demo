@@ -4,15 +4,12 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"math"
 
-	"github.com/golang/geo/r3"
-
-	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/vision"
-	"go.viam.com/rdk/spatialmath"
 	viz "go.viam.com/rdk/vision"
 	"go.viam.com/rdk/vision/classification"
 	"go.viam.com/rdk/vision/objectdetection"
@@ -65,7 +62,7 @@ func newVisionCupFinder(ctx context.Context, deps resource.Dependencies, conf re
 		logger: logger,
 	}
 
-	cf.input, err = camera.FromDependencies(deps, config.Input)
+	cf.input, err = vision.FromDependencies(deps, config.Input)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +78,7 @@ type visionCupFinder struct {
 	cfg    *VisionCupFinderConfig
 	logger logging.Logger
 
-	input camera.Camera
+	input vision.Service
 }
 
 func (vcf *visionCupFinder) Name() resource.Name {
@@ -115,35 +112,12 @@ func (vcf *visionCupFinder) Classifications(
 }
 
 func (vcf *visionCupFinder) GetObjectPointClouds(ctx context.Context, cameraName string, extra map[string]interface{}) ([]*viz.Object, error) {
-	if cameraName != "" && cameraName != vcf.cfg.Input {
-		return nil, fmt.Errorf("bad cameraName [%s] != [%s]", cameraName, vcf.cfg.Input)
-	}
-
-	pc, err := vcf.input.NextPointCloud(ctx)
+	os, err := vcf.input.GetObjectPointClouds(ctx, cameraName, extra)
 	if err != nil {
 		return nil, err
 	}
 
-	pc, err = cleanPointCloud(pc)
-	if err != nil {
-		return nil, err
-	}
-
-	res := []*viz.Object{}
-
-	center, height, radius, ok := findSingleCupInCleanedPointCloud(pc, vcf.cfg.RadiusMM, vcf.cfg.HeightMM, vcf.cfg.ErrorMargin, vcf.logger)
-	if ok {
-		c, err := spatialmath.NewBox(
-			spatialmath.NewPose(center, &spatialmath.OrientationVectorDegrees{OZ: 1}),
-			r3.Vector{X: radius * 2, Y: radius * 2, Z: height},
-			"cup",
-		)
-		if err != nil {
-			return res, fmt.Errorf("can't make capsule: %w", err)
-		}
-		res = append(res, &viz.Object{pc, c})
-	}
-	return res, nil
+	return os, nil
 }
 
 func (vcf *visionCupFinder) GetProperties(ctx context.Context, extra map[string]interface{}) (*vision.Properties, error) {
@@ -180,4 +154,34 @@ func cleanPointCloud(pc pointcloud.PointCloud) (pointcloud.PointCloud, error) {
 		return nil, err
 	}
 	return temp, nil
+}
+
+func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, logger logging.Logger) []*viz.Object {
+	good := []*viz.Object{}
+
+	for idx, o := range objects {
+		md := o.MetaData()
+
+		height := md.MaxZ
+		width := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
+
+		heightDelta := math.Abs(height - correctHeight)
+		widthDelta := math.Abs(correctWidth - width)
+
+		if logger != nil {
+			logger.Infof("FindCups %d %v height: %0.2f heightDelta: %0.2f (%v) width: %0.2f widthDelta: %0.2f (%v)",
+				idx, o,
+				height, heightDelta, heightDelta <= goodDelta,
+				width, widthDelta, widthDelta <= goodDelta,
+			)
+		}
+
+		if heightDelta > goodDelta || widthDelta > goodDelta {
+			continue
+		}
+
+		good = append(good, o)
+	}
+
+	return good
 }

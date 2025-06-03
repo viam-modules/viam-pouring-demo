@@ -1018,27 +1018,5 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 		return nil, err
 	}
 
-	good := []*viz.Object{}
-
-	for idx, o := range objects {
-		md := o.MetaData()
-
-		height := md.MaxZ
-		width := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
-
-		heightDelta := math.Abs(height - vc.conf.CupHeight)
-		widthDelta := math.Abs((height * .6) - width)
-
-		vc.logger.Infof("FindCups %d %v height: %0.2f width: %0.2f heightDelta: %0.2f widthDelta: %0.2f", idx, o, height, width, heightDelta, widthDelta)
-
-		if heightDelta > 20 || widthDelta > 20 {
-			vc.logger.Infof("\t delta too high")
-			continue
-		}
-
-		good = append(good, o)
-
-	}
-
-	return good, nil
+	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.CupHeight*.6, 20, vc.logger), nil
 }
