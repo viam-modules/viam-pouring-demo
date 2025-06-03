@@ -65,6 +65,8 @@ type Config struct {
 	BottleGripper string `json:"bottle_gripper"`
 	BottleArm     string `json:"bottle_arm"`
 
+	Handoff bool
+
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
 	CupHeight    float64 `json:"cup_height"`

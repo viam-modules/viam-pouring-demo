@@ -128,8 +128,8 @@ func realMain() error {
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromFar: true})
 	case "pour-old-mid":
 		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromMid: true})
-	case "find-cups-old":
-		cups, err := g.FindCups(ctx)
+	case "find-cups":
+		cups, err := vc.FindCups(ctx)
 		if err != nil {
 			return err
 		}

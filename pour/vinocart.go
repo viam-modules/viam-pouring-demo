@@ -41,7 +41,6 @@ var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
 const gripperToCupCenterHack = 0
-const doHandoff = false
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -248,7 +247,7 @@ func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
 	vc.logger.Infof("waiting for area to be clear")
 
 	for {
-		objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
+		objects, err := vc.FindCups(ctx)
 		if err != nil {
 			return err
 		}
@@ -327,7 +326,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	}
 
 	start := time.Now()
-	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
+	objects, err := vc.FindCups(ctx)
 	if err != nil {
 		return err
 	}
@@ -404,7 +403,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	}
 
-	if doHandoff && err != nil {
+	if vc.conf.Handoff && err != nil {
 
 		err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, obj)
 		if err2 == nil {
@@ -1011,4 +1010,35 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 		},
 	)
 	return err
+}
+
+func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
+	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	good := []*viz.Object{}
+
+	for idx, o := range objects {
+		md := o.MetaData()
+
+		height := md.MaxZ
+		width := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
+
+		heightDelta := math.Abs(height - vc.conf.CupHeight)
+		widthDelta := math.Abs((height * .6) - width)
+
+		vc.logger.Infof("FindCups %d %v height: %0.2f width: %0.2f heightDelta: %0.2f widthDelta: %0.2f", idx, o, height, width, heightDelta, widthDelta)
+
+		if heightDelta > 20 || widthDelta > 20 {
+			vc.logger.Infof("\t delta too high")
+			continue
+		}
+
+		good = append(good, o)
+
+	}
+
+	return good, nil
 }
