@@ -6,6 +6,7 @@ import (
 	"github.com/golang/geo/r3"
 
 	"go.viam.com/rdk/components/arm"
+	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/spatialmath"
@@ -151,4 +152,11 @@ func SetXarmSpeed(ctx context.Context, a arm.Arm, speed, accel float64) error {
 		"set_acceleration": float64(accel),
 	})
 	return err
+}
+
+func SetXarmSpeedLog(ctx context.Context, a arm.Arm, speed, accel float64, logger logging.Logger) {
+	err := SetXarmSpeed(ctx, a, speed, accel)
+	if err != nil {
+		logger.Errorf("SetXarmSpeed failed: %v", err)
+	}
 }

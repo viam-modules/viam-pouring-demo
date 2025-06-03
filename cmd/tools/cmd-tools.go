@@ -70,12 +70,15 @@ func realMain() error {
 
 	g := pour.NewTesting(logger, client, p1c)
 
-	vc := pour.NewVinoCart(cfg, p1c, client, logger)
+	vc, err := pour.NewVinoCart(ctx, cfg, p1c, client, logger)
+	if err != nil {
+		return err
+	}
 
 	cmd := flag.Arg(0)
 	switch cmd {
 	case "reset":
-		return g.ResetArmToHome(ctx)
+		return vc.Reset(ctx)
 	case "intermediate":
 		return g.GoToPrepForPour(ctx)
 	case "touch":
@@ -117,6 +120,8 @@ func realMain() error {
 		return plan(ctx, client, cfg, p1c, vc, logger)
 	case "planperf":
 		return planperf(ctx, client, cfg, p1c, vc, logger)
+	case "pour-motion-demo":
+		return vc.PourMotionDemo(ctx)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}

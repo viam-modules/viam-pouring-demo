@@ -2,12 +2,12 @@ package pour
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/png"
 	"math"
 	"os"
-	"slices"
 	"sync"
 	"time"
 
@@ -27,7 +27,10 @@ import (
 	viz "go.viam.com/rdk/vision"
 
 	"github.com/erh/vmodutils"
+	"github.com/erh/vmodutils/touch"
 )
+
+const bottleName = "bottle-top"
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 
@@ -41,18 +44,17 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
-	g := &VinoCart{
-		name:   conf.ResourceName(),
-		logger: logger,
-		conf:   config,
-	}
-
-	g.c, err = Pour1ComponentsFromDependencies(config, deps)
+	c, err := Pour1ComponentsFromDependencies(config, deps)
 	if err != nil {
 		return nil, err
 	}
 
-	g.robotClient, err = vmodutils.ConnectToMachineFromEnv(ctx, logger)
+	robotClient, err := vmodutils.ConnectToMachineFromEnv(ctx, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	g, err := NewVinoCart(ctx, config, c, robotClient, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -61,13 +63,35 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 	return g, nil
 }
 
-func NewVinoCart(conf *Config, c *Pour1Components, client robot.Robot, logger logging.Logger) *VinoCart {
-	return &VinoCart{
+func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client robot.Robot, logger logging.Logger) (*VinoCart, error) {
+	vc := &VinoCart{
 		conf:        conf,
 		c:           c,
 		robotClient: client,
 		logger:      logger,
 	}
+
+	vc.bottleTop = referenceframe.NewLinkInFrame(
+		vc.conf.BottleGripper,
+		spatialmath.NewPose(r3.Vector{vc.conf.BottleHeight - 70, -7, 0}, &spatialmath.OrientationVectorDegrees{OX: 1}),
+		bottleName,
+		nil,
+	)
+
+	vc.pourExtraFrames = []*referenceframe.LinkInFrame{vc.bottleTop}
+
+	var err error
+	vc.pourWorldState, err = referenceframe.NewWorldState(nil, vc.pourExtraFrames)
+	if err != nil {
+		return nil, err
+	}
+
+	err = vc.setupPourPositions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return vc, nil
 }
 
 type VinoCart struct {
@@ -80,6 +104,13 @@ type VinoCart struct {
 	robotClient robot.Robot
 
 	c *Pour1Components
+
+	bottleTop       *referenceframe.LinkInFrame
+	pourExtraFrames []*referenceframe.LinkInFrame
+	pourWorldState  *referenceframe.WorldState
+
+	pourJoints [][]referenceframe.Input
+	pourPoses  []*referenceframe.PoseInFrame
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -130,10 +161,13 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 	return vc.PutBack(ctx)
 }
 
-func (vc *VinoCart) Touch(ctx context.Context) error {
-	vc.logger.Infof("touch called")
+func (vc *VinoCart) Reset(ctx context.Context) error {
+	err := SetXarmSpeed(ctx, vc.c.BottleArm, 50, 50)
+	if err != nil {
+		return err
+	}
 
-	err := vc.doAll(ctx, "touch", "prep")
+	err = vc.doAll(ctx, "touch", "prep")
 	if err != nil {
 		return err
 	}
@@ -144,6 +178,17 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	}
 
 	err = vc.c.BottleGripper.Open(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (vc *VinoCart) Touch(ctx context.Context) error {
+	vc.logger.Infof("touch called")
+
+	err := vc.Reset(ctx)
 	if err != nil {
 		return err
 	}
@@ -288,14 +333,22 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 
 }
 
-func (vc *VinoCart) doAll(ctx context.Context, stage, step string) error {
+func (vc *VinoCart) getPositions(stage, step string) ([][]toggleswitch.Switch, error) {
 	steps, ok := vc.c.Positions[stage]
 	if !ok {
-		return fmt.Errorf("no stage %s", stage)
+		return nil, fmt.Errorf("no stage %s", stage)
 	}
 	positions, ok := steps[step]
 	if !ok {
-		return fmt.Errorf("no step [%s] in stage [%s]", step, stage)
+		return nil, fmt.Errorf("no step [%s] in stage [%s]", step, stage)
+	}
+	return positions, nil
+}
+
+func (vc *VinoCart) doAll(ctx context.Context, stage, step string) error {
+	positions, err := vc.getPositions(stage, step)
+	if err != nil {
+		return err
 	}
 
 	for _, xxx := range positions {
@@ -435,35 +488,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 	time.Sleep(500 * time.Millisecond)
 
-	bottleName := "bottle-top"
-	bottleTop := referenceframe.NewLinkInFrame(
-		vc.conf.BottleGripper,
-		spatialmath.NewPose(r3.Vector{vc.conf.BottleHeight - 70, -7, 0}, &spatialmath.OrientationVectorDegrees{OX: 1}),
-		bottleName,
-		nil,
-	)
-
-	extraFrames := []*referenceframe.LinkInFrame{bottleTop}
-
-	bottleStart, err := vc.c.BottleMotionService.GetPose(ctx, resource.Name{Name: bottleName}, "world", extraFrames, nil)
-	if err != nil {
-		return err
-	}
-
-	vc.logger.Infof("bottleStart: %v", bottleStart.Pose())
-
-	worldState, err := referenceframe.NewWorldState(nil, extraFrames)
-	if err != nil {
-		return err
-	}
-
-	o := bottleStart.Pose().Orientation().OrientationVectorDegrees()
-
 	start := time.Now()
-	lastMove := time.Now().Add(-1 * time.Hour)
-
-	poses := [][]referenceframe.Input{}
-
 	loopNumber := 0
 
 	var pd *pourDetector
@@ -471,46 +496,32 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	totalTime := 5 * time.Minute
 	markedDifferent := false
 
-	for time.Since(start) < totalTime && o.OZ > -0.5 {
-		loopStart := time.Now()
+	pourContext, cancelPour := context.WithCancel(ctx)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 
-		if time.Since(lastMove) > (time.Millisecond * 300) {
-			o.OZ -= .05
-
-			if o.OZ <= -0.15 && !markedDifferent {
-				// when we get near empty, we need to go faster
-				o.OZ -= .05
-			}
-
-			goalPose := referenceframe.NewPoseInFrame("world",
-				spatialmath.NewPose(
-					bottleStart.Pose().Point(),
-					o,
-				),
-			)
-
-			vc.logger.Infof("adjusting OZ to: %0.2f", o.OZ)
-
-			_, err = vc.c.BottleMotionService.Move(
-				ctx,
-				motion.MoveReq{
-					ComponentName: resource.Name{Name: bottleName},
-					Destination:   goalPose,
-					WorldState:    worldState,
-				},
-			)
-			if err != nil {
-				return err
-			}
-
-			lastMove = time.Now()
-
-			inputs, err := vc.c.BottleArm.JointPositions(ctx, nil)
-			if err != nil {
-				return err
-			}
-			poses = append(poses, inputs)
+	go func() {
+		defer wg.Done()
+		err := vc.doPourMotion(ctx, pourContext)
+		if err != nil {
+			vc.logger.Infof("error pouring: %v", err)
 		}
+	}()
+
+	defer func() {
+		cancelPour()
+		wg.Wait() // this goes back down
+
+		SetXarmSpeedLog(ctx, vc.c.BottleArm, 50, 50, vc.logger)
+
+		err := vc.doAll(ctx, "pour", "finish")
+		if err != nil {
+			vc.logger.Infof("error in pour cleanup: %v", err)
+		}
+	}()
+
+	for time.Since(start) < totalTime {
+		loopStart := time.Now()
 
 		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, -1)
 		if err != nil {
@@ -535,14 +546,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		loopNumber++
 	}
 
-	slices.Reverse(poses)
-
-	err = vc.c.BottleArm.MoveThroughJointPositions(ctx, poses, nil, nil)
-	if err != nil {
-		return err
-	}
-
-	return vc.doAll(ctx, "pour", "finish")
+	// cleanup done in defer above
+	return nil
 }
 
 func saveImage(img image.Image, loopNumber int) (string, error) {
@@ -575,4 +580,205 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 	time.Sleep(time.Millisecond * 500)
 
 	return vc.doAll(ctx, "put-back", "post-open")
+}
+
+func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
+	err := SetXarmSpeed(ctx, vc.c.BottleArm, 75, 75)
+	if err != nil {
+		return err
+	}
+
+	err = vc.doAll(ctx, "pour", "prep")
+	if err != nil {
+		return err
+	}
+
+	pourContext, cancel := context.WithCancel(ctx)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := vc.doPourMotion(ctx, pourContext)
+		if err != nil {
+			vc.logger.Infof("eliot: %v", err)
+		}
+	}()
+
+	time.Sleep(2 * time.Second)
+
+	vc.logger.Infof("cancel called")
+	cancel()
+
+	wg.Wait()
+	vc.logger.Infof("wait done")
+
+	return nil
+}
+
+func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
+	err := SetXarmSpeed(ctx, vc.c.BottleArm, 25, 50)
+	if err != nil {
+		return err
+	}
+	defer SetXarmSpeedLog(ctx, vc.c.BottleArm, 50, 50, vc.logger)
+
+	err = vc.c.BottleArm.MoveThroughJointPositions(pourContext, vc.pourJoints, nil, nil)
+
+	if err != nil && err != context.Canceled && pourContext.Err() != context.Canceled {
+		return err
+	}
+
+	// go back down
+
+	vc.logger.Infof("going back down because ended early")
+
+	cur, err := vc.c.BottleMotionService.GetPose(ctx, resource.Name{Name: bottleName}, "world", vc.pourExtraFrames, nil)
+	if err != nil {
+		return err
+	}
+
+	err = SetXarmSpeed(ctx, vc.c.BottleArm, 75, 75)
+	if err != nil {
+		return err
+	}
+
+	posesToDo := [][]referenceframe.Input{}
+
+	for i := len(vc.pourPoses) - 1; i >= 0; i-- {
+		if cur.Pose().Orientation().OrientationVectorDegrees().OZ > vc.pourPoses[i].Pose().Orientation().OrientationVectorDegrees().OZ {
+			continue
+		}
+
+		posesToDo = append(posesToDo, vc.pourJoints[i])
+	}
+
+	return vc.c.BottleArm.MoveThroughJointPositions(ctx, posesToDo, nil, nil)
+}
+
+func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
+
+	allPostions, err := vc.getPositions("pour", "prep")
+	if err != nil {
+		return err
+	}
+
+	pos := allPostions[len(allPostions)-1][0] // HACK HACK HACK
+
+	res, err := pos.DoCommand(ctx, map[string]interface{}{"cfg": true})
+	if err != nil {
+		return fmt.Errorf("couldn't get cfg from pos0 step %w", err)
+	}
+
+	posConfig := touch.ArmPositionSaverConfig{}
+
+	err = json.Unmarshal([]byte(res["as_json"].(string)), &posConfig)
+	if err != nil {
+		vc.logger.Errorf("bad json %v", res)
+		return err
+	}
+
+	vc.logger.Infof("hi %v", posConfig)
+
+	if posConfig.Point.X == 0 {
+		return fmt.Errorf("config likely broken %v", posConfig)
+	}
+
+	armPose := spatialmath.NewPose(posConfig.Point, &posConfig.Orientation)
+	vc.logger.Infof("armPose: %v", armPose)
+
+	fsc, err := vc.robotClient.FrameSystemConfig(ctx)
+	if err != nil {
+		return err
+	}
+
+	x := touch.FindPart(fsc, vc.conf.BottleGripper)
+	if x == nil {
+		return fmt.Errorf("can't find frame for BottleGripper %v", vc.conf.BottleGripper)
+	}
+
+	if x.FrameConfig.Parent() != posConfig.Arm {
+		return fmt.Errorf("parent wrong %v %v", x.FrameConfig.Parent(), posConfig.Arm)
+	}
+
+	vc.logger.Infof("pp: %v", x.FrameConfig.Pose())
+
+	gripperPose := spatialmath.Compose(armPose, x.FrameConfig.Pose())
+	vc.logger.Infof("gripperPose: %v", gripperPose)
+
+	bottleStart := spatialmath.Compose(gripperPose, vc.bottleTop.Pose())
+	vc.logger.Infof("bottleStart: %v", bottleStart)
+
+	o := bottleStart.Orientation().OrientationVectorDegrees()
+
+	joints := [][]referenceframe.Input{}
+	poses := []*referenceframe.PoseInFrame{}
+
+	for o.OZ > -.5 {
+		goalPose := referenceframe.NewPoseInFrame("world",
+			spatialmath.NewPose(
+				bottleStart.Point(),
+				o,
+			),
+		)
+
+		poses = append(poses, goalPose)
+
+		vc.logger.Infof(" next: %v", goalPose.Pose())
+
+		hashKey := fmt.Sprintf("foo-%d", int(o.OZ*1000))
+
+		_, err = vc.c.BottleMotionService.Move(
+			ctx,
+			motion.MoveReq{
+				ComponentName: resource.Name{Name: bottleName},
+				Destination:   goalPose,
+				WorldState:    vc.pourWorldState,
+				Extra:         map[string]interface{}{"hash": true, "hash_key": hashKey},
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		res, err := vc.c.BottleMotionService.DoCommand(ctx, map[string]interface{}{"get_hash": true, "hash_key": hashKey})
+		if err != nil {
+			return err
+		}
+
+		planRaw, ok := res["plan"].([]interface{})
+		if !ok {
+			return fmt.Errorf("hack plan not an array %v %T", res, res["plan"])
+		}
+
+		for idx, fRaw := range planRaw {
+			f2, ok := fRaw.([]interface{})
+			if !ok {
+				return fmt.Errorf("fRaw %v %T", fRaw, fRaw)
+			}
+
+			f := []float64{}
+			for _, ff := range f2 {
+				fff, ok := ff.(float64)
+				if !ok {
+					return fmt.Errorf("really now %v %T", f2, f2)
+				}
+				f = append(f, fff)
+			}
+
+			if idx == len(planRaw)-1 {
+				joints = append(joints, referenceframe.FloatsToInputs(f))
+			}
+		}
+
+		o.OZ -= .05
+	}
+
+	if len(joints) != len(poses) {
+		panic("Wtf")
+	}
+
+	vc.pourJoints = joints
+	vc.pourPoses = poses
+	return nil
 }
