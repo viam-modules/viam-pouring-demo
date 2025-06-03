@@ -39,15 +39,26 @@
 
   .camera-label {
     position: absolute;
-    top: 12px;
-    left: 12px;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    backdrop-filter: blur(4px);
+    top: 16px;
+    left: 16px;
+    background: rgba(24, 28, 31, 0.92);
+    color: #39FF14;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 1.3rem;
+    font-family: "Share Tech Mono", "Fira Mono", "Consolas", monospace;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 2px solid #39FF14;
+    box-shadow:
+      0 0 2px #39FF14,
+      0 0 8px #39FF1455;
+    text-shadow:
+      0 0 2px #39FF14,
+      0 0 6px #39FF14;
     z-index: 10;
+    user-select: none;
+    pointer-events: none;
   }
 </style>
