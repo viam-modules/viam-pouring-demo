@@ -22,7 +22,7 @@ update:
 	go get go.viam.com/rdk@latest
 	go mod tidy
 
-test: pour/web/dist/index.html
+test: pour/web/dist/index.html pour/vinoweb/dist/index.html
 	$(GO_BUILD_ENV) go test ./...
 
 module.tar.gz: test meta.json $(MODULE_BINARY)
