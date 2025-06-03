@@ -50,10 +50,12 @@ type Config struct {
 	// dependencies, required
 	ArmName                string `json:"arm_name"`
 	CameraName             string `json:"camera_name"`
-	GlassPourCam           string `json:"glass_pour_cam"`
 	CircleDetectionService string `json:"circle_detection_service"`
 	WeightSensorName       string `json:"weight_sensor_name"`
 	GripperName            string `json:"gripper_name"`
+
+	GlassPourCam             string  `json:"glass_pour_cam"`
+	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
 	CupFinderService string `json:"cup_finder_service"`
 	CupTopService    string `json:"cup_top_service"`
@@ -145,6 +147,13 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 
 	return deps, optionals, nil
+}
+
+func (c *Config) glassPourMotionThreshold() float64 {
+	if c.GlassPourMotionThreshold > 0 {
+		return c.GlassPourMotionThreshold
+	}
+	return 4
 }
 
 type StagePositions map[string][][]toggleswitch.Switch

@@ -41,6 +41,7 @@ import (
 var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
+const gripperToCupCenterHack = 0
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -422,7 +423,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, -50, o)
+	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	err = moveWithLinearConstraint(ctx, vc.c.CupMotionService, vc.c.Gripper, goToPose)
@@ -452,7 +453,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// we found a path!
 
-		goToPose = vc.getApproachPoint(obj, -50, choices[idx])
+		goToPose = vc.getApproachPoint(obj, gripperToCupCenterHack, choices[idx])
 		vc.logger.Infof("going to move (2) to %v", goToPose)
 
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper, goToPose)
@@ -744,7 +745,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			pd = newPourDetector(img)
 		} else {
 			delta, _ := pd.differentDebug(img)
-			deltaMax := 2.5
+			deltaMax := vc.conf.glassPourMotionThreshold()
 			vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
 			if delta >= deltaMax && !markedDifferent {
 				vc.logger.Infof(" **** motion detected *** ")
