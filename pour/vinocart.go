@@ -162,12 +162,7 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
-	err := SetXarmSpeed(ctx, vc.c.BottleArm, 50, 50)
-	if err != nil {
-		return err
-	}
-
-	err = vc.doAll(ctx, "touch", "prep")
+	err := vc.doAll(ctx, "touch", "prep", 100)
 	if err != nil {
 		return err
 	}
@@ -194,7 +189,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	}
 
 	if vc.conf.SimoneHack {
-		err = vc.doAll(ctx, "touch", "pickup-hack")
+		err = vc.doAll(ctx, "touch", "pickup-hack", 60)
 		if err != nil {
 			return err
 		}
@@ -345,7 +340,17 @@ func (vc *VinoCart) getPositions(stage, step string) ([][]toggleswitch.Switch, e
 	return positions, nil
 }
 
-func (vc *VinoCart) doAll(ctx context.Context, stage, step string) error {
+func (vc *VinoCart) doAll(ctx context.Context, stage, step string, speedAndAccelBothArm float64) error {
+	err := SetXarmSpeed(ctx, vc.c.Arm, speedAndAccelBothArm, speedAndAccelBothArm)
+	if err != nil {
+		return err
+	}
+
+	err = SetXarmSpeed(ctx, vc.c.BottleArm, speedAndAccelBothArm, speedAndAccelBothArm)
+	if err != nil {
+		return err
+	}
+
 	positions, err := vc.getPositions(stage, step)
 	if err != nil {
 		return err
@@ -397,12 +402,12 @@ func (vc *VinoCart) pourPrepGrab(ctx context.Context) error {
 }
 
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
-	err := vc.doAll(ctx, "pour_prep", "prep-grab")
+	err := vc.doAll(ctx, "pour_prep", "prep-grab", 80)
 	if err != nil {
 		return err
 	}
 
-	err = vc.doAll(ctx, "pour_prep", "right-grab")
+	err = vc.doAll(ctx, "pour_prep", "right-grab", 80)
 	if err != nil {
 		return err
 	}
@@ -412,7 +417,7 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.doAll(ctx, "pour_prep", "post-grab")
+	err = vc.doAll(ctx, "pour_prep", "post-grab", 50)
 	if err != nil {
 		return err
 	}
@@ -474,17 +479,10 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, loopNumber in
 }
 
 func (vc *VinoCart) Pour(ctx context.Context) error {
-	err := vc.doAll(ctx, "pour", "prep")
+	err := vc.doAll(ctx, "pour", "prep", 50)
 	if err != nil {
 		return err
 	}
-
-	defer func() {
-		err := vc.doAll(ctx, "pour", "finish")
-		if err != nil {
-			vc.logger.Errorf("error trying to clean up Pour: %v", err)
-		}
-	}()
 
 	time.Sleep(500 * time.Millisecond)
 
@@ -493,7 +491,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 	var pd *pourDetector
 
-	totalTime := 5 * time.Minute
+	totalTime := 15 * time.Second
 	markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
@@ -514,7 +512,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 		SetXarmSpeedLog(ctx, vc.c.BottleArm, 50, 50, vc.logger)
 
-		err := vc.doAll(ctx, "pour", "finish")
+		err := vc.doAll(ctx, "pour", "finish", 50)
 		if err != nil {
 			vc.logger.Infof("error in pour cleanup: %v", err)
 		}
@@ -562,7 +560,7 @@ func saveImage(img image.Image, loopNumber int) (string, error) {
 }
 
 func (vc *VinoCart) PutBack(ctx context.Context) error {
-	err := vc.doAll(ctx, "put-back", "before-open")
+	err := vc.doAll(ctx, "put-back", "before-open", 50)
 	if err != nil {
 		return err
 	}
@@ -579,7 +577,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 
 	time.Sleep(time.Millisecond * 500)
 
-	return vc.doAll(ctx, "put-back", "post-open")
+	return vc.doAll(ctx, "put-back", "post-open", 100)
 }
 
 func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
@@ -588,7 +586,7 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.doAll(ctx, "pour", "prep")
+	err = vc.doAll(ctx, "pour", "prep", 75)
 	if err != nil {
 		return err
 	}
@@ -617,7 +615,7 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
-	err := SetXarmSpeed(ctx, vc.c.BottleArm, 25, 50)
+	err := SetXarmSpeed(ctx, vc.c.BottleArm, 20, 50)
 	if err != nil {
 		return err
 	}
@@ -629,9 +627,7 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 		return err
 	}
 
-	// go back down
-
-	vc.logger.Infof("going back down because ended early")
+	vc.logger.Infof("going back down")
 
 	cur, err := vc.c.BottleMotionService.GetPose(ctx, resource.Name{Name: bottleName}, "world", vc.pourExtraFrames, nil)
 	if err != nil {
@@ -677,8 +673,6 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 		vc.logger.Errorf("bad json %v", res)
 		return err
 	}
-
-	vc.logger.Infof("hi %v", posConfig)
 
 	if posConfig.Point.X == 0 {
 		return fmt.Errorf("config likely broken %v", posConfig)
