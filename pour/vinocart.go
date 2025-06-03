@@ -554,6 +554,10 @@ func (vc *VinoCart) getPositions(stage, step string) ([][]toggleswitch.Switch, e
 	return positions, nil
 }
 
+func (vc *VinoCart) DoAll(ctx context.Context, stage, step string) error {
+	return vc.doAll(ctx, stage, step, 50)
+}
+
 func (vc *VinoCart) doAll(ctx context.Context, stage, step string, speedAndAccelBothArm float64) error {
 	err := SetXarmSpeed(ctx, vc.c.Arm, speedAndAccelBothArm, speedAndAccelBothArm)
 	if err != nil {
@@ -579,7 +583,7 @@ func (vc *VinoCart) doAll(ctx context.Context, stage, step string, speedAndAccel
 	return nil
 }
 
-func (vc *VinoCart) pourPrepGrab(ctx context.Context) error {
+func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 
 	positions, err := vc.c.BottleArm.JointPositions(ctx, nil)
 	if err != nil {
@@ -607,6 +611,8 @@ func (vc *VinoCart) pourPrepGrab(ctx context.Context) error {
 	time.Sleep(50 * time.Millisecond)
 
 	positions[0] = orig
+	positions[5].Value -= .3 // tilt bottle to increase friction
+
 	err = vc.c.BottleArm.MoveToJointPositions(ctx, positions, nil)
 	if err != nil {
 		return err
@@ -627,7 +633,7 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.pourPrepGrab(ctx)
+	err = vc.PourPrepGrab(ctx)
 	if err != nil {
 		return err
 	}

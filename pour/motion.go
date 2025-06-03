@@ -178,3 +178,14 @@ func Jog(ctx context.Context, m motion.Service, n resource.Name, j r3.Vector) er
 
 	return moveWithLinearConstraint(ctx, m, n, goTo)
 }
+
+func JogJoint(ctx context.Context, a arm.Arm, j int, amount float64) error {
+	inputs, err := a.JointPositions(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	inputs[j].Value += amount
+
+	return a.MoveToJointPositions(ctx, inputs, nil)
+}
