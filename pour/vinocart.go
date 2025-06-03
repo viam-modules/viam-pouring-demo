@@ -326,12 +326,13 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return vc.GrabCup(ctx)
 	}
 
+	start := time.Now()
 	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
 	if err != nil {
 		return err
 	}
 
-	vc.logger.Infof("num objects: %v", len(objects))
+	vc.logger.Infof("num objects: %v in %v", len(objects), time.Since(start))
 	for _, o := range objects {
 		vc.logger.Infof("\t objects: %v", o)
 	}
