@@ -26,6 +26,14 @@
      var x = JSON.parse(x);
      return [x.hostname, {type: 'api-key', payload: x.key, authEntity: x.id}];
    }
+
+   var host = getCookie("host");
+   var keyId = getCookie("api-key-id");
+   var key = getCookie("api-key");
+
+   if (host && host != "") {
+     return [host, {type: 'api-key', payload: key, authEntity: keyId}];     
+   }
    
    return ["", {}];
  }

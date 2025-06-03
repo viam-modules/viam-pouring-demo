@@ -2,11 +2,14 @@ package pour
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"image"
 	"image/png"
+	"io/fs"
 	"math"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -31,6 +34,9 @@ import (
 	"github.com/erh/vmodutils"
 	"github.com/erh/vmodutils/touch"
 )
+
+//go:embed vinoweb/dist
+var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
 
@@ -104,6 +110,21 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 		vc.status = "manual mode"
 	}
 
+	realFS, err := fs.Sub(vinowebStaticFS, "vinoweb/dist")
+	if err != nil {
+		return nil, err
+	}
+
+	_, vc.server, err = vmodutils.PrepInModuleServer(realFS, logger.Sublogger("accesslog"))
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		vc.server.Addr = ":9999"
+		vc.logger.Infof("web listening on %s", vc.server.Addr)
+		vc.server.ListenAndServe()
+	}()
+
 	return vc, nil
 }
 
@@ -130,6 +151,8 @@ type VinoCart struct {
 
 	statusLock sync.Mutex
 	status     string
+
+	server *http.Server
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -141,7 +164,8 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 		vc.loopCancel()
 		vc.loopWaitGroup.Wait()
 	}
-	return vc.robotClient.Close(ctx)
+
+	return multierr.Combine(vc.robotClient.Close(ctx), vc.server.Close())
 }
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {

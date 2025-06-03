@@ -132,6 +132,10 @@ func realMain() error {
 		return planperf(ctx, client, cfg, p1c, vc, logger)
 	case "pour-motion-demo":
 		return vc.PourMotionDemo(ctx)
+	case "sleep":
+		time.Sleep(time.Minute * 5)
+		return nil
+
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}
