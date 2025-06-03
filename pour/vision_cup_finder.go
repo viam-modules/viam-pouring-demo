@@ -170,7 +170,7 @@ func (vcf *visionCupFinder) DoCommand(ctx context.Context, extra map[string]inte
 
 func cleanPointCloud(pc pointcloud.PointCloud) (pointcloud.PointCloud, error) {
 	temp := pointcloud.NewBasicEmpty()
-	f, err := pointcloud.StatisticalOutlierFilter(100, 1.5)
+	f, err := pointcloud.StatisticalOutlierFilter(200, 1.5)
 	if err != nil {
 		return nil, err
 	}
