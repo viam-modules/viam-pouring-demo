@@ -162,17 +162,17 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
-	err := vc.doAll(ctx, "touch", "prep", 100)
-	if err != nil {
-		return err
-	}
-
-	err = vc.c.Gripper.Open(ctx, nil)
+	err := vc.c.Gripper.Open(ctx, nil)
 	if err != nil {
 		return err
 	}
 
 	err = vc.c.BottleGripper.Open(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	err = vc.doAll(ctx, "touch", "prep", 100)
 	if err != nil {
 		return err
 	}
@@ -258,7 +258,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		goToPose := vc.getApproachPoint(obj, 100, tryO)
 		vc.logger.Infof("trying to move to %v", goToPose)
 
-		_, err = vc.c.Motion.Move(
+		_, err = vc.c.CupMotionService.Move(
 			ctx,
 			motion.MoveReq{
 				ComponentName: resource.Name{Name: vc.c.Gripper.Name().ShortName()},

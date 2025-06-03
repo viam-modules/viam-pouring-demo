@@ -72,6 +72,7 @@ type Config struct {
 	DeltaYNeg    float64 `json:"deltayneg"`
 
 	BottleMotionService string `json:"bottle_motion_service"`
+	CupMotionService    string `json:"cup_motion_service"`
 
 	SimoneHack bool `json:"simone_hack"`
 
@@ -84,6 +85,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.BottleMotionService != "" {
 		deps = append(deps, cfg.BottleMotionService)
+	}
+
+	if cfg.CupMotionService != "" {
+		deps = append(deps, cfg.CupMotionService)
 	}
 
 	if cfg.ArmName == "" {
@@ -161,6 +166,7 @@ type Pour1Components struct {
 	BottleArm     arm.Arm
 
 	BottleMotionService motion.Service
+	CupMotionService    motion.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -203,6 +209,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.BottleMotionService != "" {
 		c.BottleMotionService, err = motion.FromDependencies(deps, config.BottleMotionService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.CupMotionService != "" {
+		c.CupMotionService, err = motion.FromDependencies(deps, config.CupMotionService)
 		if err != nil {
 			return nil, err
 		}
