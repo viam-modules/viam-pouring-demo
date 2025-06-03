@@ -8,7 +8,7 @@ ifeq ($(VIAM_TARGET_OS), windows)
 	MODULE_BINARY = bin/viam-pouring-demo.exe
 endif
 
-$(MODULE_BINARY): bin Makefile go.mod cmd/module/*.go pour/*.go pour/web/dist/index.html pour/vinoweb/dist/index.html
+$(MODULE_BINARY): bin Makefile go.mod cmd/module/*.go pour/*.go pour/vinoweb/dist/index.html
 	$(GO_BUILD_ENV) go build $(GO_BUILD_FLAGS) -o $(MODULE_BINARY) cmd/module/main.go
 
 bin:
@@ -22,7 +22,7 @@ update:
 	go get go.viam.com/rdk@latest
 	go mod tidy
 
-test: pour/web/dist/index.html pour/vinoweb/dist/index.html
+test: pour/vinoweb/dist/index.html
 	$(GO_BUILD_ENV) go test ./...
 
 module.tar.gz: test meta.json $(MODULE_BINARY)
@@ -42,9 +42,6 @@ all: test module.tar.gz
 
 setup:
 	which apt > /dev/null 2>&1 && apt -y install nodejs || echo "no apt"
-
-pour/web/dist/index.html: pour/web/*.json pour/web/*.html pour/web/src/*.ts pour/web/src/*.svelte
-	cd pour/web && npm install && npm run build
 
 pour/vinoweb/dist/index.html: pour/vinoweb/*.json pour/vinoweb/*.html pour/vinoweb/src/*.ts pour/vinoweb/src/*.svelte pour/vinoweb/src/lib/*.svelte
 	cd pour/vinoweb && npm install && npm run build

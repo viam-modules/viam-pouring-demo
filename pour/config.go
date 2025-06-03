@@ -6,7 +6,6 @@ import (
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
-	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/motion"
@@ -47,18 +46,15 @@ func (csp ConfigStatePostions) setup(deps resource.Dependencies) (StagePositions
 }
 
 type Config struct {
-	// dependencies, required
-	ArmName                string `json:"arm_name"`
-	CameraName             string `json:"camera_name"`
-	CircleDetectionService string `json:"circle_detection_service"`
-	WeightSensorName       string `json:"weight_sensor_name"`
-	GripperName            string `json:"gripper_name"`
+	ArmName     string `json:"arm_name"`
+	CameraName  string `json:"camera_name"`
+	GripperName string `json:"gripper_name"`
 
 	GlassPourCam             string  `json:"glass_pour_cam"`
 	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
-	CupFinderService string `json:"cup_finder_service"`
-	CupTopService    string `json:"cup_top_service"`
+	CupFinderService string `json:"cup_finder_service"` // find the cups on the table
+	CupTopService    string `json:"cup_top_service"`    // to hone in on the cup
 
 	Positions map[string]ConfigStatePostions
 
@@ -70,19 +66,12 @@ type Config struct {
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
 	CupHeight    float64 `json:"cup_height"`
-	DeltaXPos    float64 `json:"deltaxpos"`
-	DeltaYPos    float64 `json:"deltaypos"`
-	DeltaXNeg    float64 `json:"deltaxneg"`
-	DeltaYNeg    float64 `json:"deltayneg"`
 
 	BottleMotionService string `json:"bottle_motion_service"`
 	CupMotionService    string `json:"cup_motion_service"`
 
 	SimoneHack bool `json:"simone_hack"`
 	Loop       bool `json:"loop"`
-
-	// optional
-	CPUThreads int `json:"cpu_threads,omitempty"`
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
@@ -126,12 +115,6 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	if cfg.CupTopService != "" {
 		optionals = append(optionals, cfg.CupTopService)
 	}
-	if cfg.WeightSensorName != "" {
-		deps = append(deps, cfg.WeightSensorName)
-	}
-	if cfg.CircleDetectionService != "" {
-		deps = append(deps, cfg.CircleDetectionService)
-	}
 
 	if cfg.BottleGripper != "" {
 		deps = append(deps, cfg.BottleGripper)
@@ -165,7 +148,6 @@ type Pour1Components struct {
 	Gripper      gripper.Gripper
 	Cam          camera.Camera
 	GlassPourCam camera.Camera
-	Weight       sensor.Sensor
 	Motion       motion.Service
 	CamVision    vision.Service
 
@@ -207,13 +189,6 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	if config.WeightSensorName != "" {
-		c.Weight, err = sensor.FromDependencies(deps, config.WeightSensorName)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	c.Motion, err = motion.FromDependencies(deps, "builtin")
 	if err != nil {
 		return nil, err
@@ -228,13 +203,6 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.CupMotionService != "" {
 		c.CupMotionService, err = motion.FromDependencies(deps, config.CupMotionService)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if config.CircleDetectionService != "" {
-		c.CamVision, err = vision.FromDependencies(deps, config.CircleDetectionService)
 		if err != nil {
 			return nil, err
 		}

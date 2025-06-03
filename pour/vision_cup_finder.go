@@ -7,7 +7,6 @@ import (
 	"math"
 
 	"go.viam.com/rdk/logging"
-	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/vision"
 	viz "go.viam.com/rdk/vision"
@@ -140,20 +139,6 @@ func (vcf *visionCupFinder) CaptureAllFromCamera(ctx context.Context, cameraName
 
 func (vcf *visionCupFinder) DoCommand(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
 	return nil, nil
-}
-
-func cleanPointCloud(pc pointcloud.PointCloud) (pointcloud.PointCloud, error) {
-	temp := pointcloud.NewBasicEmpty()
-	f, err := pointcloud.StatisticalOutlierFilter(200, 1.5)
-	if err != nil {
-		return nil, err
-	}
-
-	err = f(pc, temp)
-	if err != nil {
-		return nil, err
-	}
-	return temp, nil
 }
 
 func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, logger logging.Logger) []*viz.Object {

@@ -10,9 +10,7 @@ import (
 
 	"github.com/erh/vmodutils"
 
-	vizClient "github.com/viam-labs/motion-tools/client/client"
 	"go.viam.com/rdk/logging"
-	"go.viam.com/rdk/robot"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
@@ -71,8 +69,6 @@ func realMain() error {
 		return err
 	}
 
-	g := pour.NewTesting(logger, client, p1c)
-
 	vc, err := pour.NewVinoCart(ctx, cfg, p1c, client, logger)
 	if err != nil {
 		return err
@@ -82,8 +78,6 @@ func realMain() error {
 	switch cmd {
 	case "reset":
 		return vc.Reset(ctx)
-	case "intermediate":
-		return g.GoToPrepForPour(ctx)
 	case "touch":
 		return vc.Touch(ctx)
 	case "pour-prep":
@@ -118,16 +112,6 @@ func realMain() error {
 		return vc.FullDemo(ctx)
 	case "full-demo-wait":
 		return vc.WaitForCupAndGo(ctx)
-	case "visWorldState":
-		return visObstacles(ctx, client)
-	case "plan":
-		return g.StartPouringProcess(ctx, pour.PouringOptions{})
-	case "pour-old":
-		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true})
-	case "pour-old-far":
-		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromFar: true})
-	case "pour-old-mid":
-		return g.StartPouringProcess(ctx, pour.PouringOptions{DoPour: true, PickupFromMid: true})
 	case "find-cups":
 		cups, err := vc.FindCups(ctx)
 		if err != nil {
@@ -137,10 +121,6 @@ func realMain() error {
 			logger.Infof("cup %d : %v", idx, c)
 		}
 		return nil
-	case "plantest":
-		return plan(ctx, client, cfg, p1c, vc, logger)
-	case "planperf":
-		return planperf(ctx, client, cfg, p1c, vc, logger)
 	case "pour-motion-demo":
 		return vc.PourMotionDemo(ctx)
 	case "sleep":
@@ -181,28 +161,4 @@ func realMain() error {
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}
-}
-
-func visObstacles(ctx context.Context, myRobot robot.Robot) error {
-
-	err := vizClient.RemoveAllSpatialObjects()
-	if err != nil {
-		return err
-	}
-
-	err = vizClient.DrawRobot(ctx, myRobot, nil)
-	if err != nil {
-		return err
-	}
-
-	for _, g := range pour.GenerateObstacles() {
-		for _, actualGeom := range g.Geometries() {
-			err = vizClient.DrawGeometry(actualGeom, "red")
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
