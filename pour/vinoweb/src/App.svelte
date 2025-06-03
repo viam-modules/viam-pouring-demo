@@ -74,8 +74,8 @@
   {/if}
       
   {#if myState.host}
-    <!-- <Main host={myState.host} credentials={myState.credentials} /> -->
-    <ComponentPreview host={myState.host} credentials={myState.credentials} />
+    <Main host={myState.host} credentials={myState.credentials} />
+    <!-- <ComponentPreview host={myState.host} credentials={myState.credentials} /> -->
   {:else}
     No host found, want to specify a default?<br>
     Host: <input id="in_host"><br>
