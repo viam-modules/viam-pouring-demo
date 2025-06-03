@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { ViamProvider } from "@viamrobotics/svelte-sdk";
   import type { DialConf } from "@viamrobotics/sdk";
-  import MainContent from "./lib/mainContent.svelte";
+  import MainContent from "./lib/MainContent.svelte";
   import type { Joint } from "./lib/types.js";
   import Status from "./lib/Status.svelte";
 
