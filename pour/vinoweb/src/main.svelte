@@ -4,7 +4,7 @@
   import type { DialConf } from "@viamrobotics/sdk";
   import MainContent from "./lib/MainContent.svelte";
   import type { Joint } from "./lib/types.js";
-  import Status from "./lib/Status.svelte";
+  import Status from "./lib/status.svelte";
 
   let { host, credentials } = $props();
 
