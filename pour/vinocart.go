@@ -247,18 +247,17 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	choices := []*spatialmath.OrientationVectorDegrees{
 		{OX: 1, Theta: 180},
-		{OX: 1, OY: 1, Theta: 180},
 		{OY: 1, Theta: 180},
-		{OX: -1, Theta: 180},
-		{OX: -1, OY: -1, Theta: 180},
-		{OY: -1, Theta: 180},
+		{OX: .5, OY: 1, Theta: 180},
+		{OX: 1, OY: 1, Theta: 180},
+		{OX: 1, OY: -1, Theta: 180},
 	}
 
 	for _, tryO := range choices {
 		goToPose := vc.getApproachPoint(obj, 100, tryO)
-		vc.logger.Infof("trying to move to %v", goToPose)
+		vc.logger.Infof("trying to move to %v", goToPose.Pose())
 
-		_, err = vc.c.CupMotionService.Move(
+		_, err2 := vc.c.CupMotionService.Move(
 			ctx,
 			motion.MoveReq{
 				ComponentName: resource.Name{Name: vc.c.Gripper.Name().ShortName()},
@@ -266,10 +265,19 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 				WorldState:    worldState,
 			},
 		)
-		if err == nil {
+
+		if err2 != nil {
+			vc.logger.Debugf("error: %v", err2)
+		}
+
+		if err2 == nil {
+			err = nil
 			o = tryO
 			break
+		} else if err == nil {
+			err = err2
 		}
+
 	}
 
 	if err != nil {
@@ -281,7 +289,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	goToPose := vc.getApproachPoint(obj, -80, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
-	_, err = vc.c.Motion.Move(
+	_, err = vc.c.CupMotionService.Move(
 		ctx,
 		motion.MoveReq{
 			ComponentName: resource.Name{Name: vc.c.Gripper.Name().ShortName()},
@@ -298,10 +306,14 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
 	md := obj.MetaData()
+	c := md.Center()
 
 	d := math.Pow((o.OX*o.OX)+(o.OY*o.OY), .5)
 
 	approachPoint := r3.Vector{
+		X: c.X,
+		Y: c.Y,
+
 		Z: vc.conf.CupHeight - 25,
 	}
 
@@ -310,16 +322,20 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 
 	vc.logger.Infof("xLinear: %0.2f yLinear: %0.2f", xLinear, yLinear)
 
-	if md.MinX > 0 {
-		approachPoint.X = md.MinX - xLinear
-	} else {
-		approachPoint.X = md.MaxX + xLinear
+	if o.OX != 0 {
+		if md.MinX > 0 {
+			approachPoint.X = md.MinX - xLinear
+		} else {
+			approachPoint.X = md.MaxX + xLinear
+		}
 	}
 
-	if md.MinY > 0 {
-		approachPoint.Y = md.MinY - yLinear
-	} else {
-		approachPoint.Y = md.MaxY + yLinear
+	if o.OY != 0 {
+		if md.MinY > 0 {
+			approachPoint.Y = md.MinY - yLinear
+		} else {
+			approachPoint.Y = md.MaxY + yLinear
+		}
 	}
 
 	return referenceframe.NewPoseInFrame(
