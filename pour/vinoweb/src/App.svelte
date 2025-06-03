@@ -1,6 +1,7 @@
 <script lang="ts">
  import { getCookie, setCookie } from 'typescript-cookie'
  import { ViamProvider } from '@viamrobotics/svelte-sdk';
+ import ComponentPreview from './componentPreview.svelte';
  
  import logo from './assets/viam.svg'
  import Main from "./main.svelte"
@@ -66,19 +67,15 @@
 </script>
 
 <main>
-  <div>
-    <a href="http://www.viam.com/" target="_blank" rel="noreferrer">
-      <img src={logo} class="logo" alt="Logo" />
-    </a>
-  </div>
-  <h1>Viam App Starter</h1>
-
-  <h1 style="color: red;">
-    {myState.error}
-  </h1>
-  
+  {#if myState.error}
+    <h1 style="color: red;">
+      {myState.error}
+    </h1>
+  {/if}
+      
   {#if myState.host}
     <Main host={myState.host} credentials={myState.credentials} />
+    <!-- <ComponentPreview host={myState.host} credentials={myState.credentials} /> -->
   {:else}
     No host found, want to specify a default?<br>
     Host: <input id="in_host"><br>
@@ -86,7 +83,8 @@
     Key: <input id="in_key"><br>
     <button on:click="{saveHostInfo}">Save</button>
   {/if}
-  
+
+
 </main>
 
 <style>
