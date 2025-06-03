@@ -27,8 +27,10 @@ func realMain() error {
 	logger := logging.NewLogger("cup")
 
 	debug := false
+	n := 1
 
 	flag.BoolVar(&debug, "debug", false, "")
+	flag.IntVar(&n, "n", n, "number of times to run")
 	host := flag.String("host", "", "host to connect to")
 	configFile := flag.String("config", "", "host to connect to")
 
@@ -89,21 +91,27 @@ func realMain() error {
 		}
 		return vc.PourPrep(ctx)
 	case "touch-and-reset":
-		err := vc.Touch(ctx)
-		if err != nil {
-			return err
-		}
-		time.Sleep(5 * time.Second)
-		err = p1c.Gripper.Open(ctx, nil)
-		if err != nil {
-			return err
-		}
+		for i := 0; i < n; i++ {
+			err := vc.Touch(ctx)
+			if err != nil {
+				return err
+			}
+			time.Sleep(5 * time.Second)
+			err = p1c.Gripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
 
-		err = pour.Jog(ctx, p1c.Motion, p1c.Arm.Name(), r3.Vector{Z: 200})
-		if err != nil {
-			return err
+			err = pour.Jog(ctx, p1c.Motion, p1c.Arm.Name(), r3.Vector{Z: 200})
+			if err != nil {
+				return err
+			}
+			err = vc.Reset(ctx)
+			if err != nil {
+				return err
+			}
 		}
-		return vc.Reset(ctx)
+		return nil
 	case "pour":
 		return vc.Pour(ctx)
 	case "put-back":
