@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ViamProvider } from "@viamrobotics/svelte-sdk";
+  import { ViamProvider, useRobotClient } from "@viamrobotics/svelte-sdk";
   import type { DialConf } from "@viamrobotics/sdk";
+  import { GenericComponentClient } from "@viamrobotics/sdk";
   import MainContent from "./lib/MainContent.svelte";
   import type { Joint } from "./lib/types.js";
   import Status from "./lib/status.svelte";
+  import RobotApp from "./RobotApp.svelte";
 
   let { host, credentials } = $props();
 
@@ -17,7 +19,17 @@
     },
   };
 
-  // Your actual robot data
+  // Get the robot client for partID "xxx"
+  const robotClientStore = useRobotClient(() => "xxx");
+  // let generic: GenericComponentClient | null = null;
+
+  $effect(() => {
+    const robotClient = robotClientStore.current;
+    if (robotClient) {
+      // generic = new GenericComponentClient(robotClient, "cart");
+    }
+  });
+
   const panesData = [
     {
       joints: [
@@ -25,15 +37,15 @@
         { index: 1, position: -108.82 },
         { index: 2, position: -32.63 },
         { index: 3, position: 348.78 },
-        { index: 4, position: 110.80 },
-        { index: 5, position: -184.56 }
+        { index: 4, position: 110.8 },
+        { index: 5, position: -184.56 },
       ] as Joint[],
       tableTitle: "Left Arm",
       camera: {
         name: "cam-left",
         partID: "xxx",
-        label: "Left Camera"
-      }
+        label: "Left Camera",
+      },
     },
     {
       joints: [
@@ -41,24 +53,26 @@
         { index: 1, position: -108.82 },
         { index: 2, position: -32.63 },
         { index: 3, position: 348.78 },
-        { index: 4, position: 110.80 },
-        { index: 5, position: -184.56 }
+        { index: 4, position: 110.8 },
+        { index: 5, position: -184.56 },
       ] as Joint[],
-      tableTitle: "Right Arm", 
+      tableTitle: "Right Arm",
       camera: {
         name: "cam-right",
         partID: "xxx",
-        label: "Right Camera"
-      }
-    }
+        label: "Right Camera",
+      },
+    },
   ];
 
-
-
-
-  
   // --- Status state and mapping ---
-  type StatusKey = "standby" | "picking" | "prepping" | "pouring" | "placing" | "waiting";
+  type StatusKey =
+    | "standby"
+    | "picking"
+    | "prepping"
+    | "pouring"
+    | "placing"
+    | "waiting";
   let status: StatusKey = $state("standby");
 
   const statusMessages: Record<StatusKey, string> = {
@@ -70,14 +84,15 @@
     waiting: "Please enjoy!",
   };
 
-function handleKeydown(event: KeyboardEvent) {
-  const keys = Object.keys(statusMessages) as StatusKey[];
-  const keyNum = parseInt(event.key);
+  // --- DEBUG: Keydown handler to change status ---
+  function handleKeydown(event: KeyboardEvent) {
+    const keys = Object.keys(statusMessages) as StatusKey[];
+    const keyNum = parseInt(event.key);
 
-  if (keyNum >= 1 && keyNum <= keys.length) {
-    status = keys[keyNum - 1];
+    if (keyNum >= 1 && keyNum <= keys.length) {
+      status = keys[keyNum - 1];
+    }
   }
-}
 
   onMount(() => {
     window.addEventListener("keydown", handleKeydown);
@@ -86,32 +101,5 @@ function handleKeydown(event: KeyboardEvent) {
 </script>
 
 <ViamProvider {dialConfigs}>
-  <div class="app-container">
-    <aside class="sidebar">
-    </aside>
-
-    <MainContent panes={panesData}>
-      {#snippet statusBar()}
-        <Status message={statusMessages[status]} />
-      {/snippet}
-    </MainContent>
-  </div>
+  <RobotApp />
 </ViamProvider>
-
-<style>
-  .app-container {
-    height: calc(100vh - 80px);
-    width: 100%;
-    max-width: calc(1920px - 80px);
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: 700px 1fr;
-    grid-template-rows: 1fr;
-  }
-
-  .sidebar {
-    color: white;
-    padding: 40px;
-    overflow-y: auto;
-  }
-</style>
