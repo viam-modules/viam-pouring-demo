@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"time"
 
 	"github.com/erh/vmodutils"
 
@@ -91,6 +92,13 @@ func realMain() error {
 			return err
 		}
 		return vc.PourPrep(ctx)
+	case "touch-and-reset":
+		err := vc.Touch(ctx)
+		if err != nil {
+			return err
+		}
+		time.Sleep(5 * time.Second)
+		return vc.Reset(ctx)
 	case "pour":
 		return vc.Pour(ctx)
 	case "put-back":
