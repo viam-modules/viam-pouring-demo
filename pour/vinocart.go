@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"go.uber.org/multierr"
 
 	"github.com/golang/geo/r3"
@@ -162,22 +164,20 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
-	err := vc.c.Gripper.Open(ctx, nil)
-	if err != nil {
-		return err
-	}
+	g := errgroup.Group{}
 
-	err = vc.c.BottleGripper.Open(ctx, nil)
-	if err != nil {
-		return err
-	}
+	g.Go(func() error {
+		return vc.c.Gripper.Open(ctx, nil)
+	})
 
-	err = vc.doAll(ctx, "touch", "prep", 100)
-	if err != nil {
-		return err
-	}
+	g.Go(func() error {
+		return vc.c.BottleGripper.Open(ctx, nil)
+	})
 
-	return nil
+	err := vc.doAll(ctx, "touch", "prep", 100)
+	err2 := g.Wait()
+
+	return multierr.Combine(err, err2)
 }
 
 func (vc *VinoCart) GrabCup(ctx context.Context) error {
@@ -251,6 +251,8 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		{OX: .5, OY: 1, Theta: 180},
 		{OX: 1, OY: 1, Theta: 180},
 		{OX: 1, OY: -1, Theta: 180},
+		{OY: -1, Theta: 180},
+		{OY: -1, OX: -.5, Theta: 180},
 	}
 
 	for _, tryO := range choices {
@@ -286,7 +288,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	// ---- go to pick up
 
-	goToPose := vc.getApproachPoint(obj, -80, o)
+	goToPose := vc.getApproachPoint(obj, -50, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	_, err = vc.c.CupMotionService.Move(
