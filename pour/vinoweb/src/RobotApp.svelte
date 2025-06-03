@@ -121,29 +121,15 @@
 
                             // --- Joint polling ---
                             if (leftArm && rightArm) {
-                                const leftJoints =
-                                    await leftArm.getJointPositions();
-                                const rightJoints =
-                                    await rightArm.getJointPositions();
-                                panesData[0] = {
-                                    ...panesData[0],
-                                    joints: leftJoints.values.map(
-                                        (position, index) => ({
-                                            index,
-                                            position,
-                                        }),
-                                    ),
-                                };
-                                panesData[1] = {
-                                    ...panesData[1],
-                                    joints: rightJoints.values.map(
-                                        (position, index) => ({
-                                            index,
-                                            position,
-                                        }),
-                                    ),
-                                };
-                                panesData = [...panesData]; // trigger $state reactivity
+                                const leftJoints = await leftArm.getJointPositions();
+                                const rightJoints = await rightArm.getJointPositions();
+                                panesData[0].joints = leftJoints.values.map(
+                                    (position, index) => ({ index, position }),
+                                );
+                                panesData[1].joints = rightJoints.values.map(
+                                    (position, index) => ({ index, position }),
+                                );
+                                panesData = panesData; // triggers $state reactivity without remounting children
                             }
                         } catch (err) {
                             // Optionally handle error
