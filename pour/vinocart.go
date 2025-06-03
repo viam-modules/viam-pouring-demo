@@ -180,6 +180,19 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 	return nil
 }
 
+func (vc *VinoCart) GrabCup(ctx context.Context) error {
+	got, err := vc.c.Gripper.Grab(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	if !got {
+		return fmt.Errorf("didn't get cup")
+	}
+
+	return nil
+}
+
 func (vc *VinoCart) Touch(ctx context.Context) error {
 	vc.logger.Infof("touch called")
 
@@ -194,12 +207,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 			return err
 		}
 
-		_, err = vc.c.Gripper.Grab(ctx, nil)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return vc.GrabCup(ctx)
 	}
 
 	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
@@ -285,14 +293,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	// actual grab
-
-	_, err = vc.c.Gripper.Grab(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return vc.GrabCup(ctx)
 }
 
 func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
