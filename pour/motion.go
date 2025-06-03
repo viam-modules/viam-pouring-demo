@@ -9,6 +9,8 @@ import (
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/resource"
+	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
 )
 
@@ -159,4 +161,20 @@ func SetXarmSpeedLog(ctx context.Context, a arm.Arm, speed, accel float64, logge
 	if err != nil {
 		logger.Errorf("SetXarmSpeed failed: %v", err)
 	}
+}
+
+func Jog(ctx context.Context, m motion.Service, n resource.Name, j r3.Vector) error {
+	pif, err := m.GetPose(ctx, n, "world", nil, nil)
+	if err != nil {
+		return err
+	}
+
+	goTo := referenceframe.NewPoseInFrame("world",
+		spatialmath.NewPose(
+			pif.Pose().Point().Add(j),
+			pif.Pose().Orientation(),
+		),
+	)
+
+	return moveWithLinearConstraint(ctx, m, n, goTo)
 }

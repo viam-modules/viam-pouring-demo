@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/golang/geo/r3"
+
 	"github.com/erh/vmodutils"
 
 	vizClient "github.com/viam-labs/motion-tools/client/client"
@@ -98,6 +100,15 @@ func realMain() error {
 			return err
 		}
 		time.Sleep(5 * time.Second)
+		err = p1c.Gripper.Open(ctx, nil)
+		if err != nil {
+			return err
+		}
+
+		err = pour.Jog(ctx, p1c.Motion, p1c.Arm.Name(), r3.Vector{Z: 200})
+		if err != nil {
+			return err
+		}
 		return vc.Reset(ctx)
 	case "pour":
 		return vc.Pour(ctx)
