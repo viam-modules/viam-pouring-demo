@@ -20,6 +20,7 @@ import (
 
 	"github.com/golang/geo/r3"
 
+	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
@@ -65,7 +66,7 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
-	g, err := NewVinoCart(ctx, config, c, robotClient, logger)
+	g, err := NewVinoCart(ctx, config, c, robotClient, nil, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -74,11 +75,12 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 	return g, nil
 }
 
-func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client robot.Robot, logger logging.Logger) (*VinoCart, error) {
+func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client robot.Robot, dataClient *app.DataClient, logger logging.Logger) (*VinoCart, error) {
 	vc := &VinoCart{
 		conf:        conf,
 		c:           c,
 		robotClient: client,
+		dataClient:  dataClient,
 		logger:      logger,
 	}
 
@@ -138,6 +140,7 @@ type VinoCart struct {
 	conf   *Config
 
 	robotClient robot.Robot
+	dataClient  *app.DataClient
 
 	c *Pour1Components
 
@@ -305,7 +308,114 @@ func (vc *VinoCart) GrabCup(ctx context.Context) error {
 		return fmt.Errorf("didn't get cup")
 	}
 
+	return vc.checkPickQuality(ctx)
+}
+
+func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
+
+	imgs, _, err := vc.c.Cam.Images(ctx)
+	if err != nil {
+		return err
+	}
+
+	if imgs[0].SourceName != "" && imgs[0].SourceName != "color" {
+		return fmt.Errorf("bad image name [%v]", imgs[0].SourceName)
+	}
+
+	prepped, err := prepPickImage(imgs[0].Image)
+	if err != nil {
+		return err
+	}
+
+	if vc.dataClient != nil {
+		err := vc.saveCupImage(ctx, prepped)
+		if err != nil {
+			vc.logger.Warnf("can't saveCupImage: %v", err)
+		}
+	}
+
+	cs, err := vc.c.PickQualityService.Classifications(ctx, prepped, 1, nil)
+	if err != nil {
+		return err
+	}
+
+	vc.logger.Infof("quality: %v", cs)
+
+	if len(cs) != 1 {
+		return fmt.Errorf("why is quality array wrong: %v", cs)
+	}
+
+	if cs[0].Label() == "good" {
+		return nil
+	}
+
+	// bad pick, move
+
+	err = vc.doAll(ctx, "touch", "bad-pick-a", 50)
+	if err != nil {
+		return err
+	}
+
+	err = vc.c.Gripper.Open(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	err = vc.doAll(ctx, "touch", "bad-pick-b", 50)
+	if err != nil {
+		return err
+	}
+
+	return fmt.Errorf("bad pick %v", cs[0])
+}
+
+func (vc *VinoCart) saveCupImage(ctx context.Context, prepped image.Image) error {
+	if vc.dataClient == nil {
+		return fmt.Errorf("no data client")
+	}
+
+	pid := os.Getenv("VIAM_MACHINE_PART_ID")
+	if pid == "" {
+		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
+	}
+
+	if vc.dataClient != nil {
+		err := vc.saveCupImage(ctx, prepped)
+		if err != nil {
+			vc.logger.Warnf("couldn't save cam image: %v", err)
+		}
+	}
+
+	data, err := encodePNG(prepped)
+	if err != nil {
+		return err
+	}
+
+	ct := "rdk:component:camera"
+	fn := fmt.Sprintf("cup-pick-edges-%d.png", time.Now().Unix())
+	pngString := "png"
+
+	opts := app.FileUploadOptions{
+		ComponentType: &ct,
+		ComponentName: &vc.conf.CameraName,
+		FileName:      &fn,
+		FileExtension: &pngString,
+	}
+
+	id, err := vc.dataClient.FileUploadFromBytes(ctx, os.Getenv("VIAM_MACHINE_PART_ID"), data, &opts)
+	if err != nil {
+		return err
+	}
+
+	err = vc.dataClient.AddBinaryDataToDatasetByIDs(ctx, []string{id}, "683f8952383a821481d9b5c9")
+	if err != nil {
+		return err
+	}
+
+	vc.logger.Infof("uploaded image to dataset for cup pick quality")
+
 	return nil
+
 }
 
 func (vc *VinoCart) Touch(ctx context.Context) error {
@@ -1018,5 +1128,5 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 		return nil, err
 	}
 
-	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.CupHeight*.6, 20, vc.logger), nil
+	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.CupHeight*.6, 25, vc.logger), nil
 }

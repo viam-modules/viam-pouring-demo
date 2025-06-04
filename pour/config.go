@@ -69,6 +69,7 @@ type Config struct {
 
 	BottleMotionService string `json:"bottle_motion_service"`
 	CupMotionService    string `json:"cup_motion_service"`
+	PickQualityService  string `json:"pick_quality_service"`
 
 	SimoneHack bool `json:"simone_hack"`
 	Loop       bool `json:"loop"`
@@ -83,6 +84,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.CupMotionService != "" {
 		deps = append(deps, cfg.CupMotionService)
+	}
+
+	if cfg.PickQualityService != "" {
+		deps = append(deps, cfg.PickQualityService)
 	}
 
 	if cfg.ArmName == "" {
@@ -161,6 +166,7 @@ type Pour1Components struct {
 
 	BottleMotionService motion.Service
 	CupMotionService    motion.Service
+	PickQualityService  vision.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -203,6 +209,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.CupMotionService != "" {
 		c.CupMotionService, err = motion.FromDependencies(deps, config.CupMotionService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.PickQualityService != "" {
+		c.PickQualityService, err = vision.FromDependencies(deps, config.PickQualityService)
 		if err != nil {
 			return nil, err
 		}

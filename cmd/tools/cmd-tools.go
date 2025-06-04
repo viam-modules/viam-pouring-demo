@@ -10,6 +10,7 @@ import (
 
 	"github.com/erh/vmodutils"
 
+	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/logging"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
@@ -71,7 +72,16 @@ func realMain() error {
 		return err
 	}
 
-	vc, err := pour.NewVinoCart(ctx, cfg, p1c, client, logger)
+	var dataClient *app.DataClient
+	appClient, err := app.CreateViamClientFromEnvVars(ctx, nil, logger)
+	if err != nil {
+		logger.Warnf("can't connect to app: %v", err)
+	} else {
+		defer appClient.Close()
+		dataClient = appClient.DataClient()
+	}
+
+	vc, err := pour.NewVinoCart(ctx, cfg, p1c, client, dataClient, logger)
 	if err != nil {
 		return err
 	}
