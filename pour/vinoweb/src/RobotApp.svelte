@@ -3,15 +3,23 @@
     import { useRobotClient } from "@viamrobotics/svelte-sdk";
     import { GenericServiceClient } from "@viamrobotics/sdk";
     import { ArmClient } from "@viamrobotics/sdk";
-    import { Struct } from "@bufbuild/protobuf";
+    import { Struct, type JsonValue } from "@bufbuild/protobuf";
     import MainContent from "./lib/MainContent.svelte";
     import Status from "./lib/status.svelte";
     import type { Joint } from "./lib/types.js";
 
-    // --- panesData and status logic ---
+    // --- Generate initial joints ---
+    function* jointGenerator() {
+        for (let index = 0; index < 6; index++) {
+            yield { index, position: 0 } as Joint;
+        }
+    }
+    const initialJoints = Array.from(jointGenerator()) as Joint[];
+
+    // --- Define panes data ---
     let panesData = $state([
         {
-            joints: [{ index: 0, position: -184.56 }] as Joint[],
+            joints: Array.from(initialJoints) as Joint[],
             tableTitle: "Left Arm",
             camera: {
                 name: "cam-left",
@@ -20,14 +28,7 @@
             },
         },
         {
-            joints: [
-                { index: 0, position: -64.83 },
-                { index: 1, position: -108.82 },
-                { index: 2, position: -32.63 },
-                { index: 3, position: 348.78 },
-                { index: 4, position: 110.8 },
-                { index: 5, position: -184.56 },
-            ] as Joint[],
+            joints: Array.from(initialJoints) as Joint[],
             tableTitle: "Right Arm",
             camera: {
                 name: "cam-right",
@@ -37,6 +38,7 @@
         },
     ]);
 
+    // --- Pouring status ---
     type StatusKey =
         | "standby"
         | "picking"
@@ -57,6 +59,7 @@
         "manual mode": "Manual mode active",
     };
 
+    // --- Keyboard controls for debugging ---
     function handleKeydown(event: KeyboardEvent) {
         const keys = Object.keys(statusMessages) as StatusKey[];
         const keyNum = parseInt(event.key);
