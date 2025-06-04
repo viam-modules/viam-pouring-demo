@@ -88,47 +88,48 @@
         if (robotClient && !pollingHandle) {
             leftArm = new ArmClient(robotClient, "arm-left");
             rightArm = new ArmClient(robotClient, "arm-right");
+            generic = new GenericServiceClient(robotClient, "cart");
 
-            (async () => {
+            pollingHandle = setInterval(async () => {
+                // --- Status ---
                 try {
-                    generic = new GenericServiceClient(robotClient, "cart");
-
-                    pollingHandle = setInterval(async () => {
-                        try {
-                            // --- Status polling ---
-                            const result = await generic!.doCommand(Struct.fromJson({ status: true }));
-                            if (
-                                result &&
-                                typeof result === "object" &&
-                                "status" in result &&
-                                typeof (result as any).status === "string"
-                            ) {
-                                const statusStr = (result as any).status;
-                                if ((Object.keys(statusMessages) as StatusKey[]).includes(statusStr as StatusKey)) {
-                                    status = statusStr as StatusKey;
-                                }
-                            }
-
-                            // --- Joint polling ---
-                            if (leftArm && rightArm) {
-                                const leftJoints = await leftArm.getJointPositions();
-                                const rightJoints = await rightArm.getJointPositions();
-                                panesData[0].joints = leftJoints.values.map(
-                                    (position, index) => ({ index, position }),
-                                );
-                                panesData[1].joints = rightJoints.values.map(
-                                    (position, index) => ({ index, position }),
-                                );
-                                panesData = panesData; // triggers $state reactivity without remounting children
-                            }
-                        } catch (err) {
-                            // Optionally handle error
+                    const result = await generic!.doCommand(Struct.fromJson({ status: true }));
+                    if (
+                        result &&
+                        typeof result === "object" &&
+                        "status" in result &&
+                        typeof (result as any).status === "string"
+                    ) {
+                        const statusStr = (result as any).status;
+                        if ((Object.keys(statusMessages) as StatusKey[]).includes(statusStr as StatusKey)) {
+                            status = statusStr as StatusKey;
                         }
-                    }, pollingInterval);
+                    }
                 } catch (err) {
-                    // Optionally handle error
+                    // Optionally handle status polling error
                 }
-            })();
+
+                // --- Joint positions ---
+                if (leftArm && rightArm) {
+                    try {
+                        const leftJoints = await leftArm.getJointPositions();
+                        panesData[0].joints = leftJoints.values.map(
+                            (position, index) => ({ index, position }),
+                        );
+                    } catch (err) {
+                        // Optionally handle left arm error
+                    }
+                    try {
+                        const rightJoints = await rightArm.getJointPositions();
+                        panesData[1].joints = rightJoints.values.map(
+                            (position, index) => ({ index, position }),
+                        );
+                    } catch (err) {
+                        // Optionally handle right arm error
+                    }
+                    panesData = panesData; // triggers $state reactivity without remounting children
+                }
+            }, pollingInterval);
         }
 
         return () => {
