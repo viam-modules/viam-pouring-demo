@@ -76,7 +76,8 @@
     // --- Robot client and polling logic ---
     const robotClientStore = useRobotClient(() => "xxx");
     let generic: GenericServiceClient | null = null;
-    let pollingInterval: ReturnType<typeof setInterval> | null = null;
+    let pollingHandle: ReturnType<typeof setInterval> | null = null;
+    let pollingInterval = 250; // Polling interval in milliseconds
 
     // -- Robot Arms ---
     let leftArm: ArmClient | null = null;
@@ -84,7 +85,7 @@
 
     $effect(() => {
         const robotClient = robotClientStore.current;
-        if (robotClient && !pollingInterval) {
+        if (robotClient && !pollingHandle) {
             leftArm = new ArmClient(robotClient, "arm-left");
             rightArm = new ArmClient(robotClient, "arm-right");
 
@@ -92,33 +93,19 @@
                 try {
                     generic = new GenericServiceClient(robotClient, "cart");
 
-                    pollingInterval = setInterval(async () => {
+                    pollingHandle = setInterval(async () => {
                         try {
                             // --- Status polling ---
-                            const result = await generic!.doCommand(
-                                Struct.fromJson({ status: true }),
-                            );
-                            let resultObj: any = {};
-                            if (result instanceof Struct) {
-                                resultObj = result.toJson();
-                            } else if (
-                                typeof result === "object" &&
-                                result !== null
-                            ) {
-                                resultObj = result;
-                            }
+                            const result = await generic!.doCommand(Struct.fromJson({ status: true }));
                             if (
-                                resultObj &&
-                                typeof resultObj.status === "string"
+                                result &&
+                                typeof result === "object" &&
+                                "status" in result &&
+                                typeof (result as any).status === "string"
                             ) {
-                                if (
-                                    (
-                                        Object.keys(
-                                            statusMessages,
-                                        ) as StatusKey[]
-                                    ).includes(resultObj.status as StatusKey)
-                                ) {
-                                    status = resultObj.status as StatusKey;
+                                const statusStr = (result as any).status;
+                                if ((Object.keys(statusMessages) as StatusKey[]).includes(statusStr as StatusKey)) {
+                                    status = statusStr as StatusKey;
                                 }
                             }
 
@@ -137,7 +124,7 @@
                         } catch (err) {
                             // Optionally handle error
                         }
-                    }, 250);
+                    }, pollingInterval);
                 } catch (err) {
                     // Optionally handle error
                 }
@@ -145,9 +132,9 @@
         }
 
         return () => {
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-                pollingInterval = null;
+            if (pollingHandle) {
+                clearInterval(pollingHandle);
+                pollingHandle = null;
             }
         };
     });
