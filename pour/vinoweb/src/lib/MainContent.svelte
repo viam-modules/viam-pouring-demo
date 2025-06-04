@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { fade, scale } from "svelte/transition";
     import type { Snippet } from "svelte";
     import DataPane from "./DataPane.svelte";
     import type { Joint } from "./types.js";
@@ -31,20 +32,27 @@
     </header>
 
     <section class="content-panes">
-        {#each panes as pane}
-            <DataPane>
-                {#snippet table()}
-                    <JointTable joints={pane.joints} title={pane.tableTitle} />
-                {/snippet}
-
-                {#snippet camera()}
-                    <CameraFeed
-                        name={pane.camera.name}
-                        partID={pane.camera.partID}
-                        label={pane.camera.label}
-                    />
-                {/snippet}
-            </DataPane>
+        {#each panes as pane, i}
+            <div
+                class="expand-pane"
+                transition:scale={{ duration: 350 }}
+            >
+                <DataPane
+                    mode={panes.length === 1 ? "embedded" : "side-by-side"}
+                >
+                    {#snippet table()}
+                        <JointTable joints={pane.joints} />
+                    {/snippet}
+                    {#snippet camera()}
+                        <CameraFeed
+                            name={pane.camera.name}
+                            partID={pane.camera.partID}
+                            label={pane.camera.label}
+                            overlay={panes.length === 1 ? table : undefined}
+                        />
+                    {/snippet}
+                </DataPane>
+            </div>
         {/each}
     </section>
 </main>
@@ -74,5 +82,9 @@
     min-height: 0;
     padding: 5px;
     border-radius: 16px;
+  }
+
+  .expand-pane:only-child {
+    grid-row: 1 / span 2;
   }
 </style>

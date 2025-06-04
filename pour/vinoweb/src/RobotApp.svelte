@@ -8,36 +8,6 @@
     import Status from "./lib/status.svelte";
     import type { Joint } from "./lib/types.js";
 
-    // --- Generate initial joints ---
-    function* jointGenerator() {
-        for (let index = 0; index < 6; index++) {
-            yield { index, position: 0 } as Joint;
-        }
-    }
-    const initialJoints = Array.from(jointGenerator()) as Joint[];
-
-    // --- Define panes data ---
-    let panesData = $state([
-        {
-            joints: Array.from(initialJoints) as Joint[],
-            tableTitle: "Left Arm",
-            camera: {
-                name: "cam-left",
-                partID: "xxx",
-                label: "Left Camera",
-            },
-        },
-        {
-            joints: Array.from(initialJoints) as Joint[],
-            tableTitle: "Right Arm",
-            camera: {
-                name: "cam-right",
-                partID: "xxx",
-                label: "Right Camera",
-            },
-        },
-    ]);
-
     // --- Pouring status ---
     type StatusKey =
         | "standby"
@@ -47,7 +17,7 @@
         | "placing"
         | "waiting"
         | "manual mode";
-    let status: StatusKey = $state("standby");
+    let status: StatusKey = $state("standby") as StatusKey;
 
     const statusMessages: Record<StatusKey, string> = {
         standby: "Please place your glass in the indicated area",
@@ -73,6 +43,49 @@
         return () => window.removeEventListener("keydown", handleKeydown);
     });
 
+    // --- Generate initial joints ---
+    function* jointGenerator() {
+        for (let index = 0; index < 6; index++) {
+            yield { index, position: 0 } as Joint;
+        }
+    }
+    const initialJoints = Array.from(jointGenerator()) as Joint[];
+
+    // --- Define panes data ---
+    let panesData = $derived(
+        status === "picking"  ?
+            [
+                {
+                    joints: Array.from(initialJoints) as Joint[],
+                    tableTitle: "Left Arm",
+                    camera: {
+                        name: "cam-left",
+                        partID: "xxx",
+                        label: "Left Camera",
+                    },
+                },
+            ] :
+            [
+                {
+                    joints: Array.from(initialJoints) as Joint[],
+                    tableTitle: "Left Arm",
+                    camera: {
+                        name: "cam-left",
+                        partID: "xxx",
+                        label: "Left Camera",
+                    },
+                },        
+            {
+                joints: Array.from(initialJoints) as Joint[],
+                tableTitle: "Right Arm",
+                camera: {
+                    name: "cam-right",
+                    partID: "xxx",
+                    label: "Right Camera",
+                },
+            },
+        ])
+
     // --- Robot client and polling logic ---
     const robotClientStore = useRobotClient(() => "xxx");
     let generic: GenericServiceClient | null = null;
@@ -93,7 +106,9 @@
             pollingHandle = setInterval(async () => {
                 // --- Status ---
                 try {
-                    const result = await generic!.doCommand(Struct.fromJson({ status: true }));
+                    const result = await generic!.doCommand(
+                        Struct.fromJson({ status: true }),
+                    );
                     if (
                         result &&
                         typeof result === "object" &&
@@ -101,7 +116,11 @@
                         typeof (result as any).status === "string"
                     ) {
                         const statusStr = (result as any).status;
-                        if ((Object.keys(statusMessages) as StatusKey[]).includes(statusStr as StatusKey)) {
+                        if (
+                            (
+                                Object.keys(statusMessages) as StatusKey[]
+                            ).includes(statusStr as StatusKey)
+                        ) {
                             status = statusStr as StatusKey;
                         }
                     }

@@ -25,9 +25,6 @@
 
   $effect(() => {
     const robotClient = robotClientStore.current;
-    if (robotClient) {
-      // generic = new GenericComponentClient(robotClient, "cart");
-    }
   });
 
 </script>
