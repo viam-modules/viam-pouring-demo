@@ -9,6 +9,7 @@ import (
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/vision"
+	//"go.viam.com/rdk/spatialmath"
 	viz "go.viam.com/rdk/vision"
 	"go.viam.com/rdk/vision/classification"
 	"go.viam.com/rdk/vision/objectdetection"
@@ -149,6 +150,9 @@ func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta
 
 		height := md.MaxZ
 		width := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
+
+		//box, ok := o.Geometry.(*spatialmath.Box)
+		//logger.Infof("foooo %v %v", box, ok)
 
 		heightDelta := math.Abs(height - correctHeight)
 		widthDelta := math.Abs(correctWidth - width)
