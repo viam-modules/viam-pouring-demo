@@ -21,9 +21,10 @@
     interface Props {
         statusBar: Snippet;
         panes: PaneData[];
+        status: string; // Add this line
     }
 
-    let { statusBar, panes }: Props = $props();
+    let { statusBar, panes, status }: Props = $props(); // Destructure status from props
 </script>
 
 <main class="main-content">
@@ -32,28 +33,39 @@
     </header>
 
     <section class="content-panes">
-        {#each panes as pane, i}
-            <div
-                class="expand-pane"
-                transition:scale={{ duration: 350 }}
+        <div class="expand-pane">
+            <DataPane
+                mode={status === "picking" ? "embedded" : "side-by-side"}
             >
-                <DataPane
-                    mode={panes.length === 1 ? "embedded" : "side-by-side"}
-                >
+                {#snippet table()}
+                    <JointTable joints={panes[0].joints} />
+                {/snippet}
+                {#snippet camera()}
+                    <CameraFeed
+                        name={panes[0].camera.name}
+                        partID={panes[0].camera.partID}
+                        label={panes[0].camera.label}
+                        overlay={status === "picking" ? table : undefined}
+                    />
+                {/snippet}
+            </DataPane>
+        </div>
+        {#if status !== "picking"}
+            <div class="expand-pane">
+                <DataPane mode="side-by-side">
                     {#snippet table()}
-                        <JointTable joints={pane.joints} />
+                        <JointTable joints={panes[1].joints} />
                     {/snippet}
                     {#snippet camera()}
                         <CameraFeed
-                            name={pane.camera.name}
-                            partID={pane.camera.partID}
-                            label={pane.camera.label}
-                            overlay={panes.length === 1 ? table : undefined}
+                            name={panes[1].camera.name}
+                            partID={panes[1].camera.partID}
+                            label={panes[1].camera.label}
                         />
                     {/snippet}
                 </DataPane>
             </div>
-        {/each}
+        {/if}
     </section>
 </main>
 

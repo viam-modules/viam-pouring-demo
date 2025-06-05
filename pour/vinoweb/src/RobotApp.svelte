@@ -51,40 +51,31 @@
     }
     const initialJoints = Array.from(jointGenerator()) as Joint[];
 
+    // --- $state-ful joint arrays ---
+    let leftJoints = $state([...initialJoints]);
+    let rightJoints = $state([...initialJoints]);
+
     // --- Define panes data ---
-    let panesData = $derived(
-        status === "picking"  ?
-            [
-                {
-                    joints: Array.from(initialJoints) as Joint[],
-                    tableTitle: "Left Arm",
-                    camera: {
-                        name: "cam-left",
-                        partID: "xxx",
-                        label: "Left Camera",
-                    },
-                },
-            ] :
-            [
-                {
-                    joints: Array.from(initialJoints) as Joint[],
-                    tableTitle: "Left Arm",
-                    camera: {
-                        name: "cam-left",
-                        partID: "xxx",
-                        label: "Left Camera",
-                    },
-                },        
-            {
-                joints: Array.from(initialJoints) as Joint[],
-                tableTitle: "Right Arm",
-                camera: {
-                    name: "cam-right",
-                    partID: "xxx",
-                    label: "Right Camera",
-                },
+    let panesData = $state([
+        {
+            joints: leftJoints,
+            tableTitle: "Left Arm",
+            camera: {
+                name: "cam-left",
+                partID: "xxx",
+                label: "Left Camera",
             },
-        ])
+        },
+        {
+            joints: rightJoints,
+            tableTitle: "Right Arm",
+            camera: {
+                name: "cam-right",
+                partID: "xxx",
+                label: "Right Camera",
+            },
+        },
+    ]);
 
     // --- Robot client and polling logic ---
     const robotClientStore = useRobotClient(() => "xxx");
@@ -164,7 +155,10 @@
 <div class="app-container">
     <aside class="sidebar"></aside>
 
-    <MainContent panes={panesData}>
+    <MainContent
+        panes={panesData}
+        status={status}
+    >
         {#snippet statusBar()}
             <Status message={statusMessages[status]} />
         {/snippet}
