@@ -186,6 +186,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		vc.setStatus("manual mode")
 	}()
 
+	if cmd["reset"] == true {
+		return nil, vc.Reset(ctx)
+	}
+
 	if cmd["touch"] == true {
 		return nil, vc.Touch(ctx)
 	}
@@ -377,13 +381,6 @@ func (vc *VinoCart) saveCupImage(ctx context.Context, prepped image.Image) error
 	pid := os.Getenv("VIAM_MACHINE_PART_ID")
 	if pid == "" {
 		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
-	}
-
-	if vc.dataClient != nil {
-		err := vc.saveCupImage(ctx, prepped)
-		if err != nil {
-			vc.logger.Warnf("couldn't save cam image: %v", err)
-		}
 	}
 
 	data, err := encodePNG(prepped)
