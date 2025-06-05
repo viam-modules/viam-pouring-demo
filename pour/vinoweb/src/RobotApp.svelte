@@ -98,10 +98,11 @@
 
     $effect(() => {
         const robotClient = robotClientStore.current;
+        $inspect(robotClient, "robotClient");
         if (robotClient && !pollingHandle) {
-            leftArm = new ArmClient(robotClient, "arm-left");
-            rightArm = new ArmClient(robotClient, "arm-right");
-            generic = new GenericServiceClient(robotClient, "cart");
+            if (!leftArm) leftArm = new ArmClient(robotClient, "arm-left");
+            if (!rightArm) rightArm = new ArmClient(robotClient, "arm-right");
+            if (!generic) generic = new GenericServiceClient(robotClient, "cart");
 
             pollingHandle = setInterval(async () => {
                 // --- Status ---
