@@ -41,7 +41,7 @@ import (
 var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
-const gripperToCupCenterHack = 0
+const gripperToCupCenterHack = -10
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -621,31 +621,15 @@ func getApproachPoint(md pointcloud.MetaData, c r3.Vector, deltaLinear float64, 
 
 	d := math.Pow((o.OX*o.OX)+(o.OY*o.OY), .5)
 
-	approachPoint := r3.Vector{
-		X: c.X,
-		Y: c.Y,
-		Z: c.Z,
-	}
-
 	xLinear := (o.OX * deltaLinear / d)
 	yLinear := (o.OY * deltaLinear / d)
 
 	logger.Infof("xLinear: %0.2f yLinear: %0.2f", xLinear, yLinear)
 
-	if o.OX != 0 {
-		if xLinear > 0 {
-			approachPoint.X = md.MinX - xLinear
-		} else if xLinear < 0 {
-			approachPoint.X = md.MaxX - xLinear
-		}
-	}
-
-	if o.OY != 0 {
-		if yLinear > 0 {
-			approachPoint.Y = md.MinY - yLinear
-		} else if yLinear < 0 {
-			approachPoint.Y = md.MaxY - yLinear
-		}
+	approachPoint := r3.Vector{
+		X: c.X - xLinear,
+		Y: c.Y - yLinear,
+		Z: c.Z,
 	}
 
 	return approachPoint
