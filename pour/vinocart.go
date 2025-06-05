@@ -317,6 +317,10 @@ func (vc *VinoCart) GrabCup(ctx context.Context) error {
 
 func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 
+	if vc.c.PickQualityService == nil {
+		return nil
+	}
+
 	imgs, _, err := vc.c.Cam.Images(ctx)
 	if err != nil {
 		return err
