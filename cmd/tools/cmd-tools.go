@@ -104,7 +104,8 @@ func realMain() error {
 		for i := 0; i < n; i++ {
 			err := vc.Touch(ctx)
 			if err != nil {
-				return err
+				logger.Infof("error touching, continuing: %v", err)
+				continue
 			}
 			time.Sleep(5 * time.Second)
 			err = p1c.Gripper.Open(ctx, nil)
@@ -121,7 +122,7 @@ func realMain() error {
 				return err
 			}
 		}
-		return nil
+		return err
 	case "pour":
 		return vc.Pour(ctx)
 	case "put-back":
