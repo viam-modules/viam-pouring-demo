@@ -230,6 +230,7 @@ func (vc *VinoCart) getStatus() string {
 }
 
 func (vc *VinoCart) setStatus(s string) {
+	vc.logger.Infof("setStatus: %v", s)
 	vc.statusLock.Lock()
 	defer vc.statusLock.Unlock()
 	vc.status = s
@@ -420,7 +421,7 @@ func (vc *VinoCart) saveCupImage(ctx context.Context, prepped image.Image) error
 }
 
 func (vc *VinoCart) Touch(ctx context.Context) error {
-	vc.logger.Infof("touch called")
+	vc.setStatus("looking for glass")
 
 	err := vc.Reset(ctx)
 	if err != nil {
@@ -678,7 +679,6 @@ func (vc *VinoCart) doAll(ctx context.Context, stage, step string, speedAndAccel
 }
 
 func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
-
 	positions, err := vc.c.BottleArm.JointPositions(ctx, nil)
 	if err != nil {
 		return err
@@ -697,7 +697,7 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 
 	time.Sleep(50 * time.Millisecond)
 
-	_, err = vc.c.BottleGripper.Grab(ctx, nil)
+	gotTheBottle, err := vc.c.BottleGripper.Grab(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -712,12 +712,22 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 		return err
 	}
 
+	if !gotTheBottle {
+		return fmt.Errorf("didn't grab the bottle")
+	}
+
 	return nil
 }
 
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	vc.setStatus("prepping")
-	err := vc.doAll(ctx, "pour_prep", "prep-grab", 80)
+
+	err := CheckXArmGripperHasSomething(ctx, vc.c.Gripper)
+	if err != nil {
+		return err
+	}
+
+	err = vc.doAll(ctx, "pour_prep", "prep-grab", 80)
 	if err != nil {
 		return err
 	}
@@ -795,7 +805,16 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, loopNumber in
 
 func (vc *VinoCart) Pour(ctx context.Context) error {
 	vc.setStatus("pouring")
-	err := vc.doAll(ctx, "pour", "prep", 50)
+
+	err := multierr.Combine(
+		CheckXArmGripperHasSomething(ctx, vc.c.Gripper),
+		CheckXArmGripperHasSomething(ctx, vc.c.BottleGripper),
+	)
+	if err != nil {
+		return err
+	}
+
+	err = vc.doAll(ctx, "pour", "prep", 50)
 	if err != nil {
 		return err
 	}
