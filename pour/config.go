@@ -71,8 +71,7 @@ type Config struct {
 	CupMotionService    string `json:"cup_motion_service"`
 	PickQualityService  string `json:"pick_quality_service"`
 
-	SimoneHack bool `json:"simone_hack"`
-	Loop       bool `json:"loop"`
+	Loop bool `json:"loop"`
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {

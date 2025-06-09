@@ -41,7 +41,7 @@ import (
 var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
-const gripperToCupCenterHack = -10
+const gripperToCupCenterHack = -35
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -426,15 +426,6 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	err := vc.Reset(ctx)
 	if err != nil {
 		return err
-	}
-
-	if vc.conf.SimoneHack {
-		err = vc.doAll(ctx, "touch", "pickup-hack", 60)
-		if err != nil {
-			return err
-		}
-
-		return vc.GrabCup(ctx)
 	}
 
 	start := time.Now()
