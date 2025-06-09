@@ -11,7 +11,10 @@ import (
 	"github.com/erh/vmodutils"
 
 	"go.viam.com/rdk/app"
+	"go.viam.com/rdk/components/posetracker"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/robot"
 
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
@@ -177,7 +180,39 @@ func realMain() error {
 		}
 
 		return vc.Reset(ctx)
+	case "pose":
+		left, err := getAPose(ctx, client, "april-tag-tracker-left", "7")
+		if err != nil {
+			return err
+		}
+
+		right, err := getAPose(ctx, client, "april-tag-tracker-right", "7")
+		if err != nil {
+			return err
+		}
+
+		logger.Infof("left : %v", left)
+		logger.Infof("right: %v", right)
+		return nil
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}
+}
+
+func getAPose(ctx context.Context, client robot.Robot, poseTracker, name string) (*referenceframe.PoseInFrame, error) {
+	pt, err := posetracker.FromRobot(client, poseTracker)
+	if err != nil {
+		return nil, err
+	}
+	poses, err := pt.Poses(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	p, ok := poses[name]
+	if !ok {
+		return nil, fmt.Errorf("didn't find name [%s]", p)
+	}
+
+	return client.TransformPose(ctx, p, "world", nil)
 }
