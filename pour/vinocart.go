@@ -878,6 +878,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		return err
 	}
 
+	vc.logger.Infof("got box for crop %v", box)
+
 	go func() {
 		defer wg.Done()
 		err := vc.doPourMotion(ctx, pourContext)
