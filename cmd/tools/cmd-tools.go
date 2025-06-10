@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"image/png"
+	"os"
 	"time"
 
 	"github.com/golang/geo/r3"
@@ -194,6 +196,22 @@ func realMain() error {
 		logger.Infof("left : %v", left)
 		logger.Infof("right: %v", right)
 		return nil
+	case "pour-glass-find-crop":
+		box, err := vc.PourGlassFindCroppedRect(ctx)
+		if err != nil {
+			return err
+		}
+		logger.Infof("box: %v", box)
+		img, err := vc.PourGlassFindCroppedImage(ctx, box)
+		if err != nil {
+			return err
+		}
+		file, err := os.Create("foo.png")
+		if err != nil {
+			return fmt.Errorf("couldn't create file ", err)
+		}
+		defer file.Close()
+		return png.Encode(file, img)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}

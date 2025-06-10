@@ -54,7 +54,6 @@ type Config struct {
 	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
 	CupFinderService string `json:"cup_finder_service"` // find the cups on the table
-	CupTopService    string `json:"cup_top_service"`    // to hone in on the cup
 
 	Positions map[string]ConfigStatePostions
 
@@ -67,9 +66,10 @@ type Config struct {
 	BottleHeight float64 `json:"bottle_height"`
 	CupHeight    float64 `json:"cup_height"`
 
-	BottleMotionService string `json:"bottle_motion_service"`
-	CupMotionService    string `json:"cup_motion_service"`
-	PickQualityService  string `json:"pick_quality_service"`
+	BottleMotionService  string `json:"bottle_motion_service"`
+	CupMotionService     string `json:"cup_motion_service"`
+	PickQualityService   string `json:"pick_quality_service"`
+	PourGlassFindService string `json:"pour_glass_find_service"`
 
 	Loop bool `json:"loop"`
 }
@@ -87,6 +87,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.PickQualityService != "" {
 		deps = append(deps, cfg.PickQualityService)
+	}
+
+	if cfg.PourGlassFindService != "" {
+		deps = append(deps, cfg.PourGlassFindService)
 	}
 
 	if cfg.ArmName == "" {
@@ -115,9 +119,6 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.CupFinderService != "" {
 		optionals = append(optionals, cfg.CupFinderService)
-	}
-	if cfg.CupTopService != "" {
-		optionals = append(optionals, cfg.CupTopService)
 	}
 
 	if cfg.BottleGripper != "" {
@@ -156,16 +157,16 @@ type Pour1Components struct {
 	CamVision    vision.Service
 
 	CupFinder vision.Service
-	CupTop    vision.Service
 
 	Positions map[string]StagePositions
 
 	BottleGripper gripper.Gripper
 	BottleArm     arm.Arm
 
-	BottleMotionService motion.Service
-	CupMotionService    motion.Service
-	PickQualityService  vision.Service
+	BottleMotionService  motion.Service
+	CupMotionService     motion.Service
+	PickQualityService   vision.Service
+	PourGlassFindService vision.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -220,15 +221,15 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	if config.CupFinderService != "" {
-		c.CupFinder, err = vision.FromDependencies(deps, config.CupFinderService)
+	if config.PourGlassFindService != "" {
+		c.PourGlassFindService, err = vision.FromDependencies(deps, config.PourGlassFindService)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if config.CupTopService != "" {
-		c.CupTop, err = vision.FromDependencies(deps, config.CupTopService)
+	if config.CupFinderService != "" {
+		c.CupFinder, err = vision.FromDependencies(deps, config.CupFinderService)
 		if err != nil {
 			return nil, err
 		}

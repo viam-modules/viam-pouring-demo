@@ -21,11 +21,13 @@ import (
 	"github.com/golang/geo/r3"
 
 	"go.viam.com/rdk/app"
+	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
+	"go.viam.com/rdk/rimage"
 	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/generic"
 	"go.viam.com/rdk/services/motion"
@@ -377,6 +379,14 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 	}
 
 	return fmt.Errorf("bad pick %v", cs[0])
+}
+
+func saveImageToDatasetFromCamera(ctx context.Context, cam camera.Camera, dataClient *app.DataClient, dataSetId string) error {
+	imgs, _, err := cam.Images(ctx)
+	if err != nil {
+		return err
+	}
+	return saveImageToDataset(ctx, cam.Name(), imgs[0].Image, dataClient, dataSetId)
 }
 
 func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string) error {
@@ -767,24 +777,58 @@ func (vc *VinoCart) goTo(ctx context.Context, poss ...toggleswitch.Switch) error
 	return multierr.Combine(errors...)
 }
 
-func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, loopNumber int) (image.Image, string, error) {
-	nimgs, _, err := vc.c.GlassPourCam.Images(ctx)
+func (vc *VinoCart) PourGlassFindCroppedRect(ctx context.Context) (*image.Rectangle, error) {
+	detections, err := vc.c.PourGlassFindService.DetectionsFromCamera(ctx, "", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(detections) == 0 {
+		return nil, fmt.Errorf("did not find glass to monitor pour")
+	}
+
+	return detections[0].BoundingBox(), nil
+}
+
+func (vc *VinoCart) PourGlassFindCroppedImage(ctx context.Context, r *image.Rectangle) (image.Image, error) {
+
+	imgs, _, err := vc.c.GlassPourCam.Images(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	img := imgs[0].Image
+
+	lazy, ok := img.(*rimage.LazyEncodedImage)
+	if ok {
+		img, err = lazy.DecodedImage()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return img.(subImager).SubImage(*r), nil
+}
+
+type subImager interface {
+	SubImage(r image.Rectangle) image.Image
+}
+
+func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Rectangle, loopNumber int) (image.Image, string, error) {
+	img, err := vc.PourGlassFindCroppedImage(ctx, box)
 	if err != nil {
 		return nil, "", err
-	}
-	if len(nimgs) == 0 {
-		return nil, "", fmt.Errorf("GlassPourCam returned no images")
 	}
 
 	fn := ""
 	if loopNumber >= 0 {
-		fn, err = saveImage(nimgs[0].Image, loopNumber)
+		fn, err = saveImage(img, loopNumber)
 		if err != nil {
 			return nil, "", err
 		}
 	}
 
-	return nimgs[0].Image, fn, nil
+	return img, fn, nil
 }
 
 func (vc *VinoCart) Pour(ctx context.Context) error {
@@ -817,6 +861,23 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
+	if vc.dataClient != nil && vc.c.GlassPourCam != nil {
+		vc.logger.Infof("uploading image to dataset for cup finding")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "683d1210c83b3f3823ec70ff")
+			if err != nil {
+				vc.logger.Errorf("error saving cup cam to data set: %v", err)
+			}
+		}()
+	}
+
+	box, err := vc.PourGlassFindCroppedRect(ctx)
+	if err != nil {
+		return err
+	}
+
 	go func() {
 		defer wg.Done()
 		err := vc.doPourMotion(ctx, pourContext)
@@ -840,7 +901,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
-		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, -1)
+		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, -1)
 		if err != nil {
 			return err
 		}
