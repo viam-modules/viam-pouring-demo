@@ -208,7 +208,7 @@ func realMain() error {
 		}
 		file, err := os.Create("foo.png")
 		if err != nil {
-			return fmt.Errorf("couldn't create file ", err)
+			return fmt.Errorf("couldn't create file %v", err)
 		}
 		defer file.Close()
 		return png.Encode(file, img)
