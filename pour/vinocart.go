@@ -337,7 +337,8 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 	}
 
 	if vc.dataClient != nil {
-		err := vc.saveCupImage(ctx, prepped)
+		vc.logger.Infof("uploading image to dataset for cup pick quality")
+		err := saveImageToDataset(ctx, vc.c.Cam.Name(), prepped, vc.dataClient, "683f8952383a821481d9b5c9")
 		if err != nil {
 			vc.logger.Warnf("can't saveCupImage: %v", err)
 		}
@@ -378,46 +379,38 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 	return fmt.Errorf("bad pick %v", cs[0])
 }
 
-func (vc *VinoCart) saveCupImage(ctx context.Context, prepped image.Image) error {
-	if vc.dataClient == nil {
-		return fmt.Errorf("no data client")
-	}
-
+func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string) error {
 	pid := os.Getenv("VIAM_MACHINE_PART_ID")
 	if pid == "" {
 		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
 	}
 
-	data, err := encodePNG(prepped)
+	data, err := encodePNG(img)
 	if err != nil {
 		return err
 	}
 
-	ct := "rdk:component:camera"
-	fn := fmt.Sprintf("cup-pick-edges-%d.png", time.Now().Unix())
+	ct := component.API.String()
+	cn := component.ShortName()
 	pngString := "png"
 
 	opts := app.FileUploadOptions{
 		ComponentType: &ct,
-		ComponentName: &vc.conf.CameraName,
-		FileName:      &fn,
+		ComponentName: &cn,
 		FileExtension: &pngString,
 	}
 
-	id, err := vc.dataClient.FileUploadFromBytes(ctx, os.Getenv("VIAM_MACHINE_PART_ID"), data, &opts)
+	id, err := dataClient.FileUploadFromBytes(ctx, pid, data, &opts)
 	if err != nil {
 		return err
 	}
 
-	err = vc.dataClient.AddBinaryDataToDatasetByIDs(ctx, []string{id}, "683f8952383a821481d9b5c9")
+	err = dataClient.AddBinaryDataToDatasetByIDs(ctx, []string{id}, dataSetId)
 	if err != nil {
 		return err
 	}
-
-	vc.logger.Infof("uploaded image to dataset for cup pick quality")
 
 	return nil
-
 }
 
 func (vc *VinoCart) Touch(ctx context.Context) error {
