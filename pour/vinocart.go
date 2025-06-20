@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/png"
 	"io/fs"
-	"math"
 	"net/http"
 	"os"
 	"sync"
@@ -24,7 +23,6 @@ import (
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
-	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/rimage"
@@ -604,31 +602,13 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 	md := obj.MetaData()
 	c := md.Center()
 
-	p := getApproachPoint(md, c, deltaLinear, o, vc.logger)
+	p := touch.GetApproachPoint(md, c, deltaLinear, o)
 	p.Z = vc.conf.CupHeight - 25
 
 	return referenceframe.NewPoseInFrame(
 		"world",
 		spatialmath.NewPose(p, o),
 	)
-}
-
-func getApproachPoint(md pointcloud.MetaData, c r3.Vector, deltaLinear float64, o *spatialmath.OrientationVectorDegrees, logger logging.Logger) r3.Vector {
-
-	d := math.Pow((o.OX*o.OX)+(o.OY*o.OY), .5)
-
-	xLinear := (o.OX * deltaLinear / d)
-	yLinear := (o.OY * deltaLinear / d)
-
-	logger.Infof("xLinear: %0.2f yLinear: %0.2f", xLinear, yLinear)
-
-	approachPoint := r3.Vector{
-		X: c.X - xLinear,
-		Y: c.Y - yLinear,
-		Z: c.Z,
-	}
-
-	return approachPoint
 }
 
 func (vc *VinoCart) getPositions(stage, step string) ([][]toggleswitch.Switch, error) {
