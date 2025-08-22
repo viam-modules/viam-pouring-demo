@@ -82,7 +82,7 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 
 	if cfg.CupMotionService != "" {
-		deps = append(deps, cfg.CupMotionService)
+		deps = append(deps, motion.Named(cfg.CupMotionService).String())
 	}
 
 	if cfg.PickQualityService != "" {
@@ -212,6 +212,8 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		c.CupMotionService = c.Motion
 	}
 
 	if config.PickQualityService != "" {

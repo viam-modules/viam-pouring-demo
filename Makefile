@@ -20,6 +20,7 @@ lint:
 
 update:
 	go get go.viam.com/rdk@latest
+	go get github.com/erh/vmodutils@latest
 	go mod tidy
 
 test: pour/vinoweb/dist/index.html

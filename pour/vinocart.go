@@ -322,7 +322,7 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 		return nil
 	}
 
-	imgs, _, err := vc.c.Cam.Images(ctx)
+	imgs, _, err := vc.c.Cam.Images(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -380,7 +380,7 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 }
 
 func saveImageToDatasetFromCamera(ctx context.Context, cam camera.Camera, dataClient *app.DataClient, dataSetId string) error {
-	imgs, _, err := cam.Images(ctx)
+	imgs, _, err := cam.Images(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -602,7 +602,7 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 	md := obj.MetaData()
 	c := md.Center()
 
-	p := touch.GetApproachPoint(md, c, deltaLinear, o)
+	p := touch.GetApproachPoint(c, deltaLinear, o)
 	p.Z = vc.conf.CupHeight - 25
 
 	return referenceframe.NewPoseInFrame(
@@ -772,7 +772,7 @@ func (vc *VinoCart) PourGlassFindCroppedRect(ctx context.Context) (*image.Rectan
 
 func (vc *VinoCart) PourGlassFindCroppedImage(ctx context.Context, r *image.Rectangle) (image.Image, error) {
 
-	imgs, _, err := vc.c.GlassPourCam.Images(ctx)
+	imgs, _, err := vc.c.GlassPourCam.Images(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
