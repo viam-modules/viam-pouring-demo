@@ -78,7 +78,7 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	deps := []string{motion.Named("builtin").String()}
 
 	if cfg.BottleMotionService != "" {
-		deps = append(deps, cfg.BottleMotionService)
+		deps = append(deps, motion.Named(cfg.BottleMotionService).String())
 	}
 
 	if cfg.CupMotionService != "" {
