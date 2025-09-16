@@ -205,6 +205,8 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		c.BottleMotionService = c.Motion
 	}
 
 	if config.CupMotionService != "" {
