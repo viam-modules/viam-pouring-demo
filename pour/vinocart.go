@@ -1112,7 +1112,7 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 
 		vc.logger.Infof("myFs %v", myFs)
 
-		plan, err := armplanning.PlanMotion(ctx, vc.logger, &armplanning.PlanRequest{
+		req := &armplanning.PlanRequest{
 			FrameSystem: myFs,
 			Goals: []*armplanning.PlanState{
 				armplanning.NewPlanState(referenceframe.FrameSystemPoses{bottleName: goalPose}, nil),
@@ -1120,7 +1120,8 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 			StartState: armplanning.NewPlanState(nil, referenceframe.FrameSystemInputs{
 				vc.conf.BottleArm: startJoints,
 			}),
-		})
+		}
+		plan, err := armplanning.PlanMotion(ctx, vc.logger, req)
 		if err != nil {
 			return fmt.Errorf("can't plan pour prep: %w", err)
 		}
@@ -1129,25 +1130,43 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 			return fmt.Errorf("why is plan wrong (%d)\n %v", len(plan.Trajectory()), plan)
 		}
 
-		startJoints = plan.Trajectory()[1][vc.conf.BottleArm]
-		joints = append(joints, startJoints)
+		myJoints := plan.Trajectory()[1][vc.conf.BottleArm]
+		vc.logger.Infof("joints %v", myJoints)
+
+		if len(joints) > 0 {
+			d := referenceframe.InputsL2Distance(startJoints, myJoints)
+			vc.logger.Infof("\t InputsL2Distance: %v", d)
+			if d > .15 {
+				fn := "/tmp/pour-plan-bad.json"
+
+				data, err := json.MarshalIndent(req, "", "  ")
+				if err != nil {
+					return err
+				}
+				file, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+				if err != nil {
+					return err
+				}
+				defer file.Close()
+
+				_, err = file.Write(data)
+				if err != nil {
+					return err
+				}
+
+				return fmt.Errorf("pourPlan pos too far %v, written to: %s", d, fn)
+
+			}
+		}
+
+		joints = append(joints, myJoints)
+		startJoints = myJoints
 
 		o.OZ -= .05
 	}
 
 	if len(joints) != len(poses) {
 		panic("Wtf")
-	}
-
-	for idx, j := range joints {
-		vc.logger.Infof("pourPlan %d \n\t %v", idx, j)
-		if idx > 0 {
-			d := referenceframe.InputsL2Distance(joints[idx-1], j)
-			vc.logger.Infof("\t InputsL2Distance: %v", d)
-			if d > .15 {
-				return fmt.Errorf("pourPlan pos %d too far %v", idx, d)
-			}
-		}
 	}
 
 	vc.pourJoints = joints
