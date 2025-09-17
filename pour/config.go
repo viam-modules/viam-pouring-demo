@@ -66,8 +66,6 @@ type Config struct {
 	BottleHeight float64 `json:"bottle_height"`
 	CupHeight    float64 `json:"cup_height"`
 
-	BottleMotionService  string `json:"bottle_motion_service"`
-	CupMotionService     string `json:"cup_motion_service"`
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 
@@ -76,14 +74,6 @@ type Config struct {
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	deps := []string{motion.Named("builtin").String()}
-
-	if cfg.BottleMotionService != "" {
-		deps = append(deps, motion.Named(cfg.BottleMotionService).String())
-	}
-
-	if cfg.CupMotionService != "" {
-		deps = append(deps, motion.Named(cfg.CupMotionService).String())
-	}
 
 	if cfg.PickQualityService != "" {
 		deps = append(deps, cfg.PickQualityService)
@@ -163,8 +153,6 @@ type Pour1Components struct {
 	BottleGripper gripper.Gripper
 	BottleArm     arm.Arm
 
-	BottleMotionService  motion.Service
-	CupMotionService     motion.Service
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
 }
@@ -198,24 +186,6 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 	c.Motion, err = motion.FromDependencies(deps, "builtin")
 	if err != nil {
 		return nil, err
-	}
-
-	if config.BottleMotionService != "" {
-		c.BottleMotionService, err = motion.FromDependencies(deps, config.BottleMotionService)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		c.BottleMotionService = c.Motion
-	}
-
-	if config.CupMotionService != "" {
-		c.CupMotionService, err = motion.FromDependencies(deps, config.CupMotionService)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		c.CupMotionService = c.Motion
 	}
 
 	if config.PickQualityService != "" {

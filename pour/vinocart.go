@@ -23,6 +23,7 @@ import (
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/motionplan/armplanning"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/rimage"
@@ -93,13 +94,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 
 	vc.pourExtraFrames = []*referenceframe.LinkInFrame{vc.bottleTop}
 
-	var err error
-	vc.pourWorldState, err = referenceframe.NewWorldState(nil, vc.pourExtraFrames)
-	if err != nil {
-		return nil, err
-	}
-
-	err = vc.setupPourPositions(ctx)
+	err := vc.setupPourPositions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +317,7 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 		return nil
 	}
 
-	imgs, _, err := vc.c.Cam.Images(ctx, nil)
+	imgs, _, err := vc.c.Cam.Images(ctx, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -331,7 +326,12 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 		return fmt.Errorf("bad image name [%v]", imgs[0].SourceName)
 	}
 
-	prepped, err := prepPickImage(imgs[0].Image)
+	i, err := imgs[0].Image(ctx)
+	if err != nil {
+		return err
+	}
+
+	prepped, err := prepPickImage(i)
 	if err != nil {
 		return err
 	}
@@ -380,11 +380,15 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 }
 
 func saveImageToDatasetFromCamera(ctx context.Context, cam camera.Camera, dataClient *app.DataClient, dataSetId string) error {
-	imgs, _, err := cam.Images(ctx, nil)
+	imgs, _, err := cam.Images(ctx, nil, nil)
 	if err != nil {
 		return err
 	}
-	return saveImageToDataset(ctx, cam.Name(), imgs[0].Image, dataClient, dataSetId)
+	i, err := imgs[0].Image(ctx)
+	if err != nil {
+		return err
+	}
+	return saveImageToDataset(ctx, cam.Name(), i, dataClient, dataSetId)
 }
 
 func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string) error {
@@ -484,7 +488,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		approaches = append(approaches, goToPose)
 		vc.logger.Infof("trying to move to %v", goToPose.Pose())
 
-		_, err2 := vc.c.CupMotionService.Move(
+		_, err2 := vc.c.Motion.Move(
 			ctx,
 			motion.MoveReq{
 				ComponentName: resource.Name{Name: vc.c.Gripper.Name().ShortName()},
@@ -530,7 +534,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
-	err = moveWithLinearConstraint(ctx, vc.c.CupMotionService, vc.c.Gripper.Name(), goToPose)
+	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose)
 	if err != nil {
 		return err
 	}
@@ -772,12 +776,15 @@ func (vc *VinoCart) PourGlassFindCroppedRect(ctx context.Context) (*image.Rectan
 
 func (vc *VinoCart) PourGlassFindCroppedImage(ctx context.Context, r *image.Rectangle) (image.Image, error) {
 
-	imgs, _, err := vc.c.GlassPourCam.Images(ctx, nil)
+	imgs, _, err := vc.c.GlassPourCam.Images(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	img := imgs[0].Image
+	img, err := imgs[0].Image(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	lazy, ok := img.(*rimage.LazyEncodedImage)
 	if ok {
@@ -993,7 +1000,7 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 
 	vc.logger.Infof("going back down")
 
-	cur, err := vc.c.BottleMotionService.GetPose(ctx, resource.Name{Name: bottleName}, "world", vc.pourExtraFrames, nil)
+	cur, err := vc.c.Motion.GetPose(ctx, resource.Name{Name: bottleName}, "world", vc.pourExtraFrames, nil)
 	if err != nil {
 		return err
 	}
@@ -1016,50 +1023,69 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 	return vc.c.BottleArm.MoveThroughJointPositions(ctx, posesToDo, nil, nil)
 }
 
+func (vc *VinoCart) posConfig(ctx context.Context, pos resource.Resource) (*touch.ArmPositionSaverConfig, error) {
+	res, err := pos.DoCommand(ctx, map[string]interface{}{"cfg": true})
+	if err != nil {
+		return nil, fmt.Errorf("couldn't get cfg from pos0 step %w", err)
+	}
+
+	posConfig := &touch.ArmPositionSaverConfig{}
+
+	err = json.Unmarshal([]byte(res["as_json"].(string)), posConfig)
+	if err != nil {
+		return nil, fmt.Errorf("bad json: %v %w", res, err)
+	}
+
+	return posConfig, nil
+}
+
 func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
+	fsc, err := vc.robotClient.FrameSystemConfig(ctx)
+	if err != nil {
+		return err
+	}
+
+	myFs, err := touch.FrameSystemWithSomeParts(ctx, vc.robotClient, []string{vc.conf.BottleArm, vc.conf.BottleGripper}, vc.pourExtraFrames)
+	if err != nil {
+		return err
+	}
 
 	allPostions, err := vc.getPositions("pour", "prep")
 	if err != nil {
 		return err
 	}
 
-	pos := allPostions[len(allPostions)-1][0] // HACK HACK HACK
-
-	res, err := pos.DoCommand(ctx, map[string]interface{}{"cfg": true})
-	if err != nil {
-		return fmt.Errorf("couldn't get cfg from pos0 step %w", err)
-	}
-
-	posConfig := touch.ArmPositionSaverConfig{}
-
-	err = json.Unmarshal([]byte(res["as_json"].(string)), &posConfig)
-	if err != nil {
-		vc.logger.Errorf("bad json %v", res)
-		return err
-	}
-
-	if posConfig.Point.X == 0 {
-		return fmt.Errorf("config likely broken %v", posConfig)
-	}
-
-	armPose := spatialmath.NewPose(posConfig.Point, &posConfig.Orientation)
-	vc.logger.Infof("armPose: %v", armPose)
-
-	fsc, err := vc.robotClient.FrameSystemConfig(ctx)
+	prepPositionConfig, err := vc.posConfig(ctx, allPostions[0][1])
 	if err != nil {
 		return err
 	}
+	if prepPositionConfig.Arm != vc.conf.BottleArm {
+		return fmt.Errorf("prepPositionConfig.Arm wrong %s", prepPositionConfig.Arm)
+	}
+	if len(prepPositionConfig.Joints) != 6 {
+		return fmt.Errorf("prepPositionConfig.Joints wrong %v", prepPositionConfig.Joints)
+	}
+	startJoints := referenceframe.FloatsToInputs(prepPositionConfig.Joints)
+
+	startArmPose, err := vc.posConfig(ctx, allPostions[len(allPostions)-1][0]) // HACK HACK HACK
+	if err != nil {
+		return err
+	}
+	if startArmPose.Point.X == 0 {
+		return fmt.Errorf("config likely broken %v", startArmPose)
+	}
+
+	armPose := spatialmath.NewPose(startArmPose.Point, &startArmPose.Orientation)
+	vc.logger.Infof("starting armPose: %v", armPose)
 
 	x := touch.FindPart(fsc, vc.conf.BottleGripper)
 	if x == nil {
 		return fmt.Errorf("can't find frame for BottleGripper %v", vc.conf.BottleGripper)
 	}
 
-	if x.FrameConfig.Parent() != posConfig.Arm {
-		return fmt.Errorf("parent wrong %v %v", x.FrameConfig.Parent(), posConfig.Arm)
+	if x.FrameConfig.Parent() != startArmPose.Arm {
+		return fmt.Errorf("parent wrong %v %v", x.FrameConfig.Parent(), startArmPose.Arm)
 	}
-
-	vc.logger.Infof("pp: %v", x.FrameConfig.Pose())
 
 	gripperPose := spatialmath.Compose(armPose, x.FrameConfig.Pose())
 	vc.logger.Infof("gripperPose: %v", gripperPose)
@@ -1084,50 +1110,27 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 
 		vc.logger.Infof(" next: %v", goalPose.Pose())
 
-		hashKey := fmt.Sprintf("foo-%d", int(o.OZ*1000))
+		vc.logger.Infof("myFs %v", myFs)
 
-		_, err = vc.c.BottleMotionService.Move(
-			ctx,
-			motion.MoveReq{
-				ComponentName: resource.Name{Name: bottleName},
-				Destination:   goalPose,
-				WorldState:    vc.pourWorldState,
-				Extra:         map[string]interface{}{"hash": true, "hash_key": hashKey},
+		plan, err := armplanning.PlanMotion(ctx, vc.logger, &armplanning.PlanRequest{
+			FrameSystem: myFs,
+			Goals: []*armplanning.PlanState{
+				armplanning.NewPlanState(referenceframe.FrameSystemPoses{bottleName: goalPose}, nil),
 			},
-		)
+			StartState: armplanning.NewPlanState(nil, referenceframe.FrameSystemInputs{
+				vc.conf.BottleArm: startJoints,
+			}),
+		})
 		if err != nil {
-			return err
+			return fmt.Errorf("can't plan pour prep: %w", err)
 		}
 
-		res, err := vc.c.BottleMotionService.DoCommand(ctx, map[string]interface{}{"get_hash": true, "hash_key": hashKey})
-		if err != nil {
-			return err
+		if len(plan.Trajectory()) != 2 {
+			return fmt.Errorf("why is plan wrong (%d)\n %v", len(plan.Trajectory()), plan)
 		}
 
-		planRaw, ok := res["plan"].([]interface{})
-		if !ok {
-			return fmt.Errorf("hack plan not an array %v %T", res, res["plan"])
-		}
-
-		for idx, fRaw := range planRaw {
-			f2, ok := fRaw.([]interface{})
-			if !ok {
-				return fmt.Errorf("fRaw %v %T", fRaw, fRaw)
-			}
-
-			f := []float64{}
-			for _, ff := range f2 {
-				fff, ok := ff.(float64)
-				if !ok {
-					return fmt.Errorf("really now %v %T", f2, f2)
-				}
-				f = append(f, fff)
-			}
-
-			if idx == len(planRaw)-1 {
-				joints = append(joints, referenceframe.FloatsToInputs(f))
-			}
-		}
+		startJoints = plan.Trajectory()[1][vc.conf.BottleArm]
+		joints = append(joints, startJoints)
 
 		o.OZ -= .05
 	}
@@ -1136,8 +1139,20 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 		panic("Wtf")
 	}
 
+	for idx, j := range joints {
+		vc.logger.Infof("pourPlan %d \n\t %v", idx, j)
+		if idx > 0 {
+			d := referenceframe.InputsL2Distance(joints[idx-1], j)
+			vc.logger.Infof("\t InputsL2Distance: %v", d)
+			if d > .15 {
+				return fmt.Errorf("pourPlan pos %d too far %v", idx, d)
+			}
+		}
+	}
+
 	vc.pourJoints = joints
 	vc.pourPoses = poses
+
 	return nil
 }
 
