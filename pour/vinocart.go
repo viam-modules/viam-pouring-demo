@@ -491,7 +491,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		_, err2 := vc.c.Motion.Move(
 			ctx,
 			motion.MoveReq{
-				ComponentName: resource.Name{Name: vc.c.Gripper.Name().ShortName()},
+				ComponentName: vc.c.Gripper.Name().ShortName(),
 				Destination:   goToPose,
 				WorldState:    worldState,
 			},
@@ -549,7 +549,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 		_, err := vc.c.Motion.Move(
 			ctx,
 			motion.MoveReq{
-				ComponentName: resource.Name{Name: vc.c.BottleGripper.Name().ShortName()},
+				ComponentName: vc.c.BottleGripper.Name().ShortName(),
 				Destination:   goToPose,
 				WorldState:    worldState,
 			},
@@ -1000,7 +1000,7 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 
 	vc.logger.Infof("going back down")
 
-	cur, err := vc.c.Motion.GetPose(ctx, resource.Name{Name: bottleName}, "world", vc.pourExtraFrames, nil)
+	cur, err := vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
 	if err != nil {
 		return err
 	}
@@ -1179,7 +1179,7 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 	_, err := m.Move(
 		ctx,
 		motion.MoveReq{
-			ComponentName: resource.Name{Name: n.ShortName()},
+			ComponentName: n.ShortName(),
 			Destination:   p,
 			Constraints:   &LinearConstraint,
 		},
@@ -1193,5 +1193,5 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 		return nil, err
 	}
 
-	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.CupHeight*.6, 25, vc.logger), nil
+	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
 }

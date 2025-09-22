@@ -1,14 +1,12 @@
 module github.com/viam-modules/viam-pouring-demo
 
-go 1.23.8
-
-toolchain go1.23.9
+go 1.25.1
 
 require (
-	github.com/erh/vmodutils v0.3.0-rc0
+	github.com/erh/vmodutils v0.3.0-rc2
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	go.uber.org/multierr v1.11.0
-	go.viam.com/rdk v0.93.1-0.20250917090714-404ea44c0192
+	go.viam.com/rdk v0.94.0-rc0.0.20250922203924-664c5044b6b0
 	go.viam.com/test v1.2.4
 	golang.org/x/sync v0.16.0
 	gonum.org/v1/gonum v0.16.0
@@ -190,7 +188,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
 	go.uber.org/goleak v1.3.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	go.viam.com/api v0.1.475 // indirect
+	go.viam.com/api v0.1.477 // indirect
 	go.viam.com/utils v0.1.167 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect

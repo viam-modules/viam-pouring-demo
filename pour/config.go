@@ -65,6 +65,7 @@ type Config struct {
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
 	CupHeight    float64 `json:"cup_height"`
+	CupWidth     float64 `json:"cup_width"`
 
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
@@ -127,6 +128,13 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 
 	return deps, optionals, nil
+}
+
+func (c *Config) cupWidth() float64 {
+	if c.CupWidth > 0 {
+		return c.CupWidth
+	}
+	return c.CupHeight * .6
 }
 
 func (c *Config) glassPourMotionThreshold() float64 {

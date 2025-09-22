@@ -82,7 +82,7 @@ func SetXarmSpeedLog(ctx context.Context, a arm.Arm, speed, accel float64, logge
 }
 
 func Jog(ctx context.Context, m motion.Service, n resource.Name, j r3.Vector) error {
-	pif, err := m.GetPose(ctx, n, "world", nil, nil)
+	pif, err := m.GetPose(ctx, n.ShortName(), "world", nil, nil)
 	if err != nil {
 		return err
 	}
