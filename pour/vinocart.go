@@ -936,6 +936,30 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 		return err
 	}
 
+	cur, err := vc.c.Motion.GetPose(ctx, vc.conf.GripperName, "world", vc.pourExtraFrames, nil)
+	if err != nil {
+		return err
+	}
+
+	cur = referenceframe.NewPoseInFrame(
+		cur.Parent(),
+		spatialmath.NewPose(r3.Vector{
+			X: cur.Pose().Point().X,
+			Y: cur.Pose().Point().Y,
+			Z: vc.conf.CupHeight - 25,
+		}, cur.Pose().Orientation()))
+
+	_, err = vc.c.Motion.Move(
+		ctx,
+		motion.MoveReq{
+			ComponentName: vc.conf.GripperName,
+			Destination:   cur,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
 	err = vc.c.BottleGripper.Open(ctx, nil)
 	if err != nil {
 		return err
