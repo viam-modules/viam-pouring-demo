@@ -21,7 +21,7 @@ import (
 
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/camera"
-	"go.viam.com/rdk/components/switch"
+	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan/armplanning"
 	"go.viam.com/rdk/referenceframe"
@@ -211,6 +211,7 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 func (vc *VinoCart) run(ctx context.Context) {
 	defer vc.loopWaitGroup.Done()
 	for ctx.Err() == nil {
+		vc.setStatus("standby")
 		err := vc.WaitForCupAndGo(ctx)
 		if err != nil {
 			vc.logger.Errorf("go error in run: %v", err)
@@ -233,7 +234,6 @@ func (vc *VinoCart) setStatus(s string) {
 
 func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
 	for {
-		vc.setStatus("standby")
 		err := vc.FullDemo(ctx)
 		if err == nil {
 			break
