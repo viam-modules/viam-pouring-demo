@@ -908,7 +908,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			}
 		}
 
-		sleepTime := (200 * time.Millisecond) - time.Since(loopStart)
+		sleepTime := (100 * time.Millisecond) - time.Since(loopStart)
 		vc.logger.Debugf("going to sleep for %v", sleepTime)
 		time.Sleep(sleepTime)
 		loopNumber++
