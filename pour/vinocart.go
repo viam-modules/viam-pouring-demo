@@ -426,7 +426,7 @@ func saveImageToDataset(ctx context.Context, component resource.Name, img image.
 }
 
 func (vc *VinoCart) Touch(ctx context.Context) error {
-	vc.setStatus("looking for glass")
+	vc.setStatus("looking")
 
 	err := vc.Reset(ctx)
 	if err != nil {

@@ -11,6 +11,7 @@
     // --- Pouring status ---
     type StatusKey =
         | "standby"
+        | "looking"
         | "picking"
         | "prepping"
         | "pouring"
@@ -20,7 +21,8 @@
     let status: StatusKey = $state("standby") as StatusKey;
 
     const statusMessages: Record<StatusKey, string> = {
-        standby: "Please place your glass in the indicated area",
+        standby: "Ready to pour!",
+        looking: "Please place your glass in the indicated area",
         picking: "Thank you, just a moment",
         prepping: "Preparing to pour...",
         pouring: "Pouring...",
