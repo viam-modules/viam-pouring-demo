@@ -92,8 +92,15 @@
     gap: 15px;
     background-color: #ddd;
     min-height: 0;
+    height: 100%;
     padding: 15px;
     border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .expand-pane {
+    height: 100%;
+    min-height: 0;
     overflow: hidden;
   }
 

@@ -63,7 +63,6 @@
     align-items: center;
     height: 100%;
     min-height: 0;
-    max-height: 100%;
     overflow: hidden;
   }
 

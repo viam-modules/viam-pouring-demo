@@ -174,7 +174,7 @@
         max-width: 1920px;
         margin: 0 auto;
         display: grid;
-        grid-template-columns: 700px 1fr;
+        grid-template-columns: 34.4% 65.6%;
         grid-template-rows: 1fr;
         overflow: hidden;
     }
