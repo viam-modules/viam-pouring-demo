@@ -74,7 +74,7 @@
     background-color: white;
     display: grid;
     gap: 10px;
-    grid-template-rows: 170px 1fr;
+    grid-template-rows: auto 1fr;
     height: 100%;
     border-radius: 12px;
     overflow: hidden;
@@ -89,11 +89,12 @@
   .content-panes {
     display: grid;
     grid-template-rows: 1fr 1fr;
-    gap: 10px;
+    gap: 15px;
     background-color: #ddd;
     min-height: 0;
-    padding: 5px;
+    padding: 15px;
     border-radius: 16px;
+    overflow: hidden;
   }
 
   .expand-pane:only-child {

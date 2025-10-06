@@ -30,13 +30,14 @@
 <style>
   .pane {
     background-color: #ddd;
-    padding: 20px;
+    padding: 10px;
     overflow: hidden;
     display: flex;
-    gap: 20px;
-    align-items: center;
+    gap: 10px;
+    align-items: stretch;
     min-height: 0;
     height: 100%;
+    border-radius: 8px;
   }
 
   .pane.embedded {
@@ -51,6 +52,8 @@
     width: 220px;
     display: flex;
     align-items: flex-start;
+    justify-content: center;
+    padding: 10px;
   }
 
   .camera-feed-container {

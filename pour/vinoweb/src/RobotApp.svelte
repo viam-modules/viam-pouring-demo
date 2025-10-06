@@ -171,11 +171,12 @@
     .app-container {
         height: calc(100vh - 80px);
         width: 100%;
-        max-width: calc(1920px - 80px);
+        max-width: 1920px;
         margin: 0 auto;
         display: grid;
         grid-template-columns: 700px 1fr;
         grid-template-rows: 1fr;
+        overflow: hidden;
     }
     .sidebar {
         color: white;

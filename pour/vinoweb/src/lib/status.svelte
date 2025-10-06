@@ -15,11 +15,11 @@
 <style>
   .status-container {
     width: 100%;
-    height: 100%;
+    height: 80px;
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 25px 0;
+    padding: 10px 0;
     box-shadow: 0 2px 8px rgba(0, 255, 234, 0.04);
   }
 
@@ -28,7 +28,7 @@
     align-items: center;
     justify-content: center;
     font-family: "Share Tech Mono", "Fira Mono", "Consolas", monospace;
-    font-size: 3rem;
+    font-size: 1.5rem;
     color: #39FF14;
     background: #181c1f;
     text-align: center;
@@ -44,5 +44,9 @@
       0 0 6px #39FF14;
     border: 2px solid #39FF14;
     box-shadow: 0 0 8px #39FF1433;
+    padding: 10px 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>
