@@ -1029,7 +1029,7 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 		return err
 	}
 
-	err = SetXarmSpeed(ctx, vc.c.BottleArm, 75, 75)
+	err = SetXarmSpeed(ctx, vc.c.BottleArm, 100, 100)
 	if err != nil {
 		return err
 	}
@@ -1122,10 +1122,11 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 	joints := [][]referenceframe.Input{}
 	poses := []*referenceframe.PoseInFrame{}
 
+	pDelta := r3.Vector{}
 	for o.OZ > -.5 {
 		goalPose := referenceframe.NewPoseInFrame("world",
 			spatialmath.NewPose(
-				bottleStart.Point(),
+				bottleStart.Point().Add(pDelta),
 				o,
 			),
 		)
@@ -1187,6 +1188,10 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 		startJoints = myJoints
 
 		o.OZ -= .05
+		pDelta.Z -= 1.0
+		pDelta.Y -= .5
+		pDelta.X += .5
+
 	}
 
 	if len(joints) != len(poses) {
