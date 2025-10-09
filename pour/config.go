@@ -6,7 +6,7 @@ import (
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
-	"go.viam.com/rdk/components/switch"
+	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
@@ -66,6 +66,9 @@ type Config struct {
 	BottleHeight float64 `json:"bottle_height"`
 	CupHeight    float64 `json:"cup_height"`
 	CupWidth     float64 `json:"cup_width"`
+
+	// optional offset for gripper height when grabbing/placing cup
+	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
 
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
@@ -142,6 +145,13 @@ func (c *Config) glassPourMotionThreshold() float64 {
 		return c.GlassPourMotionThreshold
 	}
 	return 4
+}
+
+func (c *Config) cupGripHeightOffset() float64 {
+	if c.CupGripHeightOffset > 0 {
+		return c.CupGripHeightOffset
+	}
+	return 25
 }
 
 type StagePositions map[string][][]toggleswitch.Switch
