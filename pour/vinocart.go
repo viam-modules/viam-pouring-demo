@@ -700,9 +700,12 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	vc.setStatus("prepping")
 
-	err := CheckXArmGripperHasSomething(ctx, vc.c.Gripper)
+	holdingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
+	}
+	if !holdingStatus.IsHoldingSomething {
+		return fmt.Errorf("gripper %v is not holding cup", vc.c.Gripper.Name())
 	}
 
 	err = vc.doAll(ctx, "pour_prep", "prep-grab", 80)
@@ -821,12 +824,20 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Re
 func (vc *VinoCart) Pour(ctx context.Context) error {
 	vc.setStatus("pouring")
 
-	err := multierr.Combine(
-		CheckXArmGripperHasSomething(ctx, vc.c.Gripper),
-		CheckXArmGripperHasSomething(ctx, vc.c.BottleGripper),
-	)
+	isHoldingCup, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
+	}
+	if !isHoldingCup.IsHoldingSomething {
+		return fmt.Errorf("gripper %v is not holding a cup", vc.c.Gripper.Name())
+	}
+
+	isHoldingBottle, err := vc.c.BottleGripper.IsHoldingSomething(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if !isHoldingBottle.IsHoldingSomething {
+		return fmt.Errorf("bottle gripper %v is not holding bottle", vc.c.BottleGripper.Name())
 	}
 
 	err = vc.doAll(ctx, "pour", "prep", 50)
