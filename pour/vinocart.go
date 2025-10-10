@@ -705,7 +705,7 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 		return err
 	}
 	if !holdingStatus.IsHoldingSomething {
-		return fmt.Errorf("gripper %v is not holding something", vc.c.Gripper.Name())
+		return fmt.Errorf("gripper %v is not holding cup", vc.c.Gripper.Name())
 	}
 
 	err = vc.doAll(ctx, "pour_prep", "prep-grab", 80)
