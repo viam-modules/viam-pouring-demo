@@ -150,38 +150,7 @@ func realMain() error {
 	case "sleep":
 		time.Sleep(time.Minute * 5)
 		return nil
-	case "pickup-test":
-		err := vc.Reset(ctx)
-		if err != nil {
-			return err
-		}
 
-		err = vc.DoAll(ctx, "test", "right-bottle-pick-a")
-		if err != nil {
-			return err
-		}
-
-		err = vc.PourPrepGrab(ctx)
-		if err != nil {
-			return err
-		}
-
-		err = vc.DoAll(ctx, "test", "right-bottle-pick-b")
-		if err != nil {
-			return err
-		}
-
-		err = p1c.BottleGripper.Open(ctx, nil)
-		if err != nil {
-			return err
-		}
-
-		err = vc.DoAll(ctx, "test", "right-bottle-pick-c")
-		if err != nil {
-			return err
-		}
-
-		return vc.Reset(ctx)
 	case "pose":
 		left, err := getAPose(ctx, client, "april-tag-tracker-left", "7")
 		if err != nil {
