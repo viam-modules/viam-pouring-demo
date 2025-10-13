@@ -2,13 +2,10 @@ package pour
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/golang/geo/r3"
 
-	"github.com/erh/vmodutils"
 	"go.viam.com/rdk/components/arm"
-	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
@@ -22,48 +19,6 @@ var LinearConstraint = motionplan.Constraints{
 	LinearConstraint: []motionplan.LinearConstraint{
 		{LineToleranceMm: 5, OrientationToleranceDegs: 5},
 	},
-}
-
-func GetXArmGripperPosition(ctx context.Context, g gripper.Gripper) (int, error) {
-	res, err := g.DoCommand(ctx, map[string]interface{}{
-		"get": true,
-	})
-	if err != nil {
-		return 0, err
-	}
-	pos, ok := vmodutils.GetIntFromMap(res, "pos")
-	if !ok {
-		return 0, fmt.Errorf("no pos in %v", res)
-	}
-	return pos, nil
-}
-
-// TODO HACK HACK HACK
-// both caould be false meaning it's got something
-// return pos, open, closed, error
-func GetXArmGripperState(ctx context.Context, g gripper.Gripper) (int, bool, bool, error) {
-	pos, err := GetXArmGripperPosition(ctx, g)
-	if err != nil {
-		return 0, false, false, err
-	}
-	if pos <= 10 {
-		return pos, false, true, nil
-	}
-	if pos >= 830 {
-		return pos, true, false, nil
-	}
-	return pos, false, false, nil
-}
-
-func CheckXArmGripperHasSomething(ctx context.Context, g gripper.Gripper) error {
-	pos, open, closed, err := GetXArmGripperState(ctx, g)
-	if err != nil {
-		return err
-	}
-	if open || closed {
-		return fmt.Errorf("gripper %v doesn't have something pos: %d open: %v closed: %v", g.Name(), pos, open, closed)
-	}
-	return nil
 }
 
 func SetXarmSpeed(ctx context.Context, a arm.Arm, speed, accel float64) error {
