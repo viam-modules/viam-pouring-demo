@@ -67,6 +67,9 @@ type Config struct {
 	CupHeight    float64 `json:"cup_height"`
 	CupWidth     float64 `json:"cup_width"`
 
+	// optional offset for gripper height when grabbing/placing cup
+	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
+
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 
@@ -142,6 +145,13 @@ func (c *Config) glassPourMotionThreshold() float64 {
 		return c.GlassPourMotionThreshold
 	}
 	return 4
+}
+
+func (c *Config) cupGripHeightOffset() float64 {
+	if c.CupGripHeightOffset > 0 {
+		return c.CupGripHeightOffset
+	}
+	return 25
 }
 
 type StagePositions map[string][][]toggleswitch.Switch
