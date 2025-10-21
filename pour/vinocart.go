@@ -607,7 +607,7 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 	c := md.Center()
 
 	p := touch.GetApproachPoint(c, deltaLinear, o)
-	p.Z = vc.conf.CupHeight - 25
+	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
 
 	return referenceframe.NewPoseInFrame(
 		"world",
@@ -957,7 +957,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 		spatialmath.NewPose(r3.Vector{
 			X: cur.Pose().Point().X,
 			Y: cur.Pose().Point().Y,
-			Z: vc.conf.CupHeight - 25,
+			Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
 		}, cur.Pose().Orientation()))
 
 	_, err = vc.c.Motion.Move(
