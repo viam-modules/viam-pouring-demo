@@ -33,7 +33,7 @@
     padding: 10px;
     overflow: hidden;
     display: flex;
-    gap: 10px;
+    gap: 20px;
     align-items: stretch;
     min-height: 0;
     height: 100%;
@@ -53,7 +53,6 @@
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding: 10px;
   }
 
   .camera-feed-container {
