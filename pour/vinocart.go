@@ -293,6 +293,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		return err
 	}
 	g.Go(func() error {
+		var err error
 		if cupHoldingStatus.IsHoldingSomething {
 			err = vc.doAll(ctx, "reset", "left-holding-pre", 50)
 			if err != nil {
@@ -331,6 +332,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 	})
 
 	g.Go(func() error {
+		var err error
 		if bottleHoldingStatus.IsHoldingSomething {
 			err = vc.doAll(ctx, "reset", "right-holding-pre", 50)
 			if err != nil {
@@ -367,7 +369,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 
 	err2 := g.Wait()
 
-	return multierr.Combine(err, err2)
+	return err2
 }
 
 func (vc *VinoCart) GrabCup(ctx context.Context) error {
