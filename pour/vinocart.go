@@ -308,6 +308,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+
 			time.Sleep(time.Millisecond * 500)
 			err = vc.doAll(ctx, "reset", "left-holding-post", 50)
 			if err != nil {
@@ -315,11 +316,16 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			}
 		} else {
 			err = vc.c.Gripper.Open(ctx, nil)
-			time.Sleep(time.Millisecond * 500)
 			if err != nil {
 				return err
 			}
+
+			time.Sleep(time.Millisecond * 500)
+
 			err = vc.doAll(ctx, "reset", "left-not-holding-post", 100)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -330,22 +336,31 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+
 			err = vc.c.BottleGripper.Open(ctx, nil)
 			if err != nil {
 				return err
 			}
+
 			time.Sleep(time.Millisecond * 500)
+
 			err = vc.doAll(ctx, "reset", "right-holding-post", 50)
 			if err != nil {
 				return err
 			}
+
 		} else {
 			err = vc.c.BottleGripper.Open(ctx, nil)
-			time.Sleep(time.Millisecond * 500)
 			if err != nil {
 				return err
 			}
+
+			time.Sleep(time.Millisecond * 500)
+
 			err = vc.doAll(ctx, "reset", "right-not-holding-post", 100)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
