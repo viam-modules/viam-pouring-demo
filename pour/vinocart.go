@@ -298,26 +298,8 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			cur, err := vc.c.Motion.GetPose(ctx, vc.conf.GripperName, "world", vc.pourExtraFrames, nil)
-			if err != nil {
-				return err
-			}
 
-			cur = referenceframe.NewPoseInFrame(
-				cur.Parent(),
-				spatialmath.NewPose(r3.Vector{
-					X: cur.Pose().Point().X,
-					Y: cur.Pose().Point().Y,
-					Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
-				}, cur.Pose().Orientation()))
-
-			_, err = vc.c.Motion.Move(
-				ctx,
-				motion.MoveReq{
-					ComponentName: vc.conf.GripperName,
-					Destination:   cur,
-				},
-			)
+			err = vc.moveToCurrentXYAtCupHeight(ctx)
 			if err != nil {
 				return err
 			}
@@ -839,6 +821,30 @@ func (vc *VinoCart) goTo(ctx context.Context, poss ...toggleswitch.Switch) error
 	return multierr.Combine(errors...)
 }
 
+func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
+	cur, err := vc.c.Motion.GetPose(ctx, vc.conf.GripperName, "world", vc.pourExtraFrames, nil)
+	if err != nil {
+		return err
+	}
+
+	cur = referenceframe.NewPoseInFrame(
+		cur.Parent(),
+		spatialmath.NewPose(r3.Vector{
+			X: cur.Pose().Point().X,
+			Y: cur.Pose().Point().Y,
+			Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
+		}, cur.Pose().Orientation()))
+
+	_, err = vc.c.Motion.Move(
+		ctx,
+		motion.MoveReq{
+			ComponentName: vc.conf.GripperName,
+			Destination:   cur,
+		},
+	)
+	return err
+}
+
 func (vc *VinoCart) PourGlassFindCroppedRect(ctx context.Context) (*image.Rectangle, error) {
 	detections, err := vc.c.PourGlassFindService.DetectionsFromCamera(ctx, "", nil)
 	if err != nil {
@@ -1022,26 +1028,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 		return err
 	}
 
-	cur, err := vc.c.Motion.GetPose(ctx, vc.conf.GripperName, "world", vc.pourExtraFrames, nil)
-	if err != nil {
-		return err
-	}
-
-	cur = referenceframe.NewPoseInFrame(
-		cur.Parent(),
-		spatialmath.NewPose(r3.Vector{
-			X: cur.Pose().Point().X,
-			Y: cur.Pose().Point().Y,
-			Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
-		}, cur.Pose().Orientation()))
-
-	_, err = vc.c.Motion.Move(
-		ctx,
-		motion.MoveReq{
-			ComponentName: vc.conf.GripperName,
-			Destination:   cur,
-		},
-	)
+	err = vc.moveToCurrentXYAtCupHeight(ctx)
 	if err != nil {
 		return err
 	}
