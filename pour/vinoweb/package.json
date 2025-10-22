@@ -22,6 +22,7 @@
     "@tanstack/svelte-query": "^5.79.0",
     "@viamrobotics/sdk": "^0.42.0",
     "@viamrobotics/svelte-sdk": "^0.2.0",
+    "carbon-components-svelte": "^0.89.8",
     "typescript-cookie": "^1.0.6"
   }
 }
