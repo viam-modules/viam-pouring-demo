@@ -204,6 +204,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	if cmd["demo"] == true {
 		return nil, vc.FullDemo(ctx)
 	}
+	if cmd["test_position"] != nil {
+		positionCmd := cmd["test_position"].(map[string]interface{})
+		return nil, vc.doAll(ctx, positionCmd["stage"].(string), positionCmd["step"].(string), 50)
+	}
 
 	return nil, fmt.Errorf("need a command")
 }
@@ -285,6 +289,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 	g := errgroup.Group{}
 
 	g.Go(func() error {
+
 		return vc.c.Gripper.Open(ctx, nil)
 	})
 
