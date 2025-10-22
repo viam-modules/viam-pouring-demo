@@ -284,15 +284,86 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 func (vc *VinoCart) Reset(ctx context.Context) error {
 	g := errgroup.Group{}
 
+	cupHoldingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
+	if err != nil {
+		return err
+	}
+	bottleHoldingStatus, err := vc.c.BottleGripper.IsHoldingSomething(ctx, nil)
+	if err != nil {
+		return err
+	}
 	g.Go(func() error {
-		return vc.c.Gripper.Open(ctx, nil)
+		if cupHoldingStatus.IsHoldingSomething {
+			err = vc.doAll(ctx, "reset", "left-holding-pre", 50)
+			if err != nil {
+				return err
+			}
+			cur, err := vc.c.Motion.GetPose(ctx, vc.conf.GripperName, "world", vc.pourExtraFrames, nil)
+			if err != nil {
+				return err
+			}
+
+			cur = referenceframe.NewPoseInFrame(
+				cur.Parent(),
+				spatialmath.NewPose(r3.Vector{
+					X: cur.Pose().Point().X,
+					Y: cur.Pose().Point().Y,
+					Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
+				}, cur.Pose().Orientation()))
+
+			_, err = vc.c.Motion.Move(
+				ctx,
+				motion.MoveReq{
+					ComponentName: vc.conf.GripperName,
+					Destination:   cur,
+				},
+			)
+			if err != nil {
+				return err
+			}
+
+			err = vc.c.Gripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
+			err = vc.doAll(ctx, "reset", "left-holding-post", 50)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = vc.c.Gripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
+			err = vc.doAll(ctx, "reset", "left-not-holding-post", 100)
+		}
+		return nil
 	})
 
 	g.Go(func() error {
-		return vc.c.BottleGripper.Open(ctx, nil)
+		if bottleHoldingStatus.IsHoldingSomething {
+			err = vc.doAll(ctx, "reset", "right-holding-pre", 50)
+			if err != nil {
+				return err
+			}
+			err = vc.c.BottleGripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
+			err = vc.doAll(ctx, "reset", "right-holding-post", 50)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = vc.c.BottleGripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
+			err = vc.doAll(ctx, "reset", "right-not-holding-post", 100)
+		}
+		return nil
 	})
 
-	err := vc.doAll(ctx, "touch", "prep", 100)
 	err2 := g.Wait()
 
 	return multierr.Combine(err, err2)
