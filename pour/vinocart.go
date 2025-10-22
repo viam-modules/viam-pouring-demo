@@ -326,6 +326,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			time.Sleep(time.Millisecond * 500)
 			err = vc.doAll(ctx, "reset", "left-holding-post", 50)
 			if err != nil {
 				return err
@@ -350,6 +351,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			time.Sleep(time.Millisecond * 500)
 			err = vc.doAll(ctx, "reset", "right-holding-post", 50)
 			if err != nil {
 				return err
