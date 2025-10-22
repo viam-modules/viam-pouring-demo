@@ -149,9 +149,6 @@ type VinoCart struct {
 	loopCancel    context.CancelFunc
 	loopWaitGroup sync.WaitGroup
 
-	pourCancel    context.CancelFunc
-	pourWaitGroup sync.WaitGroup
-
 	statusLock sync.Mutex
 	status     string
 
@@ -285,13 +282,6 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
-	// Cancel any ongoing pour operations first
-	if vc.pourCancel != nil {
-		vc.logger.Info("Canceling ongoing pour operation")
-		vc.pourCancel()
-		vc.pourWaitGroup.Wait()
-		vc.pourCancel = nil
-	}
 	g := errgroup.Group{}
 
 	cupHoldingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
@@ -937,18 +927,14 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
-	vc.pourCancel = cancelPour
-	vc.pourWaitGroup.Add(1)
-	// wg := sync.WaitGroup{}
-	// wg.Add(1)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 
 	if vc.dataClient != nil && vc.c.GlassPourCam != nil {
 		vc.logger.Infof("uploading image to dataset for cup finding")
-		// wg.Add(1)
-		vc.pourWaitGroup.Add(1)
+		wg.Add(1)
 		go func() {
-			// defer wg.Done()
-			defer vc.pourWaitGroup.Done()
+			defer wg.Done()
 			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "683d1210c83b3f3823ec70ff")
 			if err != nil {
 				vc.logger.Errorf("error saving cup cam to data set: %v", err)
@@ -964,8 +950,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	vc.logger.Infof("got box for crop %v", box)
 
 	go func() {
-		// defer wg.Done()
-		defer vc.pourWaitGroup.Done()
+		defer wg.Done()
 		err := vc.doPourMotion(ctx, pourContext)
 		if err != nil {
 			vc.logger.Infof("error pouring: %v", err)
@@ -974,8 +959,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 	defer func() {
 		cancelPour()
-		vc.pourWaitGroup.Wait()
-		// wg.Wait() // this goes back down
+		wg.Wait() // this goes back down
 
 		SetXarmSpeedLog(ctx, vc.c.BottleArm, 50, 50, vc.logger)
 
