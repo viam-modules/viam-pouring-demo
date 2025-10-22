@@ -49,7 +49,7 @@
 
   .data-table-container {
     flex-shrink: 0;
-    width: 220px;
+    width: 30%;
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -60,6 +60,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    width: 70%;
     height: 100%;
     min-height: 0;
     overflow: hidden;

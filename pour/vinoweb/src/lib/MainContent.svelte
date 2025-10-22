@@ -73,10 +73,12 @@
     display: grid;
     gap: 10px;
     grid-template-rows: auto 1fr;
-    height: 100%;
+    height: 90%;
+    width: 95%;
     border-radius: 12px;
     overflow: hidden;
     padding: 20px;
+    margin: auto 0; /* Add vertical margin auto */
   }
 
   .status-bar {
@@ -87,7 +89,7 @@
   .content-panes {
     display: grid;
     grid-template-rows: 1fr 1fr;
-    gap: 15px;
+    gap: 0;
     background-color: #ddd;
     min-height: 0;
     height: 100%;
