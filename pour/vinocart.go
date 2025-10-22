@@ -333,6 +333,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			}
 		} else {
 			err = vc.c.Gripper.Open(ctx, nil)
+			time.Sleep(time.Millisecond * 500)
 			if err != nil {
 				return err
 			}
@@ -358,6 +359,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			}
 		} else {
 			err = vc.c.BottleGripper.Open(ctx, nil)
+			time.Sleep(time.Millisecond * 500)
 			if err != nil {
 				return err
 			}
