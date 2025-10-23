@@ -302,18 +302,72 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 func (vc *VinoCart) Reset(ctx context.Context) error {
 	g := errgroup.Group{}
 
+	cupHoldingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
+	if err != nil {
+		return err
+	}
+	bottleHoldingStatus, err := vc.c.BottleGripper.IsHoldingSomething(ctx, nil)
+	if err != nil {
+		return err
+	}
 	g.Go(func() error {
-		return vc.c.Gripper.Open(ctx, nil)
+		var err error
+		if cupHoldingStatus.IsHoldingSomething {
+			err = vc.doAll(ctx, "reset", "left-holding-pre", 50)
+			if err != nil {
+				return err
+			}
+
+			err = vc.moveToCurrentXYAtCupHeight(ctx)
+			if err != nil {
+				return err
+			}
+
+			err = vc.c.Gripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
+
+			time.Sleep(time.Millisecond * 500)
+			err = vc.doAll(ctx, "reset", "left-holding-post", 50)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 
 	g.Go(func() error {
-		return vc.c.BottleGripper.Open(ctx, nil)
+		var err error
+		if bottleHoldingStatus.IsHoldingSomething {
+			err = vc.doAll(ctx, "reset", "right-holding-pre", 50)
+			if err != nil {
+				return err
+			}
+
+			err = vc.c.BottleGripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
+
+			time.Sleep(time.Millisecond * 500)
+
+			err = vc.doAll(ctx, "reset", "right-holding-post", 50)
+			if err != nil {
+				return err
+			}
+
+		}
+		return nil
 	})
 
-	err := vc.doAll(ctx, "touch", "prep", 100)
 	err2 := g.Wait()
+	if err2 != nil {
+		return err2
+	}
+	err3 := vc.doAll(ctx, "touch", "prep", 100)
 
-	return multierr.Combine(err, err2)
+	return err3
 }
 
 func (vc *VinoCart) GrabCup(ctx context.Context) error {
@@ -782,6 +836,30 @@ func (vc *VinoCart) goTo(ctx context.Context, poss ...toggleswitch.Switch) error
 	return multierr.Combine(errors...)
 }
 
+func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
+	cur, err := vc.c.Motion.GetPose(ctx, vc.conf.GripperName, "world", vc.pourExtraFrames, nil)
+	if err != nil {
+		return err
+	}
+
+	cur = referenceframe.NewPoseInFrame(
+		cur.Parent(),
+		spatialmath.NewPose(r3.Vector{
+			X: cur.Pose().Point().X,
+			Y: cur.Pose().Point().Y,
+			Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
+		}, cur.Pose().Orientation()))
+
+	_, err = vc.c.Motion.Move(
+		ctx,
+		motion.MoveReq{
+			ComponentName: vc.conf.GripperName,
+			Destination:   cur,
+		},
+	)
+	return err
+}
+
 func (vc *VinoCart) PourGlassFindCroppedRect(ctx context.Context) (*image.Rectangle, error) {
 	detections, err := vc.c.PourGlassFindService.DetectionsFromCamera(ctx, "", nil)
 	if err != nil {
@@ -965,26 +1043,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 		return err
 	}
 
-	cur, err := vc.c.Motion.GetPose(ctx, vc.conf.GripperName, "world", vc.pourExtraFrames, nil)
-	if err != nil {
-		return err
-	}
-
-	cur = referenceframe.NewPoseInFrame(
-		cur.Parent(),
-		spatialmath.NewPose(r3.Vector{
-			X: cur.Pose().Point().X,
-			Y: cur.Pose().Point().Y,
-			Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
-		}, cur.Pose().Orientation()))
-
-	_, err = vc.c.Motion.Move(
-		ctx,
-		motion.MoveReq{
-			ComponentName: vc.conf.GripperName,
-			Destination:   cur,
-		},
-	)
+	err = vc.moveToCurrentXYAtCupHeight(ctx)
 	if err != nil {
 		return err
 	}
