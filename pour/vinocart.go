@@ -303,7 +303,6 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 	g := errgroup.Group{}
 
 	g.Go(func() error {
-
 		return vc.c.Gripper.Open(ctx, nil)
 	})
 
