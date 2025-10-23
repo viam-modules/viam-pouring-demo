@@ -204,6 +204,24 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	if cmd["demo"] == true {
 		return nil, vc.FullDemo(ctx)
 	}
+	if cmd["test_position"] != nil {
+		positionCmd, ok := cmd["test_position"].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("test_position must be a map")
+		}
+
+		stage, ok := positionCmd["stage"].(string)
+		if !ok {
+			return nil, fmt.Errorf("test_position.stage must be a string")
+		}
+
+		step, ok := positionCmd["step"].(string)
+		if !ok {
+			return nil, fmt.Errorf("test_position.step must be a string")
+		}
+
+		return nil, vc.doAll(ctx, stage, step, 50)
+	}
 
 	return nil, fmt.Errorf("need a command")
 }
