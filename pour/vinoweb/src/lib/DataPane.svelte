@@ -33,7 +33,7 @@
     padding: 10px;
     overflow: hidden;
     display: flex;
-    gap: 10px;
+    gap: 20px;
     align-items: stretch;
     min-height: 0;
     height: 100%;
@@ -49,11 +49,10 @@
 
   .data-table-container {
     flex-shrink: 0;
-    width: 220px;
+    width: 30%;
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding: 10px;
   }
 
   .camera-feed-container {
@@ -61,6 +60,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    width: 70%;
     height: 100%;
     min-height: 0;
     overflow: hidden;
