@@ -43,7 +43,7 @@ var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
 const gripperToCupCenterHack = -35
-const gripperToBottleCenterHack = -40
+const gripperToBottleCenterHack = -20
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -372,7 +372,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 				return err
 			}
 		} else {
-			err = vc.c.Gripper.Open(ctx, nil)
+			err = vc.c.BottleGripper.Open(ctx, nil)
 			if err != nil {
 				return err
 			}
@@ -803,7 +803,7 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 	c := md.Center()
 
 	p := touch.GetApproachPoint(c, deltaLinear, o)
-	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+	// p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
 
 	return referenceframe.NewPoseInFrame(
 		"world",
