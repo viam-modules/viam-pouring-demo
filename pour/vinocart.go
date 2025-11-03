@@ -1424,3 +1424,12 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 
 	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
 }
+
+func (vc *VinoCart) FindBottles(ctx context.Context) ([]*viz.Object, error) {
+	objects, err := vc.c.BottleFinder.GetObjectPointClouds(ctx, "", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return FilterObjects(objects, 0, vc.conf.BottleWidth, 25, vc.logger), nil
+}
