@@ -1430,5 +1430,5 @@ func (vc *VinoCart) FindBottles(ctx context.Context) ([]*viz.Object, error) {
 		return nil, err
 	}
 
-	return FilterObjects(objects, 0, vc.conf.BottleWidth, 25, vc.logger), nil
+	return FilterObjects(objects, vc.conf.BottleFindHeight, vc.conf.BottleWidth, 25, vc.logger), nil
 }

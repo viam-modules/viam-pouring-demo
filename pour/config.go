@@ -64,10 +64,11 @@ type Config struct {
 	Handoff bool
 
 	// cup and bottle params, required
-	BottleHeight float64 `json:"bottle_height"`
-	BottleWidth  float64 `json:"bottle_width"`
-	CupHeight    float64 `json:"cup_height"`
-	CupWidth     float64 `json:"cup_width"`
+	BottleHeight     float64 `json:"bottle_height"`
+	BottleFindHeight float64 `json:"bottle_find_height"`
+	BottleWidth      float64 `json:"bottle_width"`
+	CupHeight        float64 `json:"cup_height"`
+	CupWidth         float64 `json:"cup_width"`
 
 	// optional offset for gripper height when grabbing/placing cup
 	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
@@ -106,6 +107,9 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.BottleHeight == 0 {
 		return nil, nil, fmt.Errorf("bottle_height cannot be unset")
+	}
+	if cfg.BottleFindHeight == 0 {
+		return nil, nil, fmt.Errorf(("bottle_find_height cannot be unset"))
 	}
 	if cfg.CupHeight == 0 {
 		return nil, nil, fmt.Errorf("cup_height cannot be unset")
