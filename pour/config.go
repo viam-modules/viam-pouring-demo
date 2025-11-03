@@ -67,6 +67,7 @@ type Config struct {
 	BottleHeight              float64 `json:"bottle_height"`
 	BottleFindHeight          float64 `json:"bottle_find_height"`
 	BottleWidth               float64 `json:"bottle_width"`
+	BottleGripHeight          float64 `json:"bottle_grip_height"`
 	CupHeight                 float64 `json:"cup_height"`
 	CupWidth                  float64 `json:"cup_width"`
 	GripperToBottleCenterHack float64 `json:"gripper_to_bottle_center_hack"`
@@ -111,6 +112,9 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if cfg.BottleFindHeight == 0 {
 		return nil, nil, fmt.Errorf(("bottle_find_height cannot be unset"))
+	}
+	if cfg.BottleGripHeight == 0 {
+		return nil, nil, fmt.Errorf("bottle_grip_heigh cannot be unset")
 	}
 	if cfg.CupHeight == 0 {
 		return nil, nil, fmt.Errorf("cup_height cannot be unset")
