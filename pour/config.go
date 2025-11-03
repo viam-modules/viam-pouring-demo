@@ -69,7 +69,7 @@ type Config struct {
 	BottleWidth               float64 `json:"bottle_width"`
 	CupHeight                 float64 `json:"cup_height"`
 	CupWidth                  float64 `json:"cup_width"`
-	GripperToBottleCenterHack float64 `json:"gripper_to_bottle_center_hack`
+	GripperToBottleCenterHack float64 `json:"gripper_to_bottle_center_hack"`
 
 	// optional offset for gripper height when grabbing/placing cup
 	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
