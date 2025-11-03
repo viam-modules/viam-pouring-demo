@@ -190,6 +190,15 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.Touch(ctx)
 	}
 
+	if cmd["touch-bottle"] == true {
+		err := vc.doAll(ctx, "touch-bottle-test", "prep-right-arm", 80)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, vc.TouchBottle(ctx)
+	}
+
 	if cmd["pour-prep"] == true {
 		return nil, vc.PourPrep(ctx)
 	}
@@ -678,11 +687,6 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	vc.setStatus("looking for the bottles")
 
-	err := vc.Reset(ctx)
-	if err != nil {
-		return err
-	}
-
 	start := time.Now()
 	objects, err := vc.FindBottles(ctx)
 	if err != nil {
@@ -760,7 +764,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	}
 
 	// ---- go to pick up
-	err = SetXarmSpeed(ctx, vc.c.Arm, 25, 25)
+	err = SetXarmSpeed(ctx, vc.c.BottleArm, 25, 25)
 	if err != nil {
 		return err
 	}
@@ -1421,7 +1425,7 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 		return nil, err
 	}
 
-	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, "FindCups", vc.logger), nil
 }
 
 func (vc *VinoCart) FindBottles(ctx context.Context) ([]*viz.Object, error) {
@@ -1430,5 +1434,5 @@ func (vc *VinoCart) FindBottles(ctx context.Context) ([]*viz.Object, error) {
 		return nil, err
 	}
 
-	return FilterObjects(objects, vc.conf.BottleFindHeight, vc.conf.BottleWidth, 25, vc.logger), nil
+	return FilterObjects(objects, vc.conf.BottleFindHeight, vc.conf.BottleWidth, 25, "FindBottles", vc.logger), nil
 }

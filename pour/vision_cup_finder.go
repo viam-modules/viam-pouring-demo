@@ -142,7 +142,7 @@ func (vcf *visionCupFinder) DoCommand(ctx context.Context, extra map[string]inte
 	return nil, nil
 }
 
-func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, logger logging.Logger) []*viz.Object {
+func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, objectType string, logger logging.Logger) []*viz.Object {
 	good := []*viz.Object{}
 
 	for idx, o := range objects {
@@ -158,7 +158,8 @@ func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta
 		widthDelta := math.Abs(correctWidth - width)
 
 		if logger != nil {
-			logger.Infof("FindCups %d %v height: %0.2f heightDelta: %0.2f (%v) width: %0.2f widthDelta: %0.2f (%v)",
+			logger.Infof("%s %d %v height: %0.2f heightDelta: %0.2f (%v) width: %0.2f widthDelta: %0.2f (%v)",
+				objectType,
 				idx, o,
 				height, heightDelta, heightDelta <= goodDelta,
 				width, widthDelta, widthDelta <= goodDelta,
@@ -166,6 +167,7 @@ func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta
 		}
 
 		if heightDelta > goodDelta || widthDelta > goodDelta {
+			logger.Warnf("%s discarded object %d", objectType, idx)
 			continue
 		}
 
