@@ -43,6 +43,7 @@ var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
 const gripperToCupCenterHack = -35
+const gripperToBottleCenterHack = -40
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -675,7 +676,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 }
 
 func (vc *VinoCart) TouchBottle(ctx context.Context) error {
-	vc.setStatus("looking")
+	vc.setStatus("looking for the bottles")
 
 	err := vc.Reset(ctx)
 	if err != nil {
@@ -683,6 +684,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	}
 
 	start := time.Now()
+	// Todo replace with FindBottles
 	objects, err := vc.FindCups(ctx)
 	if err != nil {
 		return err
@@ -701,7 +703,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 		return fmt.Errorf("too many objects %d", len(objects))
 	}
 
-	vc.setStatus("picking")
+	vc.setStatus("picking bottle")
 
 	obj := objects[0]
 
@@ -709,7 +711,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 
 	obstacles := []*referenceframe.GeometriesInFrame{}
 	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
-	vc.logger.Infof("add cup as obstacle %v", obj.Geometry)
+	vc.logger.Infof("add bottle as obstacle %v", obj.Geometry)
 
 	worldState, err := referenceframe.NewWorldState(obstacles, nil)
 	if err != nil {
@@ -721,13 +723,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	var o *spatialmath.OrientationVectorDegrees
 
 	choices := []*spatialmath.OrientationVectorDegrees{
-		{OX: 1, Theta: 180},
-		{OY: 1, Theta: 180},
-		{OX: .5, OY: 1, Theta: 180},
-		{OX: 1, OY: 1, Theta: 180},
-		{OX: 1, OY: -1, Theta: 180},
-		{OY: -1, Theta: 180},
-		{OX: -.5, OY: -1, Theta: 180},
+		{OX: -1, Theta: 180},
 	}
 
 	approaches := []*referenceframe.PoseInFrame{}
@@ -740,7 +736,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 		_, err2 := vc.c.Motion.Move(
 			ctx,
 			motion.MoveReq{
-				ComponentName: vc.c.Gripper.Name().ShortName(),
+				ComponentName: vc.c.BottleGripper.Name().ShortName(),
 				Destination:   goToPose,
 				WorldState:    worldState,
 			},
@@ -760,16 +756,6 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 
 	}
 
-	if vc.conf.Handoff && err != nil {
-
-		err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, obj)
-		if err2 == nil {
-			return nil
-		}
-
-		return multierr.Combine(err, err2)
-	}
-
 	if err != nil {
 		return err
 	}
@@ -780,15 +766,24 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
+	goToPose := vc.getApproachPoint(obj, gripperToBottleCenterHack, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
-	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose)
+	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
 	if err != nil {
 		return err
 	}
 
-	return vc.GrabCup(ctx)
+	got, err := vc.c.BottleGripper.Grab(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	if !got {
+		return fmt.Errorf("didn't get bottle")
+	}
+
+	return nil
 }
 
 func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
