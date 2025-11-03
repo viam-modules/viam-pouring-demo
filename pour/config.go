@@ -53,7 +53,8 @@ type Config struct {
 	GlassPourCam             string  `json:"glass_pour_cam"`
 	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
-	CupFinderService string `json:"cup_finder_service"` // find the cups on the table
+	CupFinderService    string `json:"cup_finder_service"` // find the cups on the table
+	BottleFinderService string `json:"bottle_finder_service"` // find the bottle on the table
 
 	Positions map[string]ConfigStatePostions
 
@@ -64,6 +65,7 @@ type Config struct {
 
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
+	BottleWidth  float64 `json:"bottle_width"`
 	CupHeight    float64 `json:"cup_height"`
 	CupWidth     float64 `json:"cup_width"`
 
@@ -115,6 +117,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		optionals = append(optionals, cfg.CupFinderService)
 	}
 
+	if cfg.BottleFinderService != "" {
+		optionals = append(optionals, cfg.BottleFinderService)
+	}
+
 	if cfg.BottleGripper != "" {
 		deps = append(deps, cfg.BottleGripper)
 	}
@@ -164,7 +170,8 @@ type Pour1Components struct {
 	Motion       motion.Service
 	CamVision    vision.Service
 
-	CupFinder vision.Service
+	CupFinder    vision.Service
+	BottleFinder vision.Service
 
 	Positions map[string]StagePositions
 
@@ -222,6 +229,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.CupFinderService != "" {
 		c.CupFinder, err = vision.FromDependencies(deps, config.CupFinderService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.BottleFinderService != "" {
+		c.BottleFinder, err = vision.FromDependencies(deps, config.BottleFinderService)
 		if err != nil {
 			return nil, err
 		}
