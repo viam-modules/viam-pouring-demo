@@ -674,6 +674,123 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 	return fmt.Errorf("no path for handoff")
 }
 
+func (vc *VinoCart) TouchBottle(ctx context.Context) error {
+	vc.setStatus("looking")
+
+	err := vc.Reset(ctx)
+	if err != nil {
+		return err
+	}
+
+	start := time.Now()
+	objects, err := vc.FindCups(ctx)
+	if err != nil {
+		return err
+	}
+
+	vc.logger.Infof("num objects: %v in %v", len(objects), time.Since(start))
+	for _, o := range objects {
+		vc.logger.Infof("\t objects: %v", o)
+	}
+
+	if len(objects) == 0 {
+		return noObjects
+	}
+
+	if len(objects) > 1 {
+		return fmt.Errorf("too many objects %d", len(objects))
+	}
+
+	vc.setStatus("picking")
+
+	obj := objects[0]
+
+	// -- setup world frame
+
+	obstacles := []*referenceframe.GeometriesInFrame{}
+	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
+	vc.logger.Infof("add cup as obstacle %v", obj.Geometry)
+
+	worldState, err := referenceframe.NewWorldState(obstacles, nil)
+	if err != nil {
+		return err
+	}
+
+	// -- approach
+
+	var o *spatialmath.OrientationVectorDegrees
+
+	choices := []*spatialmath.OrientationVectorDegrees{
+		{OX: 1, Theta: 180},
+		{OY: 1, Theta: 180},
+		{OX: .5, OY: 1, Theta: 180},
+		{OX: 1, OY: 1, Theta: 180},
+		{OX: 1, OY: -1, Theta: 180},
+		{OY: -1, Theta: 180},
+		{OX: -.5, OY: -1, Theta: 180},
+	}
+
+	approaches := []*referenceframe.PoseInFrame{}
+
+	for _, tryO := range choices {
+		goToPose := vc.getApproachPoint(obj, 100, tryO)
+		approaches = append(approaches, goToPose)
+		vc.logger.Infof("trying to move to %v", goToPose.Pose())
+
+		_, err2 := vc.c.Motion.Move(
+			ctx,
+			motion.MoveReq{
+				ComponentName: vc.c.Gripper.Name().ShortName(),
+				Destination:   goToPose,
+				WorldState:    worldState,
+			},
+		)
+
+		if err2 != nil {
+			vc.logger.Debugf("error: %v", err2)
+		}
+
+		if err2 == nil {
+			err = nil
+			o = tryO
+			break
+		} else if err == nil {
+			err = err2
+		}
+
+	}
+
+	if vc.conf.Handoff && err != nil {
+
+		err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, obj)
+		if err2 == nil {
+			return nil
+		}
+
+		return multierr.Combine(err, err2)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// ---- go to pick up
+	err = SetXarmSpeed(ctx, vc.c.Arm, 25, 25)
+	if err != nil {
+		return err
+	}
+
+	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
+	vc.logger.Infof("going to move to %v", goToPose)
+
+	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose)
+	if err != nil {
+		return err
+	}
+
+	return vc.GrabCup(ctx)
+}
+
 func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
 	md := obj.MetaData()
 	c := md.Center()
