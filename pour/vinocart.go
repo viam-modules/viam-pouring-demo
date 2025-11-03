@@ -43,7 +43,6 @@ var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
 const gripperToCupCenterHack = -35
-const gripperToBottleCenterHack = -20
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -778,7 +777,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, gripperToBottleCenterHack, o)
+	goToPose := vc.getApproachPoint(obj, vc.conf.GripperToBottleCenterHack, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
