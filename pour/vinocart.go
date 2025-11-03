@@ -334,6 +334,11 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+		} else {
+			err = vc.c.Gripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -357,7 +362,11 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-
+		} else {
+			err = vc.c.Gripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
