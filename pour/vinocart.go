@@ -684,8 +684,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	}
 
 	start := time.Now()
-	// Todo replace with FindBottles
-	objects, err := vc.FindCups(ctx)
+	objects, err := vc.FindBottles(ctx)
 	if err != nil {
 		return err
 	}
