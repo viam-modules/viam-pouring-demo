@@ -897,7 +897,7 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.doAll(ctx, "pour_prep", "right-grab", 80)
+	err = vc.TouchBottle(ctx)
 	if err != nil {
 		return err
 	}
