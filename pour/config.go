@@ -114,7 +114,7 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		return nil, nil, fmt.Errorf(("bottle_find_height cannot be unset"))
 	}
 	if cfg.BottleGripHeight == 0 {
-		return nil, nil, fmt.Errorf("bottle_grip_heigh cannot be unset")
+		return nil, nil, fmt.Errorf("bottle_grip_height cannot be unset")
 	}
 	if cfg.CupHeight == 0 {
 		return nil, nil, fmt.Errorf("cup_height cannot be unset")
