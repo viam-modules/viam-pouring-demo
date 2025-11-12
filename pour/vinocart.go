@@ -527,18 +527,7 @@ func (vc *VinoCart) TouchCup(ctx context.Context) error {
 	cupObj := cups[0]
 	cupObstacle := cupObstacles[0]
 
-	err = vc.doAll(ctx, "touch-bottle-test", "prep-right-arm", 80)
-	if err != nil {
-		return err
-	}
-
 	bottles, bottleObstacles, err := vc.GetBottles(ctx, true, true)
-	if err != nil {
-		return err
-	}
-
-	// -- return right arm to starting position after finding the bottles
-	err = vc.doAll(ctx, "reset", "right-holding-post", 50)
 	if err != nil {
 		return err
 	}
@@ -710,12 +699,6 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	}
 
 	obstacles = append(obstacles, cupObstacles...)
-
-	// -- look for bottles
-	err = vc.doAll(ctx, "touch-bottle-test", "prep-right-arm", 80)
-	if err != nil {
-		return err
-	}
 
 	vc.setStatus("looking for the bottles")
 
@@ -1482,7 +1465,6 @@ func (vc *VinoCart) FindBottles(ctx context.Context) ([]*viz.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return FilterObjects(objects, vc.conf.BottleFindHeight, vc.conf.BottleWidth, 25, "FindBottles", vc.logger), nil
 }
 
@@ -1511,8 +1493,23 @@ func (vc *VinoCart) GetBottles(ctx context.Context, requireBottleToBePresent boo
 
 	obstacles := []*referenceframe.GeometriesInFrame{}
 	for i, o := range objects {
-		o.Geometry.SetLabel(fmt.Sprintf("bottle-%d", i))
-		obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{o.Geometry}))
+		// Extract current geometry config to modify the height
+		geomConfig, err := spatialmath.NewGeometryConfig(o.Geometry)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get geometry config for bottle %d: %w", i, err)
+		}
+
+		// Set the height to the correct bottle height from config
+		geomConfig.Z = vc.conf.BottleFindHeight
+		geomConfig.Label = fmt.Sprintf("bottle-%d", i)
+
+		// Parse the modified config back to a geometry
+		modifiedGeom, err := geomConfig.ParseConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create modified geometry for bottle %d: %w", i, err)
+		}
+
+		obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{modifiedGeom}))
 	}
 	return objects, obstacles, nil
 }
