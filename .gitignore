@@ -29,3 +29,6 @@ go.work.sum
 # Binaries
 bin/
 reload-*
+
+# reload files
+.VIAM_RELOAD_ARCHIVE.tar.gz

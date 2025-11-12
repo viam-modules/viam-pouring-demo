@@ -45,7 +45,8 @@ const bottleName = "bottle-top"
 const gripperToCupCenterHack = -35
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
-var noObjects = fmt.Errorf("no objects")
+var noCupObjects = fmt.Errorf("no cup objects")
+var noBottleObjects = fmt.Errorf("no bottle objects")
 
 func init() {
 	resource.RegisterService(generic.API, VinoCartModel, resource.Registration[resource.Resource, *Config]{Constructor: newVinoCart})
@@ -186,7 +187,11 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	if cmd["touch"] == true {
-		return nil, vc.Touch(ctx)
+		return nil, vc.TouchCup(ctx)
+	}
+
+	if cmd["touch-bottle"] == true {
+		return nil, vc.TouchBottle(ctx)
 	}
 
 	if cmd["pour-prep"] == true {
@@ -256,7 +261,7 @@ func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
 		if err == nil {
 			break
 		}
-		if err != noObjects {
+		if err != noCupObjects {
 			return err
 		}
 		vc.logger.Infof("got %v, looping", err)
@@ -284,7 +289,7 @@ func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) FullDemo(ctx context.Context) error {
-	err := vc.Touch(ctx)
+	err := vc.TouchCup(ctx)
 	if err != nil {
 		return err
 	}
@@ -333,6 +338,11 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+		} else {
+			err = vc.c.Gripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -356,7 +366,11 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-
+		} else {
+			err = vc.c.BottleGripper.Open(ctx, nil)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -497,7 +511,7 @@ func saveImageToDataset(ctx context.Context, component resource.Name, img image.
 	return nil
 }
 
-func (vc *VinoCart) Touch(ctx context.Context) error {
+func (vc *VinoCart) TouchCup(ctx context.Context) error {
 	vc.setStatus("looking")
 
 	err := vc.Reset(ctx)
@@ -505,34 +519,30 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	start := time.Now()
-	objects, err := vc.FindCups(ctx)
+	cups, cupObstacles, err := vc.GetCups(ctx, true, false)
 	if err != nil {
 		return err
 	}
 
-	vc.logger.Infof("num objects: %v in %v", len(objects), time.Since(start))
-	for _, o := range objects {
-		vc.logger.Infof("\t objects: %v", o)
+	cupObj := cups[0]
+	cupObstacle := cupObstacles[0]
+
+	bottles, bottleObstacles, err := vc.GetBottles(ctx, true, true)
+	if err != nil {
+		return err
 	}
 
-	if len(objects) == 0 {
-		return noObjects
-	}
+	// -- setup world frame
+	obstacles := []*referenceframe.GeometriesInFrame{}
+	obstacles = append(obstacles, cupObstacle)
+	vc.logger.Infof("added cup as obstacle %v", cupObj.Geometry)
 
-	if len(objects) > 1 {
-		return fmt.Errorf("too many objects %d", len(objects))
+	obstacles = append(obstacles, bottleObstacles...)
+	for i, bottle := range bottles {
+		vc.logger.Infof("added bottle %d as obstacle %v", i, bottle.Geometry)
 	}
 
 	vc.setStatus("picking")
-
-	obj := objects[0]
-
-	// -- setup world frame
-
-	obstacles := []*referenceframe.GeometriesInFrame{}
-	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
-	vc.logger.Infof("add cup as obstacle %v", obj.Geometry)
 
 	worldState, err := referenceframe.NewWorldState(obstacles, nil)
 	if err != nil {
@@ -555,8 +565,10 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	approaches := []*referenceframe.PoseInFrame{}
 
+	zLinear := vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+
 	for _, tryO := range choices {
-		goToPose := vc.getApproachPoint(obj, 100, tryO)
+		goToPose := vc.getApproachPoint(cupObj, 100, zLinear, tryO)
 		approaches = append(approaches, goToPose)
 		vc.logger.Infof("trying to move to %v", goToPose.Pose())
 
@@ -585,7 +597,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	if vc.conf.Handoff && err != nil {
 
-		err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, obj)
+		err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, cupObj)
 		if err2 == nil {
 			return nil
 		}
@@ -603,7 +615,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
+	goToPose := vc.getApproachPoint(cupObj, gripperToCupCenterHack, zLinear, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose)
@@ -633,7 +645,9 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// we found a path!
 
-		goToPose = vc.getApproachPoint(obj, gripperToCupCenterHack, choices[idx])
+		zLinear := vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+
+		goToPose = vc.getApproachPoint(obj, gripperToCupCenterHack, zLinear, choices[idx])
 		vc.logger.Infof("going to move (2) to %v", goToPose)
 
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
@@ -650,7 +664,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 		}
 
 		// move to known spot
-		goToPose = vc.getApproachPoint(obj, 150, choices[idx])
+		goToPose = vc.getApproachPoint(obj, 150, zLinear, choices[idx])
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
 		if err != nil {
 			return err
@@ -663,23 +677,125 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 		}
 
 		// backup
-		goToPose = vc.getApproachPoint(obj, 250, choices[idx])
+		goToPose = vc.getApproachPoint(obj, 250, zLinear, choices[idx])
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
 		if err != nil {
 			return err
 		}
 
-		return vc.Touch(ctx)
+		return vc.TouchCup(ctx)
 	}
 	return fmt.Errorf("no path for handoff")
 }
 
-func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
+func (vc *VinoCart) TouchBottle(ctx context.Context) error {
+	// -- look for cups
+	vc.setStatus("looking for the cups")
+
+	obstacles := []*referenceframe.GeometriesInFrame{}
+	_, cupObstacles, err := vc.GetCups(ctx, false, true)
+	if err != nil {
+		return err
+	}
+
+	obstacles = append(obstacles, cupObstacles...)
+
+	vc.setStatus("looking for the bottles")
+
+	bottles, bottleObstacles, err := vc.GetBottles(ctx, true, false)
+	if err != nil {
+		return err
+	}
+
+	obj := bottles[0]
+	bottleObstacle := bottleObstacles[0]
+
+	// -- setup world frame
+
+	obstacles = append(obstacles, bottleObstacle)
+	vc.logger.Infof("add bottle as obstacle %v", obj.Geometry)
+
+	worldState, err := referenceframe.NewWorldState(obstacles, nil)
+	if err != nil {
+		return err
+	}
+
+	// -- approach
+
+	var o *spatialmath.OrientationVectorDegrees
+
+	choices := []*spatialmath.OrientationVectorDegrees{
+		{OX: -1, Theta: 180},
+		{OX: -.86, OY: .5, Theta: 180},
+		{OX: -.86, OY: -.5, Theta: 180},
+	}
+
+	approaches := []*referenceframe.PoseInFrame{}
+
+	for _, tryO := range choices {
+		goToPose := vc.getApproachPoint(obj, 100, vc.conf.BottleGripHeight, tryO)
+		approaches = append(approaches, goToPose)
+		vc.logger.Infof("trying to move to %v", goToPose.Pose())
+
+		_, err2 := vc.c.Motion.Move(
+			ctx,
+			motion.MoveReq{
+				ComponentName: vc.c.BottleGripper.Name().ShortName(),
+				Destination:   goToPose,
+				WorldState:    worldState,
+			},
+		)
+
+		if err2 != nil {
+			vc.logger.Debugf("error: %v", err2)
+		}
+
+		if err2 == nil {
+			err = nil
+			o = tryO
+			break
+		} else if err == nil {
+			err = err2
+		}
+
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// ---- go to pick up
+	err = SetXarmSpeed(ctx, vc.c.BottleArm, 25, 25)
+	if err != nil {
+		return err
+	}
+
+	goToPose := vc.getApproachPoint(obj, vc.conf.GripperToBottleCenterHack, vc.conf.BottleGripHeight, o)
+	vc.logger.Infof("going to move to %v", goToPose)
+
+	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
+	if err != nil {
+		return err
+	}
+
+	got, err := vc.c.BottleGripper.Grab(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	if !got {
+		return fmt.Errorf("didn't get bottle")
+	}
+
+	return nil
+}
+
+func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, zLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
 	md := obj.MetaData()
 	c := md.Center()
 
 	p := touch.GetApproachPoint(c, deltaLinear, o)
-	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+	p.Z = zLinear
 
 	return referenceframe.NewPoseInFrame(
 		"world",
@@ -785,7 +901,7 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.doAll(ctx, "pour_prep", "right-grab", 80)
+	err = vc.TouchBottle(ctx)
 	if err != nil {
 		return err
 	}
@@ -1310,5 +1426,90 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 		return nil, err
 	}
 
-	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, "FindCups", vc.logger), nil
+}
+
+// GetCups finds the cups and returns them and their obstacles
+// requireCupToBePresent: if true, returns an error if no cups are found. This is useful for when we require a cup to be present such as picking it up.
+// allowMultiple: if true, returns multiple cups if found. This is useful for when we want to return all the cups found as obstacles to avoid.
+func (vc *VinoCart) GetCups(ctx context.Context, requireCupToBePresent bool, allowMultiple bool) ([]*viz.Object, []*referenceframe.GeometriesInFrame, error) {
+	start := time.Now()
+	objects, err := vc.FindCups(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	vc.logger.Infof("num cups: %v in %v", len(objects), time.Since(start))
+	for _, o := range objects {
+		vc.logger.Infof("\t cups: %v", o)
+	}
+
+	if len(objects) == 0 && requireCupToBePresent {
+		return nil, nil, noCupObjects
+	}
+
+	if len(objects) > 1 && !allowMultiple {
+		return nil, nil, fmt.Errorf("too many cups %d", len(objects))
+	}
+
+	obstacles := []*referenceframe.GeometriesInFrame{}
+	for i, o := range objects {
+		o.Geometry.SetLabel(fmt.Sprintf("cup-%d", i))
+		obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{o.Geometry}))
+	}
+	return objects, obstacles, nil
+}
+
+func (vc *VinoCart) FindBottles(ctx context.Context) ([]*viz.Object, error) {
+	objects, err := vc.c.BottleFinder.GetObjectPointClouds(ctx, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	return FilterObjects(objects, vc.conf.BottleFindHeight, vc.conf.BottleWidth, 25, "FindBottles", vc.logger), nil
+}
+
+// GetBottles finds the bottles and returns them and their obstacles
+// requireBottleToBePresent: if true, returns an error if no bottles are found. This is useful for when we require a bottle to be present such as picking it up.
+// allowMultiple: if true, returns multiple bottles if found. This is useful for when we want to return all the bottles found as obstacles to avoid.
+func (vc *VinoCart) GetBottles(ctx context.Context, requireBottleToBePresent bool, allowMultiple bool) ([]*viz.Object, []*referenceframe.GeometriesInFrame, error) {
+	start := time.Now()
+	objects, err := vc.FindBottles(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	vc.logger.Infof("num bottles: %v in %v", len(objects), time.Since(start))
+	for _, o := range objects {
+		vc.logger.Infof("\t bottles: %v", o)
+	}
+
+	if len(objects) == 0 && requireBottleToBePresent {
+		return nil, nil, noBottleObjects
+	}
+
+	if len(objects) > 1 && !allowMultiple {
+		return nil, nil, fmt.Errorf("too many bottles %d", len(objects))
+	}
+
+	obstacles := []*referenceframe.GeometriesInFrame{}
+	for i, o := range objects {
+		// Extract current geometry config to modify the height
+		geomConfig, err := spatialmath.NewGeometryConfig(o.Geometry)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get geometry config for bottle %d: %w", i, err)
+		}
+
+		// Set the height to the correct bottle height from config
+		geomConfig.Z = vc.conf.BottleFindHeight
+		geomConfig.Label = fmt.Sprintf("bottle-%d", i)
+
+		// Parse the modified config back to a geometry
+		modifiedGeom, err := geomConfig.ParseConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create modified geometry for bottle %d: %w", i, err)
+		}
+
+		obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{modifiedGeom}))
+	}
+	return objects, obstacles, nil
 }
