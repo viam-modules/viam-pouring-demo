@@ -63,7 +63,7 @@
       joints: leftJoints,
       tableTitle: "Left Arm",
       camera: {
-        name: "left-camera",
+        name: "left-cam",
         partID: "xxx",
         label: "Left Camera",
       },
@@ -72,7 +72,7 @@
       joints: rightJoints,
       tableTitle: "Right Arm",
       camera: {
-        name: "right-camera",
+        name: "right-cam",
         partID: "xxx",
         label: "Right Camera",
       },
