@@ -28,7 +28,7 @@
     ];
 
     const mockCamera = {
-        name: "cam-left",
+        name: "left-cam",
         partID: "xxx",
         label: "Camera 1",
     };
@@ -38,7 +38,7 @@
             joints: sampleJoints,
             tableTitle: "Robot Arm 1",
             camera: {
-                name: "cam-left",
+                name: "left-cam",
                 partID: "xxx",
                 label: "Camera 1",
             },
@@ -47,7 +47,7 @@
             joints: sampleJoints,
             tableTitle: "Robot Arm 2",
             camera: {
-                name: "cam-right",
+                name: "right-cam",
                 partID: "xxx",
                 label: "Camera 2",
             },
