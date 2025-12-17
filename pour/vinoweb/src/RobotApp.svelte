@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { useRobotClient } from "@viamrobotics/svelte-sdk";
   import { GenericServiceClient } from "@viamrobotics/sdk";
   import { ArmClient } from "@viamrobotics/sdk";
-  import { Struct, type JsonValue } from "@bufbuild/protobuf";
+  import { Struct } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
   import type { Joint } from "./lib/types.js";
@@ -18,7 +18,12 @@
     | "placing"
     | "waiting"
     | "manual mode";
-  let status: StatusKey = $state("standby") as StatusKey;
+
+  interface Status {
+    status: StatusKey;
+    message: string;
+  }
+  let robotStatus: Status = $state({ status: "standby", message: ''});
 
   const statusMessages: Record<StatusKey, string> = {
     standby: "Ready to pour!",
@@ -31,12 +36,18 @@
     "manual mode": "Manual mode active",
   };
 
+  let isDevMode = $state(false);
+
   // --- Keyboard controls for debugging ---
   function handleKeydown(event: KeyboardEvent) {
     const keys = Object.keys(statusMessages) as StatusKey[];
-    const keyNum = parseInt(event.key);
+    const key = event.key;
+    const keyNum = parseInt(key);
     if (keyNum >= 1 && keyNum <= keys.length) {
-      status = keys[keyNum - 1];
+      robotStatus.status = keys[keyNum - 1];
+    }
+    if (key === "d") {
+      isDevMode = !isDevMode;
     }
   }
 
@@ -106,16 +117,18 @@
           if (
             result &&
             typeof result === "object" &&
-            "status" in result &&
-            typeof (result as any).status === "string"
+            "status" in result && "message" in result &&
+            typeof (result as any).status === "string" &&
+            typeof (result as any).message === "string"
           ) {
-            const statusStr = (result as any).status;
+            const status = (result as any).status;
+            const message = (result as any).message;
             if (
               (Object.keys(statusMessages) as StatusKey[]).includes(
-                statusStr as StatusKey
+                status as StatusKey
               )
             ) {
-              status = statusStr as StatusKey;
+              robotStatus = { status, message };
             }
           }
         } catch (err) {
@@ -154,14 +167,19 @@
       }
     };
   });
+
+  const statusMessage = $derived((!isDevMode || !robotStatus.message.length) ? statusMessages[robotStatus.status] : robotStatus.message)
 </script>
 
 <div class="app-container">
   <aside class="sidebar"></aside>
+  {#if isDevMode}
+    <div id="dev-container">Dev mode</div>
+  {/if}
 
-  <MainContent panes={panesData} {status}>
+  <MainContent panes={panesData} status={robotStatus.status}>
     {#snippet statusBar()}
-      <Status message={statusMessages[status]} />
+      <Status message={statusMessage} status={robotStatus.status} />
     {/snippet}
   </MainContent>
 </div>
@@ -181,5 +199,15 @@
     color: white;
     padding: 40px;
     overflow-y: auto;
+  }
+
+  #dev-container {
+    position:absolute;
+    background-color: oklch(82.7% 0.119 306.383);
+    z-index: 10;
+    left: 10px;
+    top: 10px;
+    padding: 8px;
+    border-radius: 4px;
   }
 </style>

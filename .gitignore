@@ -34,3 +34,5 @@ reload-*
 .VIAM_RELOAD_ARCHIVE.tar.gz
 
 .DS_Store
+pour/vinoweb/node_modules/
+pour/vinoweb/pnpm-lock.yaml
