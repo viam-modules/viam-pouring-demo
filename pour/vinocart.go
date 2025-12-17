@@ -1233,12 +1233,25 @@ func saveImage(img image.Image, loopNumber int) (string, error) {
 
 func (vc *VinoCart) PutBack(ctx context.Context) error {
 	vc.setStatus("placing")
-	err := vc.doAll(ctx, "put-back", "before-open", 50)
+	// put cup back fully
+	err := vc.doAll(ctx, "put-back", "before-open-cup", 50)
 	if err != nil {
 		return err
 	}
 
 	err = vc.moveToCurrentXYAtCupHeight(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = vc.c.Gripper.Open(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	time.Sleep(time.Millisecond * 500)
+
+	err = vc.doAll(ctx, "put-back", "post-open", 100)
 	if err != nil {
 		return err
 	}
@@ -1279,14 +1292,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.c.Gripper.Open(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	time.Sleep(time.Millisecond * 500)
-
-	return vc.doAll(ctx, "put-back", "post-open", 100)
+	return nil
 }
 
 func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
