@@ -6,7 +6,7 @@ import (
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
-	"go.viam.com/rdk/components/switch"
+	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
@@ -53,7 +53,8 @@ type Config struct {
 	GlassPourCam             string  `json:"glass_pour_cam"`
 	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
-	CupFinderService string `json:"cup_finder_service"` // find the cups on the table
+	CupFinderService    string `json:"cup_finder_service"`    // find the cups on the table
+	BottleFinderService string `json:"bottle_finder_service"` // find the bottle on the table
 
 	Positions map[string]ConfigStatePostions
 
@@ -63,9 +64,13 @@ type Config struct {
 	Handoff bool
 
 	// cup and bottle params, required
-	BottleHeight float64 `json:"bottle_height"`
-	CupHeight    float64 `json:"cup_height"`
-	CupWidth     float64 `json:"cup_width"`
+	BottleHeight              float64 `json:"bottle_height"`
+	BottleFindHeight          float64 `json:"bottle_find_height"`
+	BottleWidth               float64 `json:"bottle_width"`
+	BottleGripHeight          float64 `json:"bottle_grip_height"`
+	CupHeight                 float64 `json:"cup_height"`
+	CupWidth                  float64 `json:"cup_width"`
+	GripperToBottleCenterHack float64 `json:"gripper_to_bottle_center_hack"`
 
 	// optional offset for gripper height when grabbing/placing cup
 	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
@@ -105,14 +110,27 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	if cfg.BottleHeight == 0 {
 		return nil, nil, fmt.Errorf("bottle_height cannot be unset")
 	}
+	if cfg.BottleFindHeight == 0 {
+		return nil, nil, fmt.Errorf(("bottle_find_height cannot be unset"))
+	}
+	if cfg.BottleGripHeight == 0 {
+		return nil, nil, fmt.Errorf("bottle_grip_height cannot be unset")
+	}
 	if cfg.CupHeight == 0 {
 		return nil, nil, fmt.Errorf("cup_height cannot be unset")
+	}
+	if cfg.GripperToBottleCenterHack == 0 {
+		return nil, nil, fmt.Errorf(("gripper_to_bottle_center_hack cannot be unset"))
 	}
 
 	optionals := []string{}
 
 	if cfg.CupFinderService != "" {
 		optionals = append(optionals, cfg.CupFinderService)
+	}
+
+	if cfg.BottleFinderService != "" {
+		optionals = append(optionals, cfg.BottleFinderService)
 	}
 
 	if cfg.BottleGripper != "" {
@@ -164,7 +182,8 @@ type Pour1Components struct {
 	Motion       motion.Service
 	CamVision    vision.Service
 
-	CupFinder vision.Service
+	CupFinder    vision.Service
+	BottleFinder vision.Service
 
 	Positions map[string]StagePositions
 
@@ -222,6 +241,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.CupFinderService != "" {
 		c.CupFinder, err = vision.FromDependencies(deps, config.CupFinderService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.BottleFinderService != "" {
+		c.BottleFinder, err = vision.FromDependencies(deps, config.BottleFinderService)
 		if err != nil {
 			return nil, err
 		}
