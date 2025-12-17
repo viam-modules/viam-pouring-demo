@@ -1234,6 +1234,8 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 		return err
 	}
 
+	time.Sleep(time.Second * 1)
+
 	// go to picked bottle position
 	vc.pickedBottleLock.RLock()
 	bottlePutBackPose := referenceframe.NewPoseInFrame(
@@ -1258,7 +1260,6 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 		motion.MoveReq{
 			ComponentName: vc.c.BottleGripper.Name().ShortName(),
 			Destination:   bottlePutBackPose,
-			Constraints:   &LinearConstraint,
 		},
 	)
 	if err != nil {
