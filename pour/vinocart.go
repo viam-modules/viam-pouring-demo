@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/png"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"sync"
@@ -47,6 +48,10 @@ const gripperToCupCenterHack = -35
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noCupObjects = fmt.Errorf("no cup objects")
 var noBottleObjects = fmt.Errorf("no bottle objects")
+
+type contextKey string
+
+const cupYKey contextKey = "cupY"
 
 func init() {
 	resource.RegisterService(generic.API, VinoCartModel, resource.Registration[resource.Resource, *Config]{Constructor: newVinoCart})
@@ -154,6 +159,9 @@ type VinoCart struct {
 	status     string
 
 	server *http.Server
+
+	lastCupY *float64
+	cupYLock sync.RWMutex
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -527,6 +535,12 @@ func (vc *VinoCart) TouchCup(ctx context.Context) error {
 	cupObj := cups[0]
 	cupObstacle := cupObstacles[0]
 
+	cupMd := cupObj.MetaData()
+	cupY := cupMd.Center().Y
+	vc.cupYLock.Lock()
+	vc.lastCupY = &cupY
+	vc.cupYLock.Unlock()
+
 	bottles, bottleObstacles, err := vc.GetBottles(ctx, true, true)
 	if err != nil {
 		return err
@@ -702,13 +716,45 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 
 	vc.setStatus("looking for the bottles")
 
-	bottles, bottleObstacles, err := vc.GetBottles(ctx, true, false)
+	bottles, bottleObstacles, err := vc.GetBottles(ctx, true, true)
 	if err != nil {
 		return err
 	}
 
-	obj := bottles[0]
-	bottleObstacle := bottleObstacles[0]
+	var obj *viz.Object
+	var bottleObstacle *referenceframe.GeometriesInFrame
+
+	vc.cupYLock.RLock()
+	cupYPtr := vc.lastCupY
+	vc.cupYLock.RUnlock()
+
+	if cupYPtr != nil {
+		cupY := *cupYPtr
+		minDistance := math.MaxFloat64
+		selectedIdx := 0
+
+		for i, bottle := range bottles {
+			bottleMd := bottle.MetaData()
+			bottleY := bottleMd.Center().Y
+			distance := math.Abs(bottleY - cupY)
+
+			if distance < minDistance {
+				minDistance = distance
+				selectedIdx = i
+			}
+		}
+
+		obj = bottles[selectedIdx]
+		bottleObstacle = bottleObstacles[selectedIdx]
+
+		selectedBottleMd := obj.MetaData()
+		vc.logger.Infof("Selected bottle %d with Y=%.2f (closest to cup Y=%.2f, distance=%.2f)",
+			selectedIdx, selectedBottleMd.Center().Y, cupY, minDistance)
+	} else {
+		obj = bottles[0]
+		bottleObstacle = bottleObstacles[0]
+		vc.logger.Infof("No cup context found, selecting first bottle (default)")
+	}
 
 	// -- setup world frame
 
