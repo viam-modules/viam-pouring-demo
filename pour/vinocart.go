@@ -1251,7 +1251,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 
 	time.Sleep(time.Millisecond * 500)
 
-	err = vc.doAll(ctx, "put-back", "post-open", 100)
+	err = vc.doAll(ctx, "put-back", "post-open-cup", 100)
 	if err != nil {
 		return err
 	}
