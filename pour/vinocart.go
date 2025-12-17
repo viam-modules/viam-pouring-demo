@@ -1238,6 +1238,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 
 	// go to picked bottle position
 	vc.pickedBottleLock.RLock()
+	vc.logger.Infof("picked bottle position: %v", vc.pickedBottlePosition)
 	bottlePutBackPose := referenceframe.NewPoseInFrame(
 		"world",
 		spatialmath.NewPose(
