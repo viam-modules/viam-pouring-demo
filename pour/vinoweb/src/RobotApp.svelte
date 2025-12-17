@@ -74,7 +74,7 @@
       joints: leftJoints,
       tableTitle: "Left Arm",
       camera: {
-        name: "cam-left",
+        name: "left-cam",
         partID: "xxx",
         label: "Left Camera",
       },
@@ -83,7 +83,7 @@
       joints: rightJoints,
       tableTitle: "Right Arm",
       camera: {
-        name: "cam-right",
+        name: "right-cam",
         partID: "xxx",
         label: "Right Camera",
       },
@@ -104,8 +104,8 @@
     const robotClient = robotClientStore.current;
     $inspect(robotClient, "robotClient");
     if (robotClient && !pollingHandle) {
-      if (!leftArm) leftArm = new ArmClient(robotClient, "arm-left");
-      if (!rightArm) rightArm = new ArmClient(robotClient, "arm-right");
+      if (!leftArm) leftArm = new ArmClient(robotClient, "left-arm");
+      if (!rightArm) rightArm = new ArmClient(robotClient, "right-arm");
       if (!generic) generic = new GenericServiceClient(robotClient, "cart");
 
       pollingHandle = setInterval(async () => {
