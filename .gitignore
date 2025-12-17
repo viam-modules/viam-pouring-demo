@@ -32,3 +32,5 @@ reload-*
 
 # reload files
 .VIAM_RELOAD_ARCHIVE.tar.gz
+
+.DS_Store
