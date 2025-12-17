@@ -158,6 +158,9 @@ type VinoCart struct {
 
 	lastCupY *float64
 	cupYLock sync.RWMutex
+
+	pickedBottlePosition *r3.Vector
+	pickedBottleLock     sync.RWMutex
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -717,8 +720,8 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 		return err
 	}
 
-	var obj *viz.Object
-	var bottleObstacle *referenceframe.GeometriesInFrame
+	var selectedBottleObj *viz.Object
+	var selectedBottleCentroid *r3.Vector
 
 	vc.cupYLock.RLock()
 	cupYPtr := vc.lastCupY
@@ -740,22 +743,34 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 			}
 		}
 
-		obj = bottles[selectedIdx]
-		bottleObstacle = bottleObstacles[selectedIdx]
+		selectedBottleObj = bottles[selectedIdx]
 
-		selectedBottleMd := obj.MetaData()
+		selectedBottleMd := selectedBottleObj.MetaData()
+		selectedBottleC := selectedBottleMd.Center()
+		selectedBottleCentroid = &selectedBottleC
 		vc.logger.Infof("Selected bottle %d with Y=%.2f (closest to cup Y=%.2f, distance=%.2f)",
-			selectedIdx, selectedBottleMd.Center().Y, cupY, minDistance)
+			selectedIdx, selectedBottleC.Y, cupY, minDistance)
 	} else {
-		obj = bottles[0]
-		bottleObstacle = bottleObstacles[0]
+		selectedBottleObj = bottles[0]
 		vc.logger.Infof("No cup context found, selecting first bottle (default)")
 	}
 
+	// save location of selected bottle
+
+	vc.pickedBottleLock.Lock()
+	vc.pickedBottlePosition = &r3.Vector{
+		X: selectedBottleCentroid.X,
+		Y: vc.conf.BottleGripHeight,
+		Z: selectedBottleCentroid.Z,
+	}
+	vc.pickedBottleLock.Unlock()
+
+	vc.logger.Infof("picked bottle position: %v", vc.pickedBottlePosition)
+
 	// -- setup world frame
 
-	obstacles = append(obstacles, bottleObstacle)
-	vc.logger.Infof("add bottle as obstacle %v", obj.Geometry)
+	obstacles = append(obstacles, bottleObstacles...)
+	vc.logger.Infof("add bottles as obstacle. selected bottle %v, all bottles %v", selectedBottleObj.Geometry, bottleObstacles)
 
 	worldState, err := referenceframe.NewWorldState(obstacles, nil)
 	if err != nil {
@@ -775,7 +790,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	approaches := []*referenceframe.PoseInFrame{}
 
 	for _, tryO := range choices {
-		goToPose := vc.getApproachPoint(obj, 100, vc.conf.BottleGripHeight, tryO)
+		goToPose := vc.getApproachPoint(selectedBottleObj, 100, vc.conf.BottleGripHeight, tryO)
 		approaches = append(approaches, goToPose)
 		vc.logger.Infof("trying to move to %v", goToPose.Pose())
 
@@ -812,7 +827,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, vc.conf.GripperToBottleCenterHack, vc.conf.BottleGripHeight, o)
+	goToPose := vc.getApproachPoint(selectedBottleObj, vc.conf.GripperToBottleCenterHack, vc.conf.BottleGripHeight, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
@@ -1202,6 +1217,37 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 	}
 
 	err = vc.moveToCurrentXYAtCupHeight(ctx)
+	if err != nil {
+		return err
+	}
+
+	// go to picked bottle position
+	vc.pickedBottleLock.RLock()
+	bottlePutBackPose := referenceframe.NewPoseInFrame(
+		"world",
+		spatialmath.NewPose(
+			r3.Vector{
+				X: vc.pickedBottlePosition.X,
+				Y: vc.pickedBottlePosition.Y,
+				Z: vc.pickedBottlePosition.Z,
+			},
+			&spatialmath.OrientationVectorDegrees{
+				OX: -1,
+				OY: 0,
+				OZ: 0,
+			},
+		),
+	)
+	vc.pickedBottleLock.RUnlock()
+
+	_, err = vc.c.Motion.Move(
+		ctx,
+		motion.MoveReq{
+			ComponentName: vc.c.BottleGripper.Name().ShortName(),
+			Destination:   bottlePutBackPose,
+			Constraints:   &LinearConstraint,
+		},
+	)
 	if err != nil {
 		return err
 	}
