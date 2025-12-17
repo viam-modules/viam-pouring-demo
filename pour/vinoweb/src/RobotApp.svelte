@@ -36,7 +36,7 @@
     "manual mode": "Manual mode active",
   };
 
-  let isDevMode = $state(true);
+  let isDevMode = $state(false);
 
   // --- Keyboard controls for debugging ---
   function handleKeydown(event: KeyboardEvent) {
@@ -179,7 +179,7 @@
 
   <MainContent panes={panesData} status={robotStatus.status}>
     {#snippet statusBar()}
-      <Status message={statusMessage} />
+      <Status message={statusMessage} status={robotStatus.status} />
     {/snippet}
   </MainContent>
 </div>

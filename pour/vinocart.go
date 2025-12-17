@@ -102,13 +102,13 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	}
 
 	if conf.Loop {
-		vc.status = "starting"
+		vc.setStatus("starting")
 		vc.loopWaitGroup.Add(1)
 		cancelCtx, cancel := context.WithCancel(context.Background())
 		vc.loopCancel = cancel
 		go vc.run(cancelCtx)
 	} else {
-		vc.status = "manual mode"
+		vc.setStatus("manual mode")
 	}
 
 	realFS, err := fs.Sub(vinowebStaticFS, "vinoweb/dist")
