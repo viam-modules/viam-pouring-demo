@@ -525,7 +525,7 @@ func saveImageToDataset(ctx context.Context, component resource.Name, img image.
 }
 
 func (vc *VinoCart) TouchCup(ctx context.Context) error {
-	vc.setStatus("looking")
+	vc.setStatusWithMessage("looking", "Looking for cups")
 
 	err := vc.Reset(ctx)
 	if err != nil {
@@ -536,6 +536,8 @@ func (vc *VinoCart) TouchCup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	vc.setStatusWithMessage("looking", "Looking for cups")
 
 	cupObj := cups[0]
 	cupObstacle := cupObstacles[0]
