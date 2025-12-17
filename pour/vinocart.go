@@ -153,6 +153,7 @@ type VinoCart struct {
 
 	statusLock sync.Mutex
 	status     string
+	message    string
 
 	server *http.Server
 
@@ -175,7 +176,7 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	if cmd["status"] == true {
-		return map[string]interface{}{"status": vc.getStatus()}, nil
+		return vc.getStatus(), nil
 	}
 
 	if vc.loopCancel != nil {
@@ -246,17 +247,25 @@ func (vc *VinoCart) run(ctx context.Context) {
 	}
 }
 
-func (vc *VinoCart) getStatus() string {
+func (vc *VinoCart) getStatus() map[string]interface{} {
 	vc.statusLock.Lock()
 	defer vc.statusLock.Unlock()
-	return vc.status
+	return map[string]interface{}{
+		"status":  vc.status,
+		"message": vc.message,
+	}
 }
 
 func (vc *VinoCart) setStatus(s string) {
-	vc.logger.Infof("setStatus: %v", s)
+	vc.setStatusWithMessage(s, "")
+}
+
+func (vc *VinoCart) setStatusWithMessage(s string, msg string) {
+	vc.logger.Infof("setStatus: %v (message: %v)", s, msg)
 	vc.statusLock.Lock()
 	defer vc.statusLock.Unlock()
 	vc.status = s
+	vc.message = msg
 }
 
 func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {

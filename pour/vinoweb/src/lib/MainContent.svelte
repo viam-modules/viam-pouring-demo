@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { fade, scale } from "svelte/transition";
   import type { Snippet } from "svelte";
   import DataPane from "./DataPane.svelte";
   import type { Joint } from "./types.js";
