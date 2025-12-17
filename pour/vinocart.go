@@ -537,7 +537,7 @@ func (vc *VinoCart) TouchCup(ctx context.Context) error {
 		return err
 	}
 
-	vc.setStatusWithMessage("looking", "Looking for cups")
+	vc.setStatusWithMessage("looking", fmt.Sprintf("Found %d cup(s), looking for bottle obstacles", len(cups)))
 
 	cupObj := cups[0]
 	cupObstacle := cupObstacles[0]
@@ -552,6 +552,8 @@ func (vc *VinoCart) TouchCup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	vc.setStatusWithMessage("looking", fmt.Sprintf("Found %d bottle obstacles(s)", len(bottles)))
 
 	// -- setup world frame
 	obstacles := []*referenceframe.GeometriesInFrame{}
@@ -587,6 +589,8 @@ func (vc *VinoCart) TouchCup(ctx context.Context) error {
 	approaches := []*referenceframe.PoseInFrame{}
 
 	zLinear := vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+
+	vc.setStatusWithMessage("picking", "Calculating cup approach")
 
 	for _, tryO := range choices {
 		goToPose := vc.getApproachPoint(cupObj, 100, zLinear, tryO)
@@ -627,6 +631,7 @@ func (vc *VinoCart) TouchCup(ctx context.Context) error {
 	}
 
 	if err != nil {
+		vc.setStatusWithMessage("picking", "Could not find a good cup approach")
 		return err
 	}
 
@@ -635,7 +640,7 @@ func (vc *VinoCart) TouchCup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
+	vc.setStatusWithMessage("picking", "Approaching the cup")
 	goToPose := vc.getApproachPoint(cupObj, gripperToCupCenterHack, zLinear, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
@@ -711,17 +716,17 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	// -- look for cups
-	vc.setStatus("looking for the cups")
+	vc.setStatusWithMessage("picking", "Looking for cup obstacles")
 
 	obstacles := []*referenceframe.GeometriesInFrame{}
-	_, cupObstacles, err := vc.GetCups(ctx, false, true)
+	cups, cupObstacles, err := vc.GetCups(ctx, false, true)
 	if err != nil {
 		return err
 	}
 
-	obstacles = append(obstacles, cupObstacles...)
+	vc.setStatusWithMessage("picking", fmt.Sprintf("Found %d cup obstacle(s), looking for bottles", len(cups)))
 
-	vc.setStatus("looking for the bottles")
+	obstacles = append(obstacles, cupObstacles...)
 
 	bottles, bottleObstacles, err := vc.GetBottles(ctx, true, true)
 	if err != nil {
@@ -739,6 +744,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 		cupY := *cupYPtr
 		minDistance := math.MaxFloat64
 		selectedIdx := 0
+		vc.setStatusWithMessage("picking", fmt.Sprintf("Found %d bottle(s), cup Y=%.2f", len(bottles), cupY))
 
 		for i, bottle := range bottles {
 			bottleMd := bottle.MetaData()
@@ -758,6 +764,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 		vc.logger.Infof("Selected bottle %d with Y=%.2f (closest to cup Y=%.2f, distance=%.2f)",
 			selectedIdx, selectedBottleMd.Center().Y, cupY, minDistance)
 	} else {
+		vc.setStatusWithMessage("picking", fmt.Sprintf("Found %d bottle(s), no cup context", len(bottles)))
 		obj = bottles[0]
 		bottleObstacle = bottleObstacles[0]
 		vc.logger.Infof("No cup context found, selecting first bottle (default)")
@@ -784,6 +791,8 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	}
 
 	approaches := []*referenceframe.PoseInFrame{}
+
+	vc.setStatusWithMessage("picking", "Calculating bottle approach")
 
 	for _, tryO := range choices {
 		goToPose := vc.getApproachPoint(obj, 100, vc.conf.BottleGripHeight, tryO)
@@ -814,6 +823,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	}
 
 	if err != nil {
+		vc.setStatusWithMessage("picking", "Could not find a good bottle approach")
 		return err
 	}
 
@@ -822,6 +832,7 @@ func (vc *VinoCart) TouchBottle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	vc.setStatusWithMessage("picking", "Approaching the bottle")
 
 	goToPose := vc.getApproachPoint(obj, vc.conf.GripperToBottleCenterHack, vc.conf.BottleGripHeight, o)
 	vc.logger.Infof("going to move to %v", goToPose)

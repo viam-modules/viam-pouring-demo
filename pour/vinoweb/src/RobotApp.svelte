@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { useRobotClient } from "@viamrobotics/svelte-sdk";
   import { GenericServiceClient } from "@viamrobotics/sdk";
   import { ArmClient } from "@viamrobotics/sdk";
-  import { Struct, type JsonValue } from "@bufbuild/protobuf";
+  import { Struct } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
   import type { Joint } from "./lib/types.js";
