@@ -49,10 +49,6 @@ var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noCupObjects = fmt.Errorf("no cup objects")
 var noBottleObjects = fmt.Errorf("no bottle objects")
 
-type contextKey string
-
-const cupYKey contextKey = "cupY"
-
 func init() {
 	resource.RegisterService(generic.API, VinoCartModel, resource.Registration[resource.Resource, *Config]{Constructor: newVinoCart})
 }
