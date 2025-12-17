@@ -36,7 +36,7 @@
     "manual mode": "Manual mode active",
   };
 
-  let isDevMode = $state(false);
+  let isDevMode = $state(true);
 
   // --- Keyboard controls for debugging ---
   function handleKeydown(event: KeyboardEvent) {
@@ -168,14 +168,14 @@
     };
   });
 
-  const statusMessage = $derived.by(() => {
-    if (!isDevMode || !robotStatus.message.length) return statusMessages[robotStatus.status];
-    return robotStatus.message;
-  })
+  const statusMessage = $derived((!isDevMode || !robotStatus.message.length) ? statusMessages[robotStatus.status] : robotStatus.message)
 </script>
 
 <div class="app-container">
   <aside class="sidebar"></aside>
+  {#if isDevMode}
+    <div id="dev-container">Dev mode</div>
+  {/if}
 
   <MainContent panes={panesData} status={robotStatus.status}>
     {#snippet statusBar()}
@@ -199,5 +199,15 @@
     color: white;
     padding: 40px;
     overflow-y: auto;
+  }
+
+  #dev-container {
+    position:absolute;
+    background-color: oklch(82.7% 0.119 306.383);
+    z-index: 10;
+    left: 10px;
+    top: 10px;
+    padding: 8px;
+    border-radius: 4px;
   }
 </style>
