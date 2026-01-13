@@ -1133,7 +1133,17 @@ func (vc *VinoCart) GetGlassQuickly(ctx context.Context) error {
 		return err
 	}
 
-	return nil
+	err = vc.PourPrep(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = vc.Pour(ctx)
+	if err != nil {
+		return err
+	}
+
+	return vc.PutBack(ctx)
 }
 
 func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
