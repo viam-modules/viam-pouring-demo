@@ -969,6 +969,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	time.Sleep(500 * time.Millisecond)
 
 	start := time.Now()
+	vc.logger.Infof("Pour: Starting pour sequence at %v", start)
 	loopNumber := 0
 
 	var pd *pourDetector
@@ -1008,12 +1009,26 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}()
 
 	defer func() {
+		deferStart := time.Now()
+		vc.logger.Infof("Pour: Starting defer cleanup at %v (%.2fs into pour)", deferStart, time.Since(start).Seconds())
+
 		cancelPour()
+		cancelTime := time.Now()
+		vc.logger.Infof("Pour: Canceled pour context in %.2fs", time.Since(deferStart).Seconds())
+
 		wg.Wait() // this goes back down
+		waitTime := time.Now()
+		vc.logger.Infof("Pour: Finished waiting for goroutines in %.2fs", time.Since(cancelTime).Seconds())
 
 		SetXarmSpeedLog(ctx, vc.c.BottleArm, 50, 50, vc.logger)
+		speedTime := time.Now()
+		vc.logger.Infof("Pour: Reset arm speed in %.2fs", time.Since(waitTime).Seconds())
 
 		err := vc.doAll(ctx, "pour", "finish", 50)
+
+		vc.logger.Infof("Pour: Finished cleanup positions in %.2fs", time.Since(speedTime).Seconds())
+		vc.logger.Infof("Pour: Total defer time: %.2fs", time.Since(deferStart).Seconds())
+
 		if err != nil {
 			vc.logger.Infof("error in pour cleanup: %v", err)
 		}
@@ -1133,7 +1148,17 @@ func (vc *VinoCart) GetGlassQuickly(ctx context.Context) error {
 		return err
 	}
 
-	return nil
+	err = vc.PourPrep(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = vc.Pour(ctx)
+	if err != nil {
+		return err
+	}
+
+	return vc.PutBack(ctx)
 }
 
 func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
