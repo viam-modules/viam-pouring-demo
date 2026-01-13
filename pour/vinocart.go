@@ -227,6 +227,18 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.doAll(ctx, stage, step, 50)
 	}
 
+	if cmd["over-pour"] == true {
+		return nil, vc.labelPour(ctx, "over-pour")
+	}
+
+	if cmd["under-pour"] == true {
+		return nil, vc.labelPour(ctx, "under-pour")
+	}
+
+	if cmd["good-pour"] == true {
+		return nil, vc.labelPour(ctx, "good-pour")
+	}
+
 	return nil, fmt.Errorf("need a command")
 }
 
@@ -1329,4 +1341,27 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 	}
 
 	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+}
+
+func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
+	if vc.dataClient != nil {
+		partId := os.Getenv("VIAM_MACHINE_PART_ID")
+		if partId == "" {
+			return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
+		}
+
+		imgs, _, err := vc.c.GlassPourCam.Images(ctx, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		i, err := imgs[0].Image(ctx)
+		if err != nil {
+			return err
+		}
+
+		_, err = vc.dataClient.UploadImageToDatasets(ctx, partId, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, app.MimeTypeJPEG, nil)
+		return err
+	}
+	return nil
 }
