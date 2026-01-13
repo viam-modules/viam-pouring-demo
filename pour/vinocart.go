@@ -67,7 +67,16 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
-	g, err := NewVinoCart(ctx, config, c, robotClient, nil, logger)
+	var dataClient *app.DataClient
+	appClient, err := app.CreateViamClientFromEnvVars(ctx, nil, logger)
+	if err != nil {
+		logger.Warnf("can't connect to app: %v", err)
+	} else {
+		defer appClient.Close()
+		dataClient = appClient.DataClient()
+	}
+
+	g, err := NewVinoCart(ctx, config, c, robotClient, dataClient, logger)
 	if err != nil {
 		return nil, err
 	}
