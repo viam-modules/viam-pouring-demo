@@ -201,6 +201,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.PutBack(ctx)
 	}
 
+	if cmd["get-glass-quickly"] == true {
+		return nil, vc.GetGlassQuickly(ctx)
+	}
+
 	if cmd["demo"] == true {
 		return nil, vc.FullDemo(ctx)
 	}
@@ -1093,6 +1097,20 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
 
 	wg.Wait()
 	vc.logger.Infof("wait done")
+
+	return nil
+}
+
+func (vc *VinoCart) GetGlassQuickly(ctx context.Context) error {
+	err := vc.doAll(ctx, "katie", "set", 50)
+	if err != nil {
+		return err
+	}
+
+	err = vc.GrabCup(ctx)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
