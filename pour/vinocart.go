@@ -1344,24 +1344,29 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 }
 
 func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
-	if vc.dataClient != nil {
-		partId := os.Getenv("VIAM_MACHINE_PART_ID")
-		if partId == "" {
-			return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
-		}
+	if vc.dataClient == nil {
+		vc.logger.Info("labelling skipped: dataClient is nil")
+		return nil
+	}
 
-		imgs, _, err := vc.c.GlassPourCam.Images(ctx, nil, nil)
-		if err != nil {
-			return err
-		}
+	partId := os.Getenv("VIAM_MACHINE_PART_ID")
+	if partId == "" {
+		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
+	}
 
-		i, err := imgs[0].Image(ctx)
-		if err != nil {
-			return err
-		}
-
-		_, err = vc.dataClient.UploadImageToDatasets(ctx, partId, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, app.MimeTypeJPEG, nil)
+	imgs, _, err := vc.c.GlassPourCam.Images(ctx, nil, nil)
+	if err != nil {
 		return err
 	}
-	return nil
+
+	vc.logger.Infof("captured %d images", len(imgs))
+
+	i, err := imgs[0].Image(ctx)
+	if err != nil {
+		return err
+	}
+
+	id, err := vc.dataClient.UploadImageToDatasets(ctx, partId, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, app.MimeTypeJPEG, nil)
+	vc.logger.Infof("uploaded %s", id)
+	return err
 }
