@@ -1025,7 +1025,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		vc.logger.Infof("Pour: Reset arm speed in %.2fs", time.Since(waitTime).Seconds())
 
 		err := vc.doAll(ctx, "pour", "finish", 50)
-		finishTime := time.Now()
+
 		vc.logger.Infof("Pour: Finished cleanup positions in %.2fs", time.Since(speedTime).Seconds())
 		vc.logger.Infof("Pour: Total defer time: %.2fs", time.Since(deferStart).Seconds())
 
