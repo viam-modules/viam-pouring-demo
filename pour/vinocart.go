@@ -1157,7 +1157,7 @@ func (vc *VinoCart) TiltBottleForward(ctx context.Context) error {
 	}
 
 	// Adjust the wrist joint that controls tilt (probably joint 5)
-	currentPositions[5].Value += 0.05
+	currentPositions[5].Value -= 0.08
 
 	return vc.c.BottleArm.MoveToJointPositions(ctx, currentPositions, nil)
 }
@@ -1169,7 +1169,7 @@ func (vc *VinoCart) TiltBottleBackward(ctx context.Context) error {
 	}
 
 	// Adjust the wrist joint that controls tilt (probably joint 5)
-	currentPositions[5].Value -= 0.05
+	currentPositions[5].Value += 0.08
 
 	return vc.c.BottleArm.MoveToJointPositions(ctx, currentPositions, nil)
 }
