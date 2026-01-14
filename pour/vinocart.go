@@ -1181,7 +1181,16 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 	}
 	defer SetXarmSpeedLog(ctx, vc.c.BottleArm, 50, 50, vc.logger)
 
-	err = vc.c.BottleArm.MoveThroughJointPositions(pourContext, vc.pourJoints, nil, nil)
+	// err = vc.c.BottleArm.MoveThroughJointPositions(pourContext, vc.pourJoints, nil, nil)
+
+	numSteps := len(vc.pourJoints)
+	for i := 0; i < numSteps; i++ {
+		err := vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[i], nil)
+		if err != nil {
+			return err
+		}
+		time.Sleep(1 * time.Second) // Pause to observe each step
+	}
 
 	if err != nil && err != context.Canceled && pourContext.Err() != context.Canceled {
 		return err
@@ -1189,7 +1198,7 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 
 	vc.logger.Infof("going back down")
 
-	_, err = vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
+	cur, err := vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
 	if err != nil {
 		return err
 	}
@@ -1199,18 +1208,17 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 		return err
 	}
 
-	return nil
-	// posesToDo := [][]referenceframe.Input{}
+	posesToDo := [][]referenceframe.Input{}
 
-	// for i := len(vc.pourPoses) - 1; i >= 0; i-- {
-	// 	if cur.Pose().Orientation().OrientationVectorDegrees().OZ > vc.pourPoses[i].Pose().Orientation().OrientationVectorDegrees().OZ {
-	// 		continue
-	// 	}
+	for i := len(vc.pourPoses) - 1; i >= 0; i-- {
+		if cur.Pose().Orientation().OrientationVectorDegrees().OZ > vc.pourPoses[i].Pose().Orientation().OrientationVectorDegrees().OZ {
+			continue
+		}
 
-	// 	posesToDo = append(posesToDo, vc.pourJoints[i])
-	// }
+		posesToDo = append(posesToDo, vc.pourJoints[i])
+	}
 
-	// return vc.c.BottleArm.MoveThroughJointPositions(ctx, posesToDo, nil, nil)
+	return vc.c.BottleArm.MoveThroughJointPositions(ctx, posesToDo, nil, nil)
 }
 
 func (vc *VinoCart) posConfig(ctx context.Context, pos resource.Resource) (*touch.ArmPositionSaverConfig, error) {
