@@ -1178,6 +1178,7 @@ func (vc *VinoCart) TiltBottleForward(ctx context.Context) error {
 	}
 
 	vc.pourStep++
+	vc.logger.Infof("TiltBottleForward: pourStep: %d", vc.pourStep)
 
 	return vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil)
 }
@@ -1188,11 +1189,13 @@ func (vc *VinoCart) TiltBottleBackward(ctx context.Context) error {
 	}
 
 	vc.pourStep--
-
+	vc.logger.Infof("TiltBottleBackward: pourStep: %d", vc.pourStep)
 	return vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil)
 }
 
 func (vc *VinoCart) ReturnBottleToPrePourPosition(ctx context.Context) error {
+	vc.logger.Infof("ReturnBottleToPrePourPosition: start at pourStep: %d", vc.pourStep)
+
 	if vc.pourStep == 0 {
 		return nil
 	}
@@ -1202,7 +1205,14 @@ func (vc *VinoCart) ReturnBottleToPrePourPosition(ctx context.Context) error {
 		reversePour = append(reversePour, vc.pourJoints[i])
 	}
 
-	return vc.c.BottleArm.MoveThroughJointPositions(ctx, reversePour, nil, nil)
+	err := vc.c.BottleArm.MoveThroughJointPositions(ctx, reversePour, nil, nil)
+	if err != nil {
+		return err
+	}
+
+	vc.pourStep = 0
+
+	return nil
 }
 
 func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
