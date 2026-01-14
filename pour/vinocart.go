@@ -1189,7 +1189,7 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 
 	vc.logger.Infof("going back down")
 
-	cur, err := vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
+	_, err = vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
 	if err != nil {
 		return err
 	}
@@ -1199,17 +1199,18 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 		return err
 	}
 
-	posesToDo := [][]referenceframe.Input{}
+	return nil
+	// posesToDo := [][]referenceframe.Input{}
 
-	for i := len(vc.pourPoses) - 1; i >= 0; i-- {
-		if cur.Pose().Orientation().OrientationVectorDegrees().OZ > vc.pourPoses[i].Pose().Orientation().OrientationVectorDegrees().OZ {
-			continue
-		}
+	// for i := len(vc.pourPoses) - 1; i >= 0; i-- {
+	// 	if cur.Pose().Orientation().OrientationVectorDegrees().OZ > vc.pourPoses[i].Pose().Orientation().OrientationVectorDegrees().OZ {
+	// 		continue
+	// 	}
 
-		posesToDo = append(posesToDo, vc.pourJoints[i])
-	}
+	// 	posesToDo = append(posesToDo, vc.pourJoints[i])
+	// }
 
-	return vc.c.BottleArm.MoveThroughJointPositions(ctx, posesToDo, nil, nil)
+	// return vc.c.BottleArm.MoveThroughJointPositions(ctx, posesToDo, nil, nil)
 }
 
 func (vc *VinoCart) posConfig(ctx context.Context, pos resource.Resource) (*touch.ArmPositionSaverConfig, error) {
