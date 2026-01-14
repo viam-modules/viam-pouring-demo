@@ -214,6 +214,14 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.GetGlassQuickly(ctx)
 	}
 
+	if cmd["tilt-bottle-forward"] == true {
+		return nil, vc.TiltBottleForward(ctx)
+	}
+
+	if cmd["tilt-bottle-backward"] == true {
+		return nil, vc.TiltBottleBackward(ctx)
+	}
+
 	if cmd["demo"] == true {
 		return nil, vc.FullDemo(ctx)
 	}
@@ -1133,17 +1141,37 @@ func (vc *VinoCart) GetGlassQuickly(ctx context.Context) error {
 		return err
 	}
 
-	err = vc.PourPrep(ctx)
+	return vc.PourPrep(ctx)
+	// err = vc.Pour(ctx)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// return vc.PutBack(ctx)
+}
+
+func (vc *VinoCart) TiltBottleForward(ctx context.Context) error {
+	currentPositions, err := vc.c.BottleArm.JointPositions(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	err = vc.Pour(ctx)
+	// Adjust the wrist joint that controls tilt (probably joint 5)
+	currentPositions[5].Value += 0.05
+
+	return vc.c.BottleArm.MoveToJointPositions(ctx, currentPositions, nil)
+}
+
+func (vc *VinoCart) TiltBottleBackward(ctx context.Context) error {
+	currentPositions, err := vc.c.BottleArm.JointPositions(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	return vc.PutBack(ctx)
+	// Adjust the wrist joint that controls tilt (probably joint 5)
+	currentPositions[5].Value -= 0.05
+
+	return vc.c.BottleArm.MoveToJointPositions(ctx, currentPositions, nil)
 }
 
 func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
