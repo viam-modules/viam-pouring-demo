@@ -1166,7 +1166,7 @@ func (vc *VinoCart) GetGlassQuickly(ctx context.Context) error {
 }
 
 func (vc *VinoCart) TiltBottleForward(ctx context.Context) error {
-	if vc.pourStep >= len(vc.pourJoints) {
+	if vc.pourStep == len(vc.pourJoints)-1 {
 		return nil
 	}
 
