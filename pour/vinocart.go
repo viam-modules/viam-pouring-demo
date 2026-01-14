@@ -226,6 +226,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.TiltBottleBackward(ctx)
 	}
 
+	if cmd["return-bottle-to-pre-pour-position"] == true {
+		return nil, vc.ReturnBottleToPrePourPosition(ctx)
+	}
+
 	if cmd["demo"] == true {
 		return nil, vc.FullDemo(ctx)
 	}
@@ -337,7 +341,15 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
-	vc.pourStep = 0
+	defer func() {
+		vc.pourStep = 0
+	}()
+
+	err := vc.ReturnBottleToPrePourPosition(ctx)
+	if err != nil {
+		return err
+	}
+
 	g := errgroup.Group{}
 
 	cupHoldingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
@@ -1157,12 +1169,6 @@ func (vc *VinoCart) GetGlassQuickly(ctx context.Context) error {
 	}
 
 	return nil
-	// err = vc.Pour(ctx)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// return vc.PutBack(ctx)
 }
 
 func (vc *VinoCart) TiltBottleForward(ctx context.Context) error {
@@ -1185,6 +1191,19 @@ func (vc *VinoCart) TiltBottleBackward(ctx context.Context) error {
 	return vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil)
 }
 
+func (vc *VinoCart) ReturnBottleToPrePourPosition(ctx context.Context) error {
+	if vc.pourStep == 0 {
+		return nil
+	}
+
+	var reversePour [][]referenceframe.Input
+	for i := vc.pourStep - 1; i >= 0; i-- {
+		reversePour = append(reversePour, vc.pourJoints[i])
+	}
+
+	return vc.c.BottleArm.MoveThroughJointPositions(ctx, reversePour, nil, nil)
+}
+
 func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 	err := SetXarmSpeed(ctx, vc.c.BottleArm, 20, 50)
 	if err != nil {
@@ -1192,20 +1211,7 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 	}
 	defer SetXarmSpeedLog(ctx, vc.c.BottleArm, 50, 50, vc.logger)
 
-	// err = vc.c.BottleArm.MoveThroughJointPositions(pourContext, vc.pourJoints, nil, nil)
-	err = vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[0], nil)
-	if err != nil {
-		return err
-	}
-	time.Sleep(5 * time.Second)
-	numSteps := len(vc.pourJoints)
-	for i := 1; i < numSteps; i++ {
-		err := vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[i], nil)
-		if err != nil {
-			return err
-		}
-		time.Sleep(1 * time.Second) // Pause to observe each step
-	}
+	err = vc.c.BottleArm.MoveThroughJointPositions(pourContext, vc.pourJoints, nil, nil)
 
 	if err != nil && err != context.Canceled && pourContext.Err() != context.Canceled {
 		return err
