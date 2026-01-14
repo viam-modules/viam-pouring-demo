@@ -1182,9 +1182,13 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 	defer SetXarmSpeedLog(ctx, vc.c.BottleArm, 50, 50, vc.logger)
 
 	// err = vc.c.BottleArm.MoveThroughJointPositions(pourContext, vc.pourJoints, nil, nil)
-
+	err = vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[0], nil)
+	if err != nil {
+		return err
+	}
+	time.Sleep(5 * time.Second)
 	numSteps := len(vc.pourJoints)
-	for i := 0; i < numSteps; i++ {
+	for i := 1; i < numSteps; i++ {
 		err := vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[i], nil)
 		if err != nil {
 			return err
