@@ -6,8 +6,9 @@ import (
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
-	"go.viam.com/rdk/components/switch"
+	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/resource"
+	"go.viam.com/rdk/services/datamanager"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
 )
@@ -77,7 +78,7 @@ type Config struct {
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
-	deps := []string{motion.Named("builtin").String()}
+	deps := []string{motion.Named("builtin").String(), datamanager.Named("data_manager").String()}
 
 	if cfg.PickQualityService != "" {
 		deps = append(deps, cfg.PickQualityService)
@@ -173,6 +174,8 @@ type Pour1Components struct {
 
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
+
+	DataManager datamanager.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -225,6 +228,11 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	c.DataManager, err = datamanager.FromDependencies(deps, "data_manager")
+	if err != nil {
+		return nil, err
 	}
 
 	if config.BottleGripper != "" {
