@@ -133,6 +133,8 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 		vc.server.ListenAndServe()
 	}()
 
+	vc.pourStep = 0
+
 	return vc, nil
 }
 
@@ -162,6 +164,8 @@ type VinoCart struct {
 	status     string
 
 	server *http.Server
+
+	pourStep int
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -333,6 +337,7 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
+	vc.pourStep = 0
 	g := errgroup.Group{}
 
 	cupHoldingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
@@ -1141,7 +1146,17 @@ func (vc *VinoCart) GetGlassQuickly(ctx context.Context) error {
 		return err
 	}
 
-	return vc.PourPrep(ctx)
+	err = vc.PourPrep(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = vc.TiltBottleForward(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
 	// err = vc.Pour(ctx)
 	// if err != nil {
 	// 	return err
@@ -1151,27 +1166,23 @@ func (vc *VinoCart) GetGlassQuickly(ctx context.Context) error {
 }
 
 func (vc *VinoCart) TiltBottleForward(ctx context.Context) error {
-	currentPositions, err := vc.c.BottleArm.JointPositions(ctx, nil)
-	if err != nil {
-		return err
+	if vc.pourStep >= len(vc.pourJoints) {
+		return nil
 	}
 
-	// Adjust the wrist joint that controls tilt (probably joint 5)
-	currentPositions[5].Value -= 0.08
+	vc.pourStep++
 
-	return vc.c.BottleArm.MoveToJointPositions(ctx, currentPositions, nil)
+	return vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil)
 }
 
 func (vc *VinoCart) TiltBottleBackward(ctx context.Context) error {
-	currentPositions, err := vc.c.BottleArm.JointPositions(ctx, nil)
-	if err != nil {
-		return err
+	if vc.pourStep == 0 {
+		return nil
 	}
 
-	// Adjust the wrist joint that controls tilt (probably joint 5)
-	currentPositions[5].Value += 0.08
+	vc.pourStep--
 
-	return vc.c.BottleArm.MoveToJointPositions(ctx, currentPositions, nil)
+	return vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil)
 }
 
 func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
