@@ -119,7 +119,6 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.DataManagerService != "" {
 		optionals = append(optionals, cfg.DataManagerService)
-
 	}
 
 	if cfg.BottleGripper != "" {

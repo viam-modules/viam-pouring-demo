@@ -19,6 +19,7 @@ import (
 
 	"github.com/golang/geo/r3"
 
+	v1 "go.viam.com/api/app/datasync/v1"
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/camera"
 	toggleswitch "go.viam.com/rdk/components/switch"
@@ -1421,15 +1422,6 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 }
 
 func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
-	if vc.dataClient == nil {
-		vc.logger.Info("labelling skipped: dataClient is nil")
-		return nil
-	}
-
-	partId := os.Getenv("VIAM_MACHINE_PART_ID")
-	if partId == "" {
-		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
-	}
 
 	imgs, _, err := vc.c.GlassPourCam.Images(ctx, nil, nil)
 	if err != nil {
@@ -1443,12 +1435,11 @@ func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
 		return err
 	}
 
-	id, err := vc.dataClient.UploadImageToDatasets(ctx, partId, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, app.MimeTypeJPEG, &app.FileUploadOptions{})
-	if err != nil {
-		vc.logger.Infof("encounter error %s", err)
+	if err := vc.c.DataManagerService.UploadImageToDatasets(ctx, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, v1.MimeType_MIME_TYPE_IMAGE_JPEG, nil); err != nil {
+		vc.logger.Warn(err)
 		return err
-
 	}
-	vc.logger.Infof("uploaded %s", id)
+
+	vc.logger.Infof("uploaded")
 	return nil
 }
