@@ -1401,6 +1401,11 @@ func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
 	}
 
 	id, err := vc.dataClient.UploadImageToDatasets(ctx, partId, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, app.MimeTypeJPEG, &app.FileUploadOptions{})
+	if err != nil {
+		vc.logger.Infof("encounter error %s", err)
+		return err
+
+	}
 	vc.logger.Infof("uploaded %s", id)
-	return err
+	return nil
 }
