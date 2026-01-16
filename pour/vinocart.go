@@ -19,7 +19,6 @@ import (
 
 	"github.com/golang/geo/r3"
 
-	v1 "go.viam.com/api/app/datasync/v1"
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/camera"
 	toggleswitch "go.viam.com/rdk/components/switch"
@@ -62,8 +61,6 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 	if err != nil {
 		return nil, err
 	}
-
-	logger.Info("data manager : %s", c.DataManagerService.Name())
 
 	robotClient, err := vmodutils.ConnectToMachineFromEnv(ctx, logger)
 	if err != nil {
@@ -1433,17 +1430,17 @@ func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
 
 	vc.logger.Infof("captured %d images", len(imgs))
 
-	i, err := imgs[0].Image(ctx)
+	_, err = imgs[0].Image(ctx)
 	if err != nil {
 		return err
 	}
 
-	vc.logger.Infof("dm name %s", vc.c.DataManagerService.Name())
+	// vc.logger.Infof("dm name %s", vc.c.DataManagerService.Name())
 
-	if err := vc.c.DataManagerService.UploadImageToDatasets(ctx, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, v1.MimeType_MIME_TYPE_IMAGE_JPEG, nil); err != nil {
-		vc.logger.Warn(err)
-		return err
-	}
+	// if err := vc.c.DataManagerService.UploadImageToDatasets(ctx, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, v1.MimeType_MIME_TYPE_IMAGE_JPEG, nil); err != nil {
+	// 	vc.logger.Warn(err)
+	// 	return err
+	// }
 
 	vc.logger.Infof("uploaded")
 	return nil
