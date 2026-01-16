@@ -63,21 +63,14 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
+	logger.Info("data manager : %s", c.DataManagerService.Name())
+
 	robotClient, err := vmodutils.ConnectToMachineFromEnv(ctx, logger)
 	if err != nil {
 		return nil, err
 	}
 
-	var dataClient *app.DataClient
-	appClient, err := app.CreateViamClientFromEnvVars(ctx, nil, logger)
-	if err != nil {
-		logger.Warnf("can't connect to app: %v", err)
-	} else {
-		defer appClient.Close()
-		dataClient = appClient.DataClient()
-	}
-
-	g, err := NewVinoCart(ctx, config, c, robotClient, dataClient, logger)
+	g, err := NewVinoCart(ctx, config, c, robotClient, nil, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -1444,6 +1437,8 @@ func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
 	if err != nil {
 		return err
 	}
+
+	vc.logger.Infof("dm name %s", vc.c.DataManagerService.Name())
 
 	if err := vc.c.DataManagerService.UploadImageToDatasets(ctx, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, v1.MimeType_MIME_TYPE_IMAGE_JPEG, nil); err != nil {
 		vc.logger.Warn(err)

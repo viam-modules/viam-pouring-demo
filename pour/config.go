@@ -117,8 +117,8 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		optionals = append(optionals, cfg.CupFinderService)
 	}
 
-	if cfg.DataManagerService != "" {
-		optionals = append(optionals, cfg.DataManagerService)
+	if cfg.DataManagerService == "" {
+		return nil, nil, fmt.Errorf("need a data manager name")
 	}
 
 	if cfg.BottleGripper != "" {
@@ -234,12 +234,12 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	if config.DataManagerService != "" {
-		c.DataManagerService, err = datamanager.FromDependencies(deps, config.DataManagerService)
-		if err != nil {
-			return nil, err
-		}
+	// if config.DataManagerService != "" {
+	c.DataManagerService, err = datamanager.FromDependencies(deps, config.DataManagerService)
+	if err != nil {
+		return nil, err
 	}
+	// }
 
 	if config.BottleGripper != "" {
 		c.BottleGripper, err = gripper.FromDependencies(deps, config.BottleGripper)
