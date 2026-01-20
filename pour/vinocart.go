@@ -177,6 +177,8 @@ type VinoCart struct {
 	server *http.Server
 
 	pourStep int
+
+	cancelCapture context.CancelFunc
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -273,6 +275,26 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 
 	if cmd["good-pour"] == true {
 		return nil, vc.labelPour(ctx, "good-pour")
+	}
+
+	if cmd["start-capture"] == true {
+		if vc.cancelCapture == nil {
+			// START
+			captureCtx, cancel := context.WithCancel(ctx)
+			vc.cancelCapture = cancel
+
+			go vc.captureGlassPourMotion(captureCtx)
+		}
+		return nil, nil
+	}
+
+	if cmd["stop-capture"] == true {
+		if vc.cancelCapture != nil {
+			// STOP
+			vc.cancelCapture()
+			vc.cancelCapture = nil
+		}
+		return nil, nil
 	}
 
 	return nil, fmt.Errorf("need a command")
@@ -1058,7 +1080,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
-		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, 10)
+		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, -1)
 		if err != nil {
 			return err
 		}
@@ -1084,6 +1106,23 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 	// cleanup done in defer above
 	return nil
+}
+
+func (vc *VinoCart) captureGlassPourMotion(ctx context.Context) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			vc.logger.Infof("image capture stopped")
+			return
+		case <-ticker.C:
+			if err := vc.captureImage(ctx); err != nil {
+				vc.logger.Errorf("could not capture image: %v", err)
+			}
+		}
+	}
 }
 
 func saveImage(img image.Image, loopNumber int) (string, error) {
@@ -1463,8 +1502,7 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
 }
 
-func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
-
+func (vc *VinoCart) captureImage(ctx context.Context) error {
 	imgs, _, err := vc.c.GlassPourCam.Images(ctx, nil, nil)
 	if err != nil {
 		return err
@@ -1480,5 +1518,10 @@ func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
 	saveImageToDataset(ctx, vc.c.GlassPourCam.Name(), i, vc.dataClient, "6966aedd149bbb31a4668de5")
 
 	vc.logger.Infof("uploaded")
+	return nil
+}
+
+func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
+	// unimplemented
 	return nil
 }
