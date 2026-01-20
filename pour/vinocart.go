@@ -280,7 +280,7 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	if cmd["start-capture"] == true {
 		if vc.cancelCapture == nil {
 			// START
-			captureCtx, cancel := context.WithCancel(ctx)
+			captureCtx, cancel := context.WithCancel(context.Background())
 			vc.cancelCapture = cancel
 
 			go vc.captureGlassPourMotion(captureCtx)
@@ -1111,6 +1111,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 func (vc *VinoCart) captureGlassPourMotion(ctx context.Context) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	vc.logger.Infof("starting image capture")
 
 	for {
 		select {
@@ -1118,6 +1119,7 @@ func (vc *VinoCart) captureGlassPourMotion(ctx context.Context) {
 			vc.logger.Infof("image capture stopped")
 			return
 		case <-ticker.C:
+			vc.logger.Infof("an image captured")
 			if err := vc.captureImage(ctx); err != nil {
 				vc.logger.Errorf("could not capture image: %v", err)
 			}
