@@ -67,7 +67,27 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
-	g, err := NewVinoCart(ctx, config, c, robotClient, nil, logger)
+	var dataClient *app.DataClient
+	var appClient *app.ViamClient
+	if config.APIKey != "" && config.APIKeyID != "" {
+		appClient, err = app.CreateViamClientWithAPIKey(
+			ctx,
+			app.Options{},
+			config.APIKey,
+			config.APIKeyID,
+			logger,
+		)
+	} else {
+		appClient, err = app.CreateViamClientFromEnvVars(ctx, nil, logger)
+	}
+
+	if err != nil {
+		logger.Warnf("can't connect to app: %v", err)
+	} else {
+		dataClient = appClient.DataClient()
+	}
+
+	g, err := NewVinoCart(ctx, config, c, robotClient, dataClient, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -1001,7 +1021,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "683d1210c83b3f3823ec70ff")
+			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "696a83481a9adaa357b3c8b8")
 			if err != nil {
 				vc.logger.Errorf("error saving cup cam to data set: %v", err)
 			}
@@ -1038,7 +1058,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
-		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, -1)
+		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, 10)
 		if err != nil {
 			return err
 		}
@@ -1170,7 +1190,18 @@ func (vc *VinoCart) TiltBottleForward(ctx context.Context) error {
 	vc.pourStep++
 	vc.logger.Infof("TiltBottleForward: pourStep: %d", vc.pourStep)
 
-	return vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil)
+	if err := vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil); err != nil {
+		return err
+	}
+
+	if vc.dataClient != nil {
+		err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "696a83481a9adaa357b3c8b8")
+		if err != nil {
+			vc.logger.Errorf("error saving cup cam to data set: %v", err)
+		}
+
+	}
+	return nil
 }
 
 func (vc *VinoCart) TiltBottleBackward(ctx context.Context) error {
@@ -1180,7 +1211,18 @@ func (vc *VinoCart) TiltBottleBackward(ctx context.Context) error {
 
 	vc.pourStep--
 	vc.logger.Infof("TiltBottleBackward: pourStep: %d", vc.pourStep)
-	return vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil)
+	if err := vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil); err != nil {
+		return err
+	}
+
+	if vc.dataClient != nil {
+		err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "696a83481a9adaa357b3c8b8")
+		if err != nil {
+			vc.logger.Errorf("error saving cup cam to data set: %v", err)
+		}
+
+	}
+	return nil
 }
 
 func (vc *VinoCart) ReturnBottleToPrePourPosition(ctx context.Context) error {
@@ -1430,17 +1472,12 @@ func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
 
 	vc.logger.Infof("captured %d images", len(imgs))
 
-	_, err = imgs[0].Image(ctx)
+	i, err := imgs[0].Image(ctx)
 	if err != nil {
 		return err
 	}
 
-	// vc.logger.Infof("dm name %s", vc.c.DataManagerService.Name())
-
-	// if err := vc.c.DataManagerService.UploadImageToDatasets(ctx, i, []string{"6966aedd149bbb31a4668de5"}, []string{label}, v1.MimeType_MIME_TYPE_IMAGE_JPEG, nil); err != nil {
-	// 	vc.logger.Warn(err)
-	// 	return err
-	// }
+	saveImageToDataset(ctx, vc.c.GlassPourCam.Name(), i, vc.dataClient, "6966aedd149bbb31a4668de5")
 
 	vc.logger.Infof("uploaded")
 	return nil
