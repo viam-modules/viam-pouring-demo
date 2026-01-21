@@ -75,7 +75,7 @@ type Config struct {
 	PourGlassFindService string `json:"pour_glass_find_service"`
 	DataManagerService   string `json:"data_management_service"`
 
-	// passing in the org api key for data client
+	// pass in the org api key for data client
 	APIKey   string `json:"api_key"`
 	APIKeyID string `json:"api_key_id"`
 
