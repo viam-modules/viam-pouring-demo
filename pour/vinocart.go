@@ -945,18 +945,18 @@ func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
 	return err
 }
 
-func (vc *VinoCart) ShouldStopPour(ctx context.Context, img image.Image) (bool, error) {
+func (vc *VinoCart) getPourDetails(ctx context.Context, img image.Image) (string, float64, error) {
 	if vc.c.DataFullnessService == nil {
-		return false, nil
+		return "", 0, nil
 	}
 	cs, err := vc.c.DataFullnessService.Classifications(ctx, img, 1, nil)
 	if err != nil {
-		return false, err
+		return "", 0, err
 	}
 	if len(cs) == 0 {
-		return false, nil
+		return "", 0, nil
 	}
-	return cs[0].Label() == "liquid", nil
+	return cs[0].Label(), cs[0].Score(), nil
 }
 
 func (vc *VinoCart) PourGlassFindCroppedRect(ctx context.Context) (*image.Rectangle, error) {
@@ -1096,20 +1096,22 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
-		img, _, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, -1)
+		img, _, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, loopNumber)
 		if err != nil {
 			return err
 		}
 
-		shouldStop, err := vc.ShouldStopPour(ctx, img)
+		label, score, err := vc.getPourDetails(ctx, img)
+
+		shouldStop := label == "full"
 		if err != nil {
 			return err
 		}
 		if shouldStop {
-			vc.logger.Infof(" **** should stop pour *** ")
+			vc.logger.Infow(" **** should stop pour *** ", "label", label, "score", score, "loopNumber", loopNumber)
 			break
 		}
-		vc.logger.Infof(" **** should not stop pour *** ")
+		vc.logger.Infow(" **** should not stop pour *** ", "label", label, "score", score, "loopNumber", loopNumber)
 
 		// if pd == nil {
 		// 	pd = newPourDetector(img)
