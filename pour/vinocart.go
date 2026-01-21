@@ -1103,15 +1103,18 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 		label, score, err := vc.getPourDetails(ctx, img)
 
-		shouldStop := label == "full"
+		shouldStop := label == "liquid"
 		if err != nil {
 			return err
 		}
+
+		compositeLogStr := fmt.Sprintf("loopNumber: %d, label: %s, score: %0.2f", loopNumber, label, score)
+
 		if shouldStop {
-			vc.logger.Infow(" **** should stop pour *** ", "label", label, "score", score, "loopNumber", loopNumber)
+			vc.logger.Infow(" **** should stop pour *** ", "loopInfo", compositeLogStr)
 			break
 		}
-		vc.logger.Infow(" **** should not stop pour *** ", "label", label, "score", score, "loopNumber", loopNumber)
+		vc.logger.Infow(" **** should not stop pour *** ", "loopInfo", compositeLogStr)
 
 		// if pd == nil {
 		// 	pd = newPourDetector(img)
