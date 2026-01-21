@@ -945,6 +945,20 @@ func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
 	return err
 }
 
+func (vc *VinoCart) ShouldStopPour(ctx context.Context, img image.Image) (bool, error) {
+	if vc.c.DataFullnessService == nil {
+		return false, nil
+	}
+	cs, err := vc.c.DataFullnessService.Classifications(ctx, img, 1, nil)
+	if err != nil {
+		return false, err
+	}
+	if len(cs) == 0 {
+		return false, nil
+	}
+	return cs[0].Label() == "liquid", nil
+}
+
 func (vc *VinoCart) PourGlassFindCroppedRect(ctx context.Context) (*image.Rectangle, error) {
 	detections, err := vc.c.PourGlassFindService.DetectionsFromCamera(ctx, "", nil)
 	if err != nil {
@@ -1031,10 +1045,10 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	start := time.Now()
 	loopNumber := 0
 
-	var pd *pourDetector
+	// var pd *pourDetector
 
-	totalTime := 15 * time.Second
-	markedDifferent := false
+	totalTime := 5 * time.Second
+	// markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
 	wg := sync.WaitGroup{}
@@ -1082,23 +1096,33 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
-		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, -1)
+		img, _, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, -1)
 		if err != nil {
 			return err
 		}
 
-		if pd == nil {
-			pd = newPourDetector(img)
-		} else {
-			delta, _ := pd.differentDebug(img)
-			deltaMax := vc.conf.glassPourMotionThreshold()
-			vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
-			if delta >= deltaMax && !markedDifferent {
-				vc.logger.Infof(" **** motion detected *** ")
-				markedDifferent = true
-				totalTime = time.Since(start) + time.Second
-			}
+		shouldStop, err := vc.ShouldStopPour(ctx, img)
+		if err != nil {
+			return err
 		}
+		if shouldStop {
+			vc.logger.Infof(" **** should stop pour *** ")
+			break
+		}
+		vc.logger.Infof(" **** should not stop pour *** ")
+
+		// if pd == nil {
+		// 	pd = newPourDetector(img)
+		// } else {
+		// 	delta, _ := pd.differentDebug(img)
+		// 	deltaMax := vc.conf.glassPourMotionThreshold()
+		// 	vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
+		// 	if delta >= deltaMax && !markedDifferent {
+		// 		vc.logger.Infof(" **** motion detected *** ")
+		// 		markedDifferent = true
+		// 		totalTime = time.Since(start) + time.Second
+		// 	}
+		// }
 
 		sleepTime := (100 * time.Millisecond) - time.Since(loopStart)
 		vc.logger.Debugf("going to sleep for %v", sleepTime)

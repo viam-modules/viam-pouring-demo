@@ -73,6 +73,7 @@ type Config struct {
 
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
+	DataFullnessService  string `json:"data_fullness_service"`
 	DataManagerService   string `json:"data_management_service"`
 
 	// pass in the org api key for data client
@@ -91,6 +92,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.PourGlassFindService != "" {
 		deps = append(deps, cfg.PourGlassFindService)
+	}
+
+	if cfg.DataFullnessService != "" {
+		deps = append(deps, cfg.DataFullnessService)
 	}
 
 	if cfg.ArmName == "" {
@@ -183,6 +188,7 @@ type Pour1Components struct {
 
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
+	DataFullnessService  vision.Service
 	DataManagerService   datamanager.Service
 }
 
@@ -233,6 +239,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.CupFinderService != "" {
 		c.CupFinder, err = vision.FromDependencies(deps, config.CupFinderService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.DataFullnessService != "" {
+		c.DataFullnessService, err = vision.FromDependencies(deps, config.DataFullnessService)
 		if err != nil {
 			return nil, err
 		}
