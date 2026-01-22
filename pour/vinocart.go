@@ -393,9 +393,7 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		vc.imgDirName = ""
 		select {
 		case <-vc.pourLabel:
-			return
 		default:
-			return
 		}
 	}()
 
@@ -1278,7 +1276,7 @@ func (vc *VinoCart) captureGlassPourMotion(ctx context.Context) {
 }
 
 func saveImage(img image.Image, dirName string, loopNumber int, logger logging.Logger) (string, error) {
-	fn := fmt.Sprintf("%s/img-%d.png", dirName, loopNumber)
+	fn := fmt.Sprintf("%s/img-%02d.png", dirName, loopNumber)
 
 	file, err := os.Create(fn)
 	if err != nil {
