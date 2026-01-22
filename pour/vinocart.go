@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
+	"sort"
 	"sync"
 	"time"
 
@@ -391,7 +391,12 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 	defer func() {
 		vc.pourStep = 0
 		vc.imgDirName = ""
-		<-vc.pourLabel
+		select {
+		case <-vc.pourLabel:
+			return
+		default:
+			return
+		}
 	}()
 
 	err := vc.ReturnBottleToPrePourPosition(ctx)
@@ -465,8 +470,12 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		return err2
 	}
 	err3 := vc.doAll(ctx, "touch", "prep", 100)
+	if err3 != nil {
+		return err3
+	}
 
-	return err3
+	vc.logger.Info("finished resetting")
+	return nil
 }
 
 func (vc *VinoCart) GrabCup(ctx context.Context) error {
@@ -576,6 +585,7 @@ func findFiles(ctx context.Context, root string) ([]string, error) {
 	}); err != nil {
 		return nil, err
 	}
+	sort.Strings(files)
 	return files, nil
 }
 
@@ -587,7 +597,7 @@ func (vc *VinoCart) cleanupImages(ctx context.Context) error {
 	return nil
 }
 
-func uploadTaggedImages(ctx context.Context, componentName string, folderPath string, dataClient *app.DataClient, dataSetId string, label string) error {
+func uploadTaggedImages(ctx context.Context, componentName string, folderPath string, dataClient *app.DataClient, dataSetId string, label string, logger logging.Logger) error {
 	pid := os.Getenv("VIAM_MACHINE_PART_ID")
 	if pid == "" {
 		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
@@ -609,6 +619,8 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 	if err != nil {
 		return err
 	}
+
+	logger.Infof("found %d files in folder %s", len(files), folderPath)
 
 	switch label {
 	case underPour:
@@ -1108,7 +1120,7 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Re
 
 	fn := ""
 	if loopNumber >= 0 {
-		_, err = saveImage(img, dirName, loopNumber)
+		_, err = saveImage(img, dirName, loopNumber, vc.logger)
 		if err != nil {
 			return nil, "", err
 		}
@@ -1195,7 +1207,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}()
 
 	// create directory where we save images, named after start time
-	pourTime := strings.Replace(time.Now().String(), ":", "_", -1)
+	pourTime := time.Now().Format("20060102_150405.000")
 	if err := os.Mkdir(pourTime, 0o755); err != nil {
 		return err
 	}
@@ -1265,13 +1277,14 @@ func (vc *VinoCart) captureGlassPourMotion(ctx context.Context) {
 	}
 }
 
-func saveImage(img image.Image, dirName string, loopNumber int) (string, error) {
+func saveImage(img image.Image, dirName string, loopNumber int, logger logging.Logger) (string, error) {
 	fn := fmt.Sprintf("%s/img-%d.png", dirName, loopNumber)
 
 	file, err := os.Create(fn)
 	if err != nil {
 		return fn, fmt.Errorf("couldn't create filename %w", err)
 	}
+	logger.Infof("saving image %s", fn)
 	defer file.Close()
 	return fn, png.Encode(file, img)
 }
@@ -1286,7 +1299,8 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 	// wait for user to press a label before continuing
 	select {
 	case label := <-vc.pourLabel:
-		if err := uploadTaggedImages(ctx, vc.c.Cam.Name().Name, vc.imgDirName, vc.dataClient, croppedCupDatasetID, label); err != nil {
+		vc.logger.Infof("user labeled as %s", label)
+		if err := uploadTaggedImages(ctx, vc.c.Cam.Name().Name, vc.imgDirName, vc.dataClient, croppedCupDatasetID, label, vc.logger); err != nil {
 			vc.logger.Errorf("error labeling images for %s: %v", label, err)
 		}
 	case <-time.After(time.Second * 10):
