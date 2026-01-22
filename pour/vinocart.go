@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -153,6 +155,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 
 	vc.pourStep = 0
 
+	vc.pourLabel = make(chan string, 1)
 	return vc, nil
 }
 
@@ -184,6 +187,10 @@ type VinoCart struct {
 	server *http.Server
 
 	pourStep int
+
+	imgDirName string
+
+	pourLabel chan string
 
 	cancelCapture context.CancelFunc
 }
@@ -273,15 +280,15 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	if cmd["over-pour"] == true {
-		return nil, vc.labelPour(ctx, "over-pour")
+		return nil, vc.labelPour(ctx, overPour)
 	}
 
 	if cmd["under-pour"] == true {
-		return nil, vc.labelPour(ctx, "under-pour")
+		return nil, vc.labelPour(ctx, underPour)
 	}
 
 	if cmd["good-pour"] == true {
-		return nil, vc.labelPour(ctx, "good-pour")
+		return nil, vc.labelPour(ctx, goodPour)
 	}
 
 	if cmd["start-capture"] == true {
@@ -383,6 +390,8 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 func (vc *VinoCart) Reset(ctx context.Context) error {
 	defer func() {
 		vc.pourStep = 0
+		vc.imgDirName = ""
+		<-vc.pourLabel
 	}()
 
 	err := vc.ReturnBottleToPrePourPosition(ctx)
@@ -570,6 +579,14 @@ func findFiles(ctx context.Context, root string) ([]string, error) {
 	return files, nil
 }
 
+func (vc *VinoCart) cleanupImages(ctx context.Context) error {
+	if err := os.RemoveAll(vc.imgDirName); err != nil {
+		return err
+	}
+	vc.imgDirName = ""
+	return nil
+}
+
 func uploadTaggedImages(ctx context.Context, componentName string, folderPath string, dataClient *app.DataClient, dataSetId string, label string) error {
 	pid := os.Getenv("VIAM_MACHINE_PART_ID")
 	if pid == "" {
@@ -578,13 +595,13 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 
 	notFullOpts := &app.FileUploadOptions{
 		ComponentName: &componentName,
-		Tags:          []string{"not-full"},
+		Tags:          []string{"not-full", folderPath},
 		DatasetIDs:    []string{dataSetId},
 	}
 
 	fullOpts := &app.FileUploadOptions{
 		ComponentName: &componentName,
-		Tags:          []string{"full"},
+		Tags:          []string{"full", folderPath},
 		DatasetIDs:    []string{dataSetId},
 	}
 
@@ -595,7 +612,7 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 
 	switch label {
 	case underPour:
-		// label all images as not full
+		// tag all images as not full
 		for _, filepath := range files {
 			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
 				return err
@@ -603,7 +620,7 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 		}
 
 	case goodPour:
-		// label all but last image as not full, and last image as full
+		// tag all but last image as not full, and last image as full
 		for i := range len(files) - 1 {
 			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[i], notFullOpts); err != nil {
 				return err
@@ -614,7 +631,7 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 		}
 
 	case overPour:
-		// label all but last X images as not full, label last X images as full
+		// tag all but last X images as not full, label last X images as full
 		for i := range len(files) - 3 {
 			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[i], notFullOpts); err != nil {
 				return err
@@ -626,6 +643,8 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 				return err
 			}
 		}
+	default:
+		return errors.New("not valid label")
 	}
 	return nil
 }
@@ -1081,7 +1100,7 @@ type subImager interface {
 	SubImage(r image.Rectangle) image.Image
 }
 
-func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Rectangle, loopNumber int) (image.Image, string, error) {
+func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Rectangle, dirName string, loopNumber int) (image.Image, string, error) {
 	img, err := vc.PourGlassFindCroppedImage(ctx, box)
 	if err != nil {
 		return nil, "", err
@@ -1089,7 +1108,7 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Re
 
 	fn := ""
 	if loopNumber >= 0 {
-		fn, err = saveImage(img, loopNumber)
+		_, err = saveImage(img, dirName, loopNumber)
 		if err != nil {
 			return nil, "", err
 		}
@@ -1175,17 +1194,24 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		}
 	}()
 
+	// create directory where we save images, named after start time
+	pourTime := strings.Replace(time.Now().String(), ":", "_", -1)
+	if err := os.Mkdir(pourTime, 0o755); err != nil {
+		return err
+	}
+	vc.imgDirName = pourTime
+
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
-		img, _, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, loopNumber)
+		img, _, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, pourTime, loopNumber)
 		if err != nil {
 			return err
 		}
 
 		label, score, err := vc.getPourDetails(ctx, img)
 
-		shouldStop := label == "liquid"
+		shouldStop := label == "full"
 		if err != nil {
 			return err
 		}
@@ -1239,8 +1265,8 @@ func (vc *VinoCart) captureGlassPourMotion(ctx context.Context) {
 	}
 }
 
-func saveImage(img image.Image, loopNumber int) (string, error) {
-	fn := fmt.Sprintf("img-%d.png", loopNumber)
+func saveImage(img image.Image, dirName string, loopNumber int) (string, error) {
+	fn := fmt.Sprintf("%s/img-%d.png", dirName, loopNumber)
 
 	file, err := os.Create(fn)
 	if err != nil {
@@ -1258,8 +1284,16 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 	}
 
 	// wait for user to press a label before continuing
-	for {
+	select {
+	case label := <-vc.pourLabel:
+		if err := uploadTaggedImages(ctx, vc.c.Cam.Name().Name, vc.imgDirName, vc.dataClient, croppedCupDatasetID, label); err != nil {
+			vc.logger.Errorf("error labeling images for %s: %v", label, err)
+		}
+	case <-time.After(time.Second * 10):
+	}
 
+	if err = vc.cleanupImages(ctx); err != nil {
+		vc.logger.Errorf("error cleaning up images %v", err)
 	}
 
 	err = vc.moveToCurrentXYAtCupHeight(ctx)
@@ -1650,6 +1684,6 @@ func (vc *VinoCart) captureImageToDataset(ctx context.Context) error {
 }
 
 func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
-	// unimplemented
+	vc.pourLabel <- label
 	return nil
 }
