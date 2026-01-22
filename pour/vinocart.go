@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -43,6 +44,10 @@ var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
 const gripperToCupCenterHack = -35
+
+const goodPour = "good-pour"
+const underPour = "under-pour"
+const overPour = "over-pour"
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -546,6 +551,83 @@ func saveImageToDatasetFromCamera(ctx context.Context, cam camera.Camera, dataCl
 		return err
 	}
 	return saveImageToDataset(ctx, cam.Name(), i, dataClient, dataSetId)
+}
+
+func findFiles(ctx context.Context, root string) ([]string, error) {
+	var files []string
+	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+func uploadTaggedImages(ctx context.Context, componentName string, folderPath string, dataClient *app.DataClient, dataSetId string, label string) error {
+	pid := os.Getenv("VIAM_MACHINE_PART_ID")
+	if pid == "" {
+		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
+	}
+
+	notFullOpts := &app.FileUploadOptions{
+		ComponentName: &componentName,
+		Tags:          []string{"not-full"},
+		DatasetIDs:    []string{dataSetId},
+	}
+
+	fullOpts := &app.FileUploadOptions{
+		ComponentName: &componentName,
+		Tags:          []string{"full"},
+		DatasetIDs:    []string{dataSetId},
+	}
+
+	files, err := findFiles(ctx, folderPath)
+	if err != nil {
+		return err
+	}
+
+	switch label {
+	case underPour:
+		// label all images as not full
+		for _, filepath := range files {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
+				return err
+			}
+		}
+
+	case goodPour:
+		// label all but last image as not full, and last image as full
+		for i := range len(files) - 1 {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[i], notFullOpts); err != nil {
+				return err
+			}
+		}
+		if _, err := dataClient.FileUploadFromPath(ctx, pid, files[len(files)-1], fullOpts); err != nil {
+			return err
+		}
+
+	case overPour:
+		// label all but last X images as not full, label last X images as full
+		for i := range len(files) - 3 {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[i], notFullOpts); err != nil {
+				return err
+			}
+		}
+
+		for i := len(files) - 3; i < len(files); i++ {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[i], fullOpts); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string) error {
@@ -1173,6 +1255,11 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 	err := vc.doAll(ctx, "put-back", "before-open", 50)
 	if err != nil {
 		return err
+	}
+
+	// wait for user to press a label before continuing
+	for {
+
 	}
 
 	err = vc.moveToCurrentXYAtCupHeight(ctx)
