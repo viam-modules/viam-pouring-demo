@@ -1472,7 +1472,11 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 		return err
 	}
 
-	time.Sleep(60 * time.Second)
+	select {
+		case <-time.After(60 * time.Second):
+		case <-pourContext.Done():
+			// Context was canceled, exit early
+	}
 
 	vc.logger.Infof("going back down")
 
