@@ -1156,6 +1156,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	start := time.Now()
 	loopNumber := 0
 
+	vc.logger.Infow("Got start timestamp for pour loop", "startTime", start.String())
+
 	// var pd *pourDetector
 
 	totalTime := 15 * time.Second
@@ -1251,7 +1253,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		// }
 
 		sleepTime := (100 * time.Millisecond) - time.Since(loopStart)
-		vc.logger.Debugf("going to sleep for %v", sleepTime)
+		vc.logger.Infof("going to sleep for %v", sleepTime)
 		time.Sleep(sleepTime)
 		loopNumber++
 	}
