@@ -1158,7 +1158,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 	// var pd *pourDetector
 
-	totalTime := 5 * time.Second
+	totalTime := 15 * time.Second
 	// markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
