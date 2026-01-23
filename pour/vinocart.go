@@ -1472,6 +1472,8 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 		return err
 	}
 
+	time.Sleep(15 * time.Second)
+
 	vc.logger.Infof("going back down")
 
 	cur, err := vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
