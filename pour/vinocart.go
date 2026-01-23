@@ -1472,7 +1472,7 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 		return err
 	}
 
-	time.Sleep(15 * time.Second)
+	time.Sleep(60 * time.Second)
 
 	vc.logger.Infof("going back down")
 
