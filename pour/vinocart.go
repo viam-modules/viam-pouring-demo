@@ -1211,6 +1211,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}
 	vc.imgDirName = pourTime
 
+	timeoutReached := true
+
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
@@ -1230,6 +1232,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 		if shouldStop {
 			vc.logger.Infow(" **** should stop pour *** ", "loopInfo", compositeLogStr)
+			timeoutReached = false
 			break
 		}
 		vc.logger.Infow(" **** should not stop pour *** ", "loopInfo", compositeLogStr)
@@ -1254,6 +1257,9 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}
 
 	// cleanup done in defer above
+	if timeoutReached {
+		vc.logger.Infow(" **** pour timeout reached- stopping pour **** ", "elapsed time", time.Since(start).String())
+	}
 	return nil
 }
 
