@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/png"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -50,6 +51,7 @@ const gripperToCupCenterHack = -35
 const goodPour = "good-pour"
 const underPour = "under-pour"
 const overPour = "over-pour"
+const trainingDataDirName = "training"
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -94,6 +96,11 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		logger.Warnf("can't connect to app: %v", err)
 	} else {
 		dataClient = appClient.DataClient()
+	}
+
+	// create directory where images for training data will live
+	if err := os.Mkdir(trainingDataDirName, 0755); err != nil {
+		log.Fatalf("Failed to create directory: %v", err)
 	}
 
 	g, err := NewVinoCart(ctx, config, c, robotClient, dataClient, logger)
@@ -394,6 +401,9 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		select {
 		case <-vc.pourLabel:
 		default:
+		}
+		if err := os.RemoveAll(trainingDataDirName); err != nil {
+			vc.logger.Errorf("failed to remove 'pour' directory: %v\n", err)
 		}
 	}()
 
@@ -1208,10 +1218,11 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 	// create directory where we save images, named after start time
 	pourTime := time.Now().Format("20060102_150405.000")
-	if err := os.Mkdir(pourTime, 0o755); err != nil {
+	subDir := filepath.Join(trainingDataDirName, pourTime)
+	if err := os.Mkdir(subDir, 0o755); err != nil {
 		return err
 	}
-	vc.imgDirName = pourTime
+	vc.imgDirName = subDir
 
 	timeoutReached := true
 
@@ -1473,9 +1484,9 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 	}
 
 	select {
-		case <-time.After(60 * time.Second):
-		case <-pourContext.Done():
-			// Context was canceled, exit early
+	case <-time.After(60 * time.Second):
+	case <-pourContext.Done():
+		// Context was canceled, exit early
 	}
 
 	vc.logger.Infof("going back down")
