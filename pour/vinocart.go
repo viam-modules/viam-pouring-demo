@@ -57,6 +57,7 @@ var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
 var bottlePouringDatasetID = "696a83481a9adaa357b3c8b8"
 var croppedCupDatasetID = "697001c2f47281733615ac57"
+var croppedCupTestDatasetID = "69791f05ecfc7364599781d1"
 
 func init() {
 	resource.RegisterService(generic.API, VinoCartModel, resource.Registration[resource.Resource, *Config]{Constructor: newVinoCart})
@@ -262,6 +263,14 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 
 	if cmd["return-bottle-to-pre-pour-position"] == true {
 		return nil, vc.ReturnBottleToPrePourPosition(ctx)
+	}
+
+	if cmd["capture-not-full"] == true {
+		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupTestDatasetID, []string{"not-full"})
+	}
+
+	if cmd["capture-full"] == true {
+		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupTestDatasetID, []string{"full"})
 	}
 
 	if cmd["demo"] == true {
@@ -526,7 +535,7 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 
 	if vc.dataClient != nil {
 		vc.logger.Infof("uploading image to dataset for cup pick quality")
-		err := saveImageToDataset(ctx, vc.c.Cam.Name(), prepped, vc.dataClient, "683f8952383a821481d9b5c9")
+		err := saveImageToDataset(ctx, vc.c.Cam.Name(), prepped, vc.dataClient, "683f8952383a821481d9b5c9", nil)
 		if err != nil {
 			vc.logger.Warnf("can't saveCupImage: %v", err)
 		}
@@ -576,7 +585,28 @@ func saveImageToDatasetFromCamera(ctx context.Context, cam camera.Camera, dataCl
 	if err != nil {
 		return err
 	}
-	return saveImageToDataset(ctx, cam.Name(), i, dataClient, dataSetId)
+	return saveImageToDataset(ctx, cam.Name(), i, dataClient, dataSetId, nil)
+}
+
+func (vc *VinoCart) saveCroppedCupImageToDataset(ctx context.Context, dataSetId string, tags []string) error {
+	// Calculate the crop box for the cup
+	box, err := vc.PourGlassFindCroppedRect(ctx)
+	if err != nil {
+		return fmt.Errorf("error finding crop box: %w", err)
+	}
+
+	// Get the cropped cup image
+	croppedImg, err := vc.PourGlassFindCroppedImage(ctx, box)
+	if err != nil {
+		return fmt.Errorf("error getting cropped cup image: %w", err)
+	}
+
+	// Save the cropped image to the dataset with tags
+	if err := saveImageToDataset(ctx, vc.c.GlassPourCam.Name(), croppedImg, vc.dataClient, dataSetId, tags); err != nil {
+		return fmt.Errorf("error saving cropped cup image to dataset: %w", err)
+	}
+
+	return nil
 }
 
 func findFiles(ctx context.Context, root string) ([]string, error) {
@@ -669,7 +699,7 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 	return nil
 }
 
-func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string) error {
+func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string, tags []string) error {
 	pid := os.Getenv("VIAM_MACHINE_PART_ID")
 	if pid == "" {
 		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
@@ -688,6 +718,7 @@ func saveImageToDataset(ctx context.Context, component resource.Name, img image.
 		ComponentType: &ct,
 		ComponentName: &cn,
 		FileExtension: &pngString,
+		Tags:          tags,
 	}
 
 	id, err := dataClient.FileUploadFromBytes(ctx, pid, data, &opts)
@@ -1317,7 +1348,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 	select {
 	case label := <-vc.pourLabel:
 		vc.logger.Infof("user labeled as %s", label)
-		if err := uploadTaggedImages(ctx, vc.c.Cam.Name().Name, vc.imgDirName, vc.dataClient, croppedCupDatasetID, label, vc.logger); err != nil {
+		if err := uploadTaggedImages(ctx, vc.c.Cam.Name().Name, vc.imgDirName, vc.dataClient, croppedCupTestDatasetID, label, vc.logger); err != nil {
 			vc.logger.Errorf("error labeling images for %s: %v", label, err)
 		}
 	case <-time.After(time.Second * 10):
@@ -1417,13 +1448,12 @@ func (vc *VinoCart) TiltBottleForward(ctx context.Context) error {
 		return err
 	}
 
-	if vc.dataClient != nil {
-		err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, croppedCupDatasetID)
-		if err != nil {
-			vc.logger.Errorf("error saving cup cam to data set: %v", err)
-		}
-
-	}
+	// if vc.dataClient != nil {
+	// 	tags := []string{fmt.Sprintf("pour-step-%d", vc.pourStep)}
+	// 	if err := vc.saveCroppedCupImageToDataset(context.Background(), croppedCupDatasetID, tags); err != nil {
+	// 		vc.logger.Errorf("error saving cropped cup image: %v", err)
+	// 	}
+	// }
 	return nil
 }
 
@@ -1438,13 +1468,12 @@ func (vc *VinoCart) TiltBottleBackward(ctx context.Context) error {
 		return err
 	}
 
-	if vc.dataClient != nil {
-		err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, croppedCupDatasetID)
-		if err != nil {
-			vc.logger.Errorf("error saving cup cam to data set: %v", err)
-		}
-
-	}
+	// if vc.dataClient != nil {
+	// 	tags := []string{fmt.Sprintf("pour-step-%d", vc.pourStep)}
+	// 	if err := vc.saveCroppedCupImageToDataset(context.Background(), croppedCupDatasetID, tags); err != nil {
+	// 		vc.logger.Errorf("error saving cropped cup image: %v", err)
+	// 	}
+	// }
 	return nil
 }
 
@@ -1711,7 +1740,7 @@ func (vc *VinoCart) captureImageToDataset(ctx context.Context) error {
 
 	// vc.logger.Infof("captured %d images", len(imgs))
 
-	if err := saveImageToDataset(ctx, vc.c.GlassPourCam.Name(), i, vc.dataClient, croppedCupDatasetID); err != nil {
+	if err := saveImageToDataset(ctx, vc.c.GlassPourCam.Name(), i, vc.dataClient, croppedCupDatasetID, nil); err != nil {
 		vc.logger.Errorf("error saving to dataset %v", err)
 	} else {
 		vc.logger.Infof("uploaded to dataset %s", croppedCupDatasetID)
