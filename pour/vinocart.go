@@ -9,7 +9,6 @@ import (
 	"image"
 	"image/png"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -101,7 +100,10 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 
 	// create directory where images for training data will live
 	if err := os.Mkdir(trainingDataDirName, 0755); err != nil {
-		log.Fatalf("Failed to create directory: %v", err)
+		if !os.IsExist(err) {
+			return nil, fmt.Errorf("failed to create directory: %w", err)
+		}
+		// Directory already exists, which is fine
 	}
 
 	g, err := NewVinoCart(ctx, config, c, robotClient, dataClient, logger)
