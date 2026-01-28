@@ -772,6 +772,8 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	// -- setup world frame
 
 	obstacles := []*referenceframe.GeometriesInFrame{}
+	// Set a label on the cup geometry to avoid "unnamedWorldStateGeometry" collisions
+	obj.Geometry.SetLabel("cup")
 	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
 	vc.logger.Infof("add cup as obstacle %v", obj.Geometry)
 
