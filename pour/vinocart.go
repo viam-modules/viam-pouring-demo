@@ -268,11 +268,11 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	if cmd["capture-not-full"] == true {
-		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupDatasetID, []string{"not-full"})
+		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupTestDatasetID, []string{"not-full"})
 	}
 
 	if cmd["capture-full"] == true {
-		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupDatasetID, []string{"full"})
+		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupTestDatasetID, []string{"full"})
 	}
 
 	if cmd["demo"] == true {
