@@ -268,11 +268,11 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	if cmd["capture-not-full"] == true {
-		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupTestDatasetID, []string{"not-full"})
+		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupDatasetID, []string{"not-full"})
 	}
 
 	if cmd["capture-full"] == true {
-		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupTestDatasetID, []string{"full"})
+		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupDatasetID, []string{"full"})
 	}
 
 	if cmd["demo"] == true {
@@ -408,13 +408,12 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 func (vc *VinoCart) Reset(ctx context.Context) error {
 	defer func() {
 		vc.pourStep = 0
-		vc.imgDirName = ""
+		if err := vc.cleanupImages(); err != nil {
+			vc.logger.Errorf("failed to cleanup images: %v\n", err)
+		}
 		select {
 		case <-vc.pourLabel:
 		default:
-		}
-		if err := os.RemoveAll(trainingDataDirName); err != nil {
-			vc.logger.Errorf("failed to remove 'pour' directory: %v\n", err)
 		}
 	}()
 
@@ -629,7 +628,10 @@ func findFiles(ctx context.Context, root string) ([]string, error) {
 	return files, nil
 }
 
-func (vc *VinoCart) cleanupImages(ctx context.Context) error {
+func (vc *VinoCart) cleanupImages() error {
+	if vc.imgDirName == "" {
+		return nil
+	}
 	if err := os.RemoveAll(vc.imgDirName); err != nil {
 		return err
 	}
@@ -1356,7 +1358,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 	case <-time.After(time.Second * 10):
 	}
 
-	if err = vc.cleanupImages(ctx); err != nil {
+	if err = vc.cleanupImages(); err != nil {
 		vc.logger.Errorf("error cleaning up images %v", err)
 	}
 
