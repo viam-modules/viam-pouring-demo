@@ -203,6 +203,7 @@ type VinoCart struct {
 	pourLabel chan string
 
 	cancelCapture context.CancelFunc
+	cancelPour    context.CancelFunc
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -327,6 +328,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 			vc.cancelCapture = nil
 		}
 		return nil, nil
+	}
+
+	if cmd["stop-pour"] == true {
+		return nil, vc.CancelPour()
 	}
 
 	return nil, fmt.Errorf("need a command")
@@ -1211,6 +1216,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	// markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
+	vc.cancelPour = cancelPour
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
@@ -1310,6 +1316,16 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	if timeoutReached {
 		vc.logger.Infow(" **** pour timeout reached- stopping pour **** ", "elapsed time", time.Since(start).String())
 	}
+	return nil
+}
+
+func (vc *VinoCart) CancelPour() error {
+	if vc.cancelPour == nil {
+		return fmt.Errorf("no pour in progress")
+	}
+
+	vc.logger.Info("CancelPour called - canceling pour")
+	vc.cancelPour()
 	return nil
 }
 
@@ -1518,10 +1534,9 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 		return err
 	}
 
+	// After moving through all joint positions, we wait for the caller to signal that the pour has been completed
 	select {
-	case <-time.After(60 * time.Second):
 	case <-pourContext.Done():
-		// Context was canceled, exit early
 	}
 
 	vc.logger.Infof("going back down")
