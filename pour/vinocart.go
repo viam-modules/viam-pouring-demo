@@ -166,6 +166,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.pourStep = 0
 
 	vc.pourLabel = make(chan string, 1)
+	vc.useMLModelChan = make(chan bool, 1)
 	return vc, nil
 }
 
@@ -200,7 +201,10 @@ type VinoCart struct {
 
 	imgDirName string
 
-	pourLabel chan string
+	pourLabel      chan string
+	useMLModelChan chan bool
+
+	mlModelMode bool
 
 	cancelCapture context.CancelFunc
 	cancelPour    context.CancelFunc
@@ -334,6 +338,16 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.CancelPour()
 	}
 
+	if cmd["pour-ml-model"] == true {
+		vc.setMLModelMode(ctx, true)
+		return nil, nil
+	}
+
+	if cmd["pour-old-model"] == true {
+		vc.setMLModelMode(ctx, false)
+		return nil, nil
+	}
+
 	return nil, fmt.Errorf("need a command")
 }
 
@@ -418,6 +432,10 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		}
 		select {
 		case <-vc.pourLabel:
+		default:
+		}
+		select {
+		case <-vc.useMLModelChan:
 		default:
 		}
 	}()
@@ -1048,6 +1066,14 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 		return err
 	}
 
+	// wait for user to select model mode before continuing
+	select {
+	case mode := <-vc.useMLModelChan:
+		vc.mlModelMode = mode
+	case <-time.After(time.Second * 5):
+		vc.mlModelMode = false
+	}
+
 	return nil
 }
 
@@ -1162,7 +1188,7 @@ type subImager interface {
 	SubImage(r image.Rectangle) image.Image
 }
 
-func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Rectangle, dirName string, loopNumber int) (image.Image, string, error) {
+func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Rectangle, loopNumber int) (image.Image, string, error) {
 	img, err := vc.PourGlassFindCroppedImage(ctx, box)
 	if err != nil {
 		return nil, "", err
@@ -1170,7 +1196,7 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Re
 
 	fn := ""
 	if loopNumber >= 0 {
-		_, err = saveImage(img, dirName, loopNumber, vc.logger)
+		_, err = saveImage(img, vc.imgDirName, loopNumber, vc.logger)
 		if err != nil {
 			return nil, "", err
 		}
@@ -1182,6 +1208,7 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Re
 func (vc *VinoCart) Pour(ctx context.Context) error {
 	vc.setStatus("pouring")
 
+	// set up gripper + arms
 	isHoldingCup, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
@@ -1202,18 +1229,13 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	time.Sleep(500 * time.Millisecond)
 
-	start := time.Now()
-	loopNumber := 0
-
-	vc.logger.Infow("Got start timestamp for pour loop", "startTime", start.String())
-
-	// var pd *pourDetector
+	// oldModel vars
+	var pd *pourDetector
+	markedDifferent := false
 
 	totalTime := 15 * time.Second
-	// markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
 	vc.cancelPour = cancelPour
@@ -1236,7 +1258,6 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	vc.logger.Infof("got box for crop %v", box)
 
 	go func() {
@@ -1260,7 +1281,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}()
 
 	// create directory where we save images, named after start time
-	pourTime := time.Now().Format("20060102_150405.000")
+	pourTime := ""
+	pourTime = time.Now().Format("20060102_150405.000")
 	subDir := filepath.Join(trainingDataDirName, pourTime)
 	if err := os.Mkdir(subDir, 0o755); err != nil {
 		return err
@@ -1268,43 +1290,48 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	vc.imgDirName = subDir
 
 	timeoutReached := true
+	useMLModel := vc.mlModelMode
 
+	start := time.Now()
+	vc.logger.Infow("Got start timestamp for pour loop", "startTime", start.String())
+	loopNumber := 0
+
+PourLoop:
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
-		img, _, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, pourTime, loopNumber)
+		// get image
+		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, loopNumber)
 		if err != nil {
 			return err
 		}
 
-		label, score, err := vc.getPourDetails(ctx, img)
-
-		shouldStop := label == "full"
-		if err != nil {
-			return err
+		switch {
+		case useMLModel:
+			vc.logger.Info("*** using ml pour model ***")
+			isFull, err := vc.handleMLPour(ctx, img, loopNumber)
+			if err != nil {
+				return err
+			}
+			if isFull {
+				timeoutReached = false
+				break PourLoop
+			}
+		case !useMLModel:
+			vc.logger.Info("*** using old pour model ***")
+			if pd == nil {
+				pd = newPourDetector(img)
+			} else {
+				delta, _ := pd.differentDebug(img)
+				deltaMax := vc.conf.glassPourMotionThreshold()
+				vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
+				if delta >= deltaMax && !markedDifferent {
+					vc.logger.Infof(" **** motion detected *** ")
+					markedDifferent = true
+					totalTime = time.Since(start) + time.Second
+				}
+			}
 		}
-
-		compositeLogStr := fmt.Sprintf("loopNumber: %d, label: %s, score: %0.2f", loopNumber, label, score)
-
-		if shouldStop {
-			vc.logger.Infow(" **** should stop pour *** ", "loopInfo", compositeLogStr)
-			timeoutReached = false
-			break
-		}
-		vc.logger.Infow(" **** should not stop pour *** ", "loopInfo", compositeLogStr)
-
-		// if pd == nil {
-		// 	pd = newPourDetector(img)
-		// } else {
-		// 	delta, _ := pd.differentDebug(img)
-		// 	deltaMax := vc.conf.glassPourMotionThreshold()
-		// 	vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
-		// 	if delta >= deltaMax && !markedDifferent {
-		// 		vc.logger.Infof(" **** motion detected *** ")
-		// 		markedDifferent = true
-		// 		totalTime = time.Since(start) + time.Second
-		// 	}
-		// }
 
 		sleepTime := (100 * time.Millisecond) - time.Since(loopStart)
 		vc.logger.Infof("going to sleep for %v", sleepTime)
@@ -1317,6 +1344,22 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		vc.logger.Infow(" **** pour timeout reached- stopping pour **** ", "elapsed time", time.Since(start).String())
 	}
 	return nil
+}
+
+func (vc *VinoCart) handleMLPour(ctx context.Context, img image.Image, loopNumber int) (bool, error) {
+	label, score, err := vc.getPourDetails(ctx, img)
+	if err != nil {
+		return false, err
+	}
+
+	compositeLogStr := fmt.Sprintf("loopNumber: %d, label: %s, score: %0.2f", loopNumber, label, score)
+
+	if label == "full" {
+		vc.logger.Infow(" **** should stop pour *** ", "loopInfo", compositeLogStr)
+		return true, nil
+	}
+	vc.logger.Infow(" **** should not stop pour *** ", "loopInfo", compositeLogStr)
+	return false, nil
 }
 
 func (vc *VinoCart) CancelPour() error {
@@ -1773,4 +1816,9 @@ func (vc *VinoCart) captureImageToDataset(ctx context.Context) error {
 func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
 	vc.pourLabel <- label
 	return nil
+}
+
+func (vc *VinoCart) setMLModelMode(ctx context.Context, useMLmodel bool) {
+	vc.logger.Infof("*** setting ml model mode to %s *** ", useMLmodel)
+	vc.useMLModelChan <- useMLmodel
 }
