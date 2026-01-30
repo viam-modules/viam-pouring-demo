@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	datapb "go.viam.com/api/app/data/v1"
@@ -131,4 +132,40 @@ func updateMetrics(result *EvaluationResult, expected, predicted string) {
 
 	result.PerClassMetrics[expected] = classMetrics
 	result.ConfusionMatrix[expected][predicted]++
+}
+
+func logEvaluationSummary(logger logging.Logger, result *EvaluationResult) {
+	// Overall summary
+	logger.Infof("Evaluation: Total=%d, Correct=%d, Accuracy=%.2f%%",
+		result.TotalSamples, result.CorrectPredictions, result.Accuracy*100)
+
+	// Per-class accuracies (compact)
+	perClass := make([]string, 0, len(result.PerClassMetrics))
+	for class, metrics := range result.PerClassMetrics {
+		perClass = append(perClass, fmt.Sprintf("%s:%.2f%%", class, metrics.Accuracy*100))
+	}
+	logger.Infof("Per-class accuracy: %s", strings.Join(perClass, ", "))
+
+	// Confusion matrix as a compact table
+	classes := make([]string, 0, len(result.ConfusionMatrix))
+	for class := range result.ConfusionMatrix {
+		classes = append(classes, class)
+	}
+
+	// header with fixed width
+	header := fmt.Sprintf("%-12s", "Actual\\Pred")
+	for _, class := range classes {
+		header += fmt.Sprintf("%10s", class)
+	}
+	logger.Infof(header)
+
+	// rows
+	for actual, row := range result.ConfusionMatrix {
+		line := fmt.Sprintf("%-12s", actual)
+		for _, predicted := range classes {
+			line += fmt.Sprintf("%10d", row[predicted])
+		}
+		logger.Infof(line)
+	}
+
 }

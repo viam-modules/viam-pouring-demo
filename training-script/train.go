@@ -57,10 +57,8 @@ func TestModelHandler(w http.ResponseWriter, r *http.Request) {
 		viamClient.Close()
 		inferenceClient.Close()
 	}()
-	logger.Info("authed")
 
 	dataClient := viamClient.DataClient()
-	logger.Info("got data")
 
 	ok, err := runTests(
 		ctx,
@@ -140,7 +138,7 @@ func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to test trained model %v", err), http.StatusInternalServerError)
 		return
 	}
-	logger.Infof("Tests completed, should update config: %s", shouldUpdateConfig)
+	logger.Infof("Tests completed, should update config: %v", shouldUpdateConfig)
 
 	// update config to new model version if model passes the tests
 	if shouldUpdateConfig {
@@ -227,7 +225,8 @@ func runTests(ctx context.Context, dataClient *app.DataClient, inferenceClient *
 		return false, err
 	}
 
-	logger.Infof("evaluation complete, %+v", evaluationResult)
+	logger.Infof("evaluation complete")
+	logEvaluationSummary(logger, evaluationResult)
 	return evaluationResult.Accuracy > 0.95, nil
 
 }
