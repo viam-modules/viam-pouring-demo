@@ -24,17 +24,14 @@ type EvaluationResult struct {
 	Accuracy           float64                   `json:"accuracy"`
 	PerClassMetrics    map[string]ClassMetrics   `json:"per_class_metrics"`
 	ConfusionMatrix    map[string]map[string]int `json:"confusion_matrix"`
+	FailedImages       []string                  `json:"failed_images"`
 }
 
 func getTestImages(ctx context.Context, dataClient *app.DataClient, datasetID string) ([]*app.BinaryData, error) {
 	request := &app.DataByFilterOptions{
 		Filter: &app.Filter{
-			OrganizationIDs: []string{"e76d1b3b-0468-4efd-bb7f-fb1d2b352fcb"},
-			LocationIDs:     []string{"kssbd6djf3"},
-			DatasetID:       "69791f05ecfc7364599781d1",
-			Interval:        app.CaptureInterval{Start: time.Now().AddDate(0, 0, -7), End: time.Now()},
+			DatasetID: datasetID,
 		},
-		Limit: 200,
 	}
 
 	response, err := dataClient.BinaryDataByFilter(ctx, false, request)
@@ -42,11 +39,12 @@ func getTestImages(ctx context.Context, dataClient *app.DataClient, datasetID st
 		fmt.Printf("error %s", err)
 		return nil, err
 	}
+
 	return response.BinaryData, nil
 }
 
 func evaluateModel(
-	ctx context.Context, inferenceClient *InferenceClient, modelName, registryItemVersion, organizationID string, testImages []*app.BinaryData, logger logging.Logger,
+	ctx context.Context, inferenceClient *InferenceClient, modelName, registryItemVersion, organizationID string, testImages []*app.BinaryData,
 ) (*EvaluationResult, error) {
 	result := &EvaluationResult{
 		PerClassMetrics: make(map[string]ClassMetrics),
@@ -69,7 +67,7 @@ func evaluateModel(
 		}
 
 		predictedClass := extractBestLabel(response.Annotations.Classifications, 0.6)
-		updateMetrics(result, expectedClass, predictedClass)
+		updateMetrics(result, testImage.Metadata.BinaryDataID, expectedClass, predictedClass)
 	}
 
 	return result, nil
@@ -100,7 +98,7 @@ func extractBestLabel(classifications interface{}, threshold float64) string {
 	return bestLabel
 }
 
-func updateMetrics(result *EvaluationResult, expected, predicted string) {
+func updateMetrics(result *EvaluationResult, binaryDataID, expected, predicted string) {
 	result.TotalSamples++
 
 	// Initialize class metrics if needed
@@ -118,6 +116,8 @@ func updateMetrics(result *EvaluationResult, expected, predicted string) {
 	if expected == predicted {
 		result.CorrectPredictions++
 		classMetrics.Correct++
+	} else {
+		result.FailedImages = append(result.FailedImages, binaryDataID)
 	}
 
 	// Calculate accuracies
@@ -165,5 +165,24 @@ func logEvaluationSummary(logger logging.Logger, result *EvaluationResult) {
 		}
 		logger.Infof(line)
 	}
+}
 
+func createTestResultsDataset(
+	ctx context.Context, dataClient *app.DataClient, organizationID, modelName, version string, failedImages []string,
+) (string, error) {
+	testRunTime := time.Now().Format("20060102T150405")
+	cleanedModelVersion := strings.ReplaceAll(version, "-", "")
+	datasetName := fmt.Sprintf("test-failures_%s_%s_run%s", modelName, cleanedModelVersion, testRunTime)
+
+	datasetID, err := dataClient.CreateDataset(ctx, datasetName, organizationID)
+	if err != nil {
+		return "", err
+	}
+
+	err = dataClient.AddBinaryDataToDatasetByIDs(ctx, failedImages, datasetID)
+	if err != nil {
+		return "", err
+	}
+
+	return datasetName, nil
 }

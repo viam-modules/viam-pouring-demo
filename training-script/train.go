@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
@@ -51,6 +52,16 @@ func TestModelHandler(w http.ResponseWriter, r *http.Request) {
 	registryItemID := r.URL.Query().Get("registry_item_id")
 	version := r.URL.Query().Get("version")
 	orgID := r.URL.Query().Get("org_id")
+	accuracyThreshold := r.URL.Query().Get("accuracy_threshold")
+
+	if accuracyThreshold == "" {
+		accuracyThreshold = "0.95"
+	}
+	accuracyThresholdFloat, err := strconv.ParseFloat(accuracyThreshold, 64)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid accuracy threshold: %v", err), http.StatusBadRequest)
+		return
+	}
 
 	if registryItemID == "" || version == "" || orgID == "" || testDatasetID == "" || modelName == "" {
 		http.Error(
@@ -69,7 +80,7 @@ func TestModelHandler(w http.ResponseWriter, r *http.Request) {
 
 	dataClient := viamClient.DataClient()
 
-	ok, err := runTests(
+	_, err = runTests(
 		ctx,
 		dataClient,
 		inferenceClient,
@@ -77,14 +88,13 @@ func TestModelHandler(w http.ResponseWriter, r *http.Request) {
 		orgID,
 		modelName,
 		version,
+		accuracyThresholdFloat,
 		logger,
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	logger.Infof("tests passed: %v\n", ok)
 }
 
 func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
@@ -137,12 +147,16 @@ func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Infof("training complete")
 
 	// test the model
-	shouldUpdateConfig, err := runTests(ctx, viamClient.DataClient(), inferenceClient, req.TestDatasetID, req.OrganizationID, req.ModelName, newVersionString, logger)
+	shouldUpdateConfig, err := runTests(
+		ctx, viamClient.DataClient(), inferenceClient, req.TestDatasetID, req.OrganizationID, req.ModelName,
+		newVersionString, req.AccuracyThreshold, logger,
+	)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to test trained model %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("an error occurred while testing the new model: %v", err), http.StatusInternalServerError)
 		return
 	}
-	logger.Infof("Tests completed, should update config: %v", shouldUpdateConfig)
+
+	logger.Infof("should update config: %v", shouldUpdateConfig)
 
 	// update config to new model version if model passes the tests
 	if shouldUpdateConfig {
@@ -237,7 +251,10 @@ func updateConfig(oldConfig map[string]interface{}, modelName, newVersion string
 	}
 }
 
-func runTests(ctx context.Context, dataClient *app.DataClient, inferenceClient *InferenceClient, testDatasetID, orgID, modelName, versionString string, logger logging.Logger) (bool, error) {
+func runTests(
+	ctx context.Context, dataClient *app.DataClient, inferenceClient *InferenceClient,
+	testDatasetID, orgID, modelName, versionString string, accuracyThreshold float64, logger logging.Logger,
+) (bool, error) {
 	testImages, err := getTestImages(ctx, dataClient, testDatasetID)
 	if err != nil {
 		return false, err
@@ -245,17 +262,25 @@ func runTests(ctx context.Context, dataClient *app.DataClient, inferenceClient *
 
 	logger.Infof("got %d test images", len(testImages))
 
-	evaluationResult, err := evaluateModel(
-		ctx, inferenceClient, modelName, versionString, orgID, testImages, logger,
-	)
+	evaluationResult, err := evaluateModel(ctx, inferenceClient, modelName, versionString, orgID, testImages)
 	if err != nil {
 		return false, err
 	}
 
-	logger.Infof("evaluation complete")
-	logEvaluationSummary(logger, evaluationResult)
-	return evaluationResult.Accuracy > 0.95, nil
+	testsPassed := evaluationResult.Accuracy > accuracyThreshold
 
+	logger.Infof("tests passed: %v", testsPassed)
+
+	datasetName, err := createTestResultsDataset(ctx, dataClient, orgID, modelName, versionString, evaluationResult.FailedImages)
+	if err != nil {
+		return testsPassed, err
+	}
+
+	logger.Infof("test failures dataset created: %s", datasetName)
+
+	logEvaluationSummary(logger, evaluationResult)
+
+	return testsPassed, nil
 }
 
 func connectToViam(ctx context.Context, logger logging.Logger) (*app.ViamClient, *InferenceClient) {
