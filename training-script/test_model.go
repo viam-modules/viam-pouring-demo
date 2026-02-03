@@ -31,12 +31,12 @@ func getTestImages(ctx context.Context, dataClient *app.DataClient, datasetID st
 	request := &app.DataByFilterOptions{
 		Filter: &app.Filter{
 			DatasetID: datasetID,
+			Interval:  app.CaptureInterval{Start: time.Unix(0, 0), End: time.Now()},
 		},
 	}
 
 	response, err := dataClient.BinaryDataByFilter(ctx, false, request)
 	if err != nil {
-		fmt.Printf("error %s", err)
 		return nil, err
 	}
 
@@ -150,21 +150,21 @@ func logEvaluationSummary(logger logging.Logger, result *EvaluationResult) {
 		classes = append(classes, class)
 	}
 
-	// header with fixed width
-	header := fmt.Sprintf("%-12s", "Actual\\Pred")
-	for _, class := range classes {
-		header += fmt.Sprintf("%10s", class)
-	}
-	logger.Infof(header)
+	// // header with fixed width
+	// header := fmt.Sprintf("%-12s", "Actual\\Pred")
+	// for _, class := range classes {
+	// 	header += fmt.Sprintf("%10s", class)
+	// }
+	// logger.Infof(header)
 
-	// rows
-	for actual, row := range result.ConfusionMatrix {
-		line := fmt.Sprintf("%-12s", actual)
-		for _, predicted := range classes {
-			line += fmt.Sprintf("%10d", row[predicted])
-		}
-		logger.Infof(line)
-	}
+	// // rows
+	// for actual, row := range result.ConfusionMatrix {
+	// 	line := fmt.Sprintf("%-12s", actual)
+	// 	for _, predicted := range classes {
+	// 		line += fmt.Sprintf("%10d", row[predicted])
+	// 	}
+	// 	logger.Infof(line)
+	// }
 }
 
 func createTestResultsDataset(

@@ -19,7 +19,8 @@ import (
 
 type TrainingRequest struct {
 	DatasetID         string   `json:"dataset_id"`
-	PartID            string   `json:"part_id"`
+	FragmentIDs       []string `json:"fragment_ids"`
+	PartIDs           []string `json:"part_ids"`
 	ModelName         string   `json:"model_name"`
 	OrganizationID    string   `json:"org_id"`
 	TestDatasetID     string   `json:"test_dataset_id"`
@@ -43,6 +44,7 @@ func TrainModelHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// use this for testing/debugging purposes, will not be used as part of script
 func TestModelHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := logging.NewLogger("tests-func")
@@ -160,20 +162,7 @@ func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
 
 	// update config to new model version if model passes the tests
 	if shouldUpdateConfig {
-		part, _, err := appClient.GetRobotPart(ctx, req.PartID)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to get robot part %v", err), http.StatusInternalServerError)
-			return
-		}
-		cfg := part.RobotConfig
-		updateConfig(part.RobotConfig, req.ModelName, newVersionString)
-
-		_, err = appClient.UpdateRobotPart(ctx, req.PartID, part.Name, cfg)
-		if err != nil {
-			http.Error(w, "failed to update robot part", http.StatusInternalServerError)
-			return
-		}
-		logger.Infof("sucessfully updated robot config model version to %s", newVersionString)
+		updateConfigs(ctx, appClient, req.ModelName, newVersionString, req.PartIDs, req.FragmentIDs, logger)
 
 	}
 }
@@ -186,10 +175,10 @@ func decodeTrainingRequest(r *http.Request) (*TrainingRequest, error) {
 	}
 
 	if req.DatasetID == "" ||
-		req.PartID == "" ||
 		req.ModelName == "" ||
 		req.OrganizationID == "" ||
 		req.TestDatasetID == "" ||
+		(len(req.PartIDs) == 0 && len(req.FragmentIDs) == 0) ||
 		len(req.Labels) < 2 {
 		return nil, fmt.Errorf("missing required fields")
 	}
@@ -255,22 +244,23 @@ func runTests(
 	ctx context.Context, dataClient *app.DataClient, inferenceClient *InferenceClient,
 	testDatasetID, orgID, modelName, versionString string, accuracyThreshold float64, logger logging.Logger,
 ) (bool, error) {
+	// get images
 	testImages, err := getTestImages(ctx, dataClient, testDatasetID)
 	if err != nil {
 		return false, err
 	}
-
 	logger.Infof("got %d test images", len(testImages))
 
+	// evaluate model
 	evaluationResult, err := evaluateModel(ctx, inferenceClient, modelName, versionString, orgID, testImages)
 	if err != nil {
 		return false, err
 	}
 
 	testsPassed := evaluationResult.Accuracy > accuracyThreshold
-
 	logger.Infof("tests passed: %v", testsPassed)
 
+	// create dataset with failed inference images
 	datasetName, err := createTestResultsDataset(ctx, dataClient, orgID, modelName, versionString, evaluationResult.FailedImages)
 	if err != nil {
 		return testsPassed, err
@@ -279,8 +269,42 @@ func runTests(
 	logger.Infof("test failures dataset created: %s", datasetName)
 
 	logEvaluationSummary(logger, evaluationResult)
-
 	return testsPassed, nil
+}
+
+func updateConfigs(ctx context.Context, appClient *app.AppClient, modelName, newVersion string, partIDs []string, fragmentIDs []string, logger logging.Logger) error {
+	for _, partID := range partIDs {
+		part, _, err := appClient.GetRobotPart(ctx, partID)
+		if err != nil {
+			return fmt.Errorf("failed to get robot part %s", partID, err)
+		}
+		cfg := part.RobotConfig
+		updateConfig(part.RobotConfig, modelName, newVersion)
+
+		_, err = appClient.UpdateRobotPart(ctx, partID, part.Name, cfg)
+		if err != nil {
+			return fmt.Errorf("failed to update robot part %s", partID, err)
+
+		}
+		logger.Infof("sucessfully updated robot part %s config model version to %s", partID, newVersion)
+	}
+
+	for _, fragmentID := range fragmentIDs {
+		fragment, err := appClient.GetFragment(ctx, fragmentID, "")
+		if err != nil {
+			return fmt.Errorf("failed to get fragment %s", fragment, err)
+		}
+		cfg := fragment.Fragment
+		updateConfig(fragment.Fragment, modelName, newVersion)
+
+		_, err = appClient.UpdateFragment(ctx, fragmentID, fragment.Name, cfg, nil)
+		if err != nil {
+			return fmt.Errorf("failed to update fragment %s", fragmentID, err)
+
+		}
+		logger.Infof("sucessfully updated fragment %s config model version to %s", fragmentID, newVersion)
+	}
+	return nil
 }
 
 func connectToViam(ctx context.Context, logger logging.Logger) (*app.ViamClient, *InferenceClient) {

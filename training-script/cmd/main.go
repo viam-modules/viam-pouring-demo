@@ -9,7 +9,7 @@ import (
 	_ "go.viam.com/trainingscript"
 )
 
-// This is for local testing. to deploy the cloud function, run: gcloud run deploy  cropped-cup-training-job --source . --function TrainModelHTTP --base-image go125 --region us-central1 --project staging-cloud-web-app
+// This is for local testing. to deploy the cloud function, run: gcloud run deploy  retraining-model-script --source . --function TrainModelHTTP --base-image go125 --region us-central1 --project staging-cloud-web-app
 
 func main() {
 	// Use PORT environment variable, or default to 8080.
