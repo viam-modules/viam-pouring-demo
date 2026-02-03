@@ -181,8 +181,6 @@ func realMain() error {
 		}
 		defer file.Close()
 		return png.Encode(file, img)
-	case "get-glass-quickly":
-		return vc.GetGlassQuickly(ctx)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}

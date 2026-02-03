@@ -54,7 +54,6 @@ const trainingDataDirName = "training"
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
-var bottlePouringDatasetID = "696a83481a9adaa357b3c8b8"
 var croppedCupDatasetID = "697001c2f47281733615ac57"
 var croppedCupTestDatasetID = "69791f05ecfc7364599781d1"
 
@@ -256,30 +255,6 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.PutBack(ctx)
 	}
 
-	if cmd["get-glass-quickly"] == true {
-		return nil, vc.GetGlassQuickly(ctx)
-	}
-
-	if cmd["tilt-bottle-forward"] == true {
-		return nil, vc.TiltBottleForward(ctx)
-	}
-
-	if cmd["tilt-bottle-backward"] == true {
-		return nil, vc.TiltBottleBackward(ctx)
-	}
-
-	if cmd["return-bottle-to-pre-pour-position"] == true {
-		return nil, vc.ReturnBottleToPrePourPosition(ctx)
-	}
-
-	if cmd["capture-not-full"] == true {
-		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupTestDatasetID, []string{"not-full"})
-	}
-
-	if cmd["capture-full"] == true {
-		return nil, vc.saveCroppedCupImageToDataset(ctx, croppedCupTestDatasetID, []string{"full"})
-	}
-
 	if cmd["demo"] == true {
 		return nil, vc.FullDemo(ctx)
 	}
@@ -312,26 +287,6 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 
 	if cmd["good-pour"] == true {
 		return nil, vc.labelPour(ctx, goodPour)
-	}
-
-	if cmd["start-capture"] == true {
-		if vc.cancelCapture == nil {
-			// START
-			captureCtx, cancel := context.WithCancel(context.Background())
-			vc.cancelCapture = cancel
-
-			go vc.captureGlassPourMotion(captureCtx)
-		}
-		return nil, nil
-	}
-
-	if cmd["stop-capture"] == true {
-		if vc.cancelCapture != nil {
-			// STOP
-			vc.cancelCapture()
-			vc.cancelCapture = nil
-		}
-		return nil, nil
 	}
 
 	if cmd["stop-pour"] == true {
@@ -687,36 +642,58 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 
 	logger.Infof("found %d files in folder %s", len(files), folderPath)
 
+	numFiles := len(files)
+
+	// Our logic uploads a max of 2 not-full images per pour
+	// This is due to how during a pour, the vast majority of images are
+	// in a not-full state. Once the full state is hit, we stop pouring.
+	// If we were to upload all images, then they'd be heavily skewed towards not-full
 	switch label {
+
+	// tag last 2 images as not full
 	case underPour:
-		// tag all images as not full
-		for _, filepath := range files {
+		// guard against index out of bounds
+		endBoundary := max(0, numFiles-2)
+
+		for _, filepath := range files[endBoundary:] {
 			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
 				return err
 			}
 		}
 
+	// tag the last 2 images before the stopping point as not-full
 	case goodPour:
-		// tag all but last image as not full, and last image as full
-		for i := range len(files) - 1 {
-			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[i], notFullOpts); err != nil {
+		// guard against index out of bounds
+		threeFromEndBoundary := max(0, numFiles-3)
+		oneFromEndBoundary := max(0, numFiles-1)
+
+		for _, filepath := range files[threeFromEndBoundary:oneFromEndBoundary] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
 				return err
 			}
 		}
-		if _, err := dataClient.FileUploadFromPath(ctx, pid, files[len(files)-1], fullOpts); err != nil {
-			return err
+		// tag the last image as full
+		if numFiles > 0 {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[numFiles-1], fullOpts); err != nil {
+				return err
+			}
 		}
 
+	// We assume that the last 3 images are full, this is an approximation of the amount of over-pouring
+	// We also label the 2 images before the full/over-pour section as not-full
 	case overPour:
-		// tag all but last X images as not full, label last X images as full
-		for i := range len(files) - 3 {
-			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[i], notFullOpts); err != nil {
+		// guard against index out of bounds
+		fiveFromEndBoundary := max(0, numFiles-5)
+		threeFromEndBoundary := max(0, numFiles-3)
+
+		for _, filepath := range files[fiveFromEndBoundary:threeFromEndBoundary] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
 				return err
 			}
 		}
 
-		for i := len(files) - 3; i < len(files); i++ {
-			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[i], fullOpts); err != nil {
+		for _, filepath := range files[threeFromEndBoundary:] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, fullOpts); err != nil {
 				return err
 			}
 		}
@@ -1247,7 +1224,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "696a83481a9adaa357b3c8b8")
+			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "683f8952383a821481d9b5c9")
 			if err != nil {
 				vc.logger.Errorf("error saving cup cam to data set: %v", err)
 			}
@@ -1318,7 +1295,7 @@ PourLoop:
 				break PourLoop
 			}
 		case !useMLModel:
-			vc.logger.Info("*** using old pour model ***")
+			vc.logger.Info("*** using 'started pouring' image detection to control pouring logic ***")
 			if pd == nil {
 				pd = newPourDetector(img)
 			} else {
@@ -1370,24 +1347,6 @@ func (vc *VinoCart) CancelPour() error {
 	vc.logger.Info("CancelPour called - canceling pour")
 	vc.cancelPour()
 	return nil
-}
-
-func (vc *VinoCart) captureGlassPourMotion(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-	vc.logger.Infof("starting image capture")
-
-	for {
-		select {
-		case <-ctx.Done():
-			vc.logger.Infof("image capture stopped")
-			return
-		case <-ticker.C:
-			if err := vc.captureImageToDataset(ctx); err != nil {
-				vc.logger.Errorf("could not capture image: %v", err)
-			}
-		}
-	}
 }
 
 func saveImage(img image.Image, dirName string, loopNumber int, logger logging.Logger) (string, error) {
@@ -1473,93 +1432,6 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
 
 	wg.Wait()
 	vc.logger.Infof("wait done")
-
-	return nil
-}
-
-func (vc *VinoCart) GetGlassQuickly(ctx context.Context) error {
-	err := vc.doAll(ctx, "katie", "set", 50)
-	if err != nil {
-		return err
-	}
-
-	err = vc.GrabCup(ctx)
-	if err != nil {
-		return err
-	}
-
-	err = vc.PourPrep(ctx)
-	if err != nil {
-		return err
-	}
-
-	err = vc.TiltBottleForward(ctx)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (vc *VinoCart) TiltBottleForward(ctx context.Context) error {
-	if vc.pourStep == len(vc.pourJoints)-1 {
-		return nil
-	}
-
-	vc.pourStep++
-	vc.logger.Infof("TiltBottleForward: pourStep: %d", vc.pourStep)
-
-	if err := vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil); err != nil {
-		return err
-	}
-
-	// if vc.dataClient != nil {
-	// 	tags := []string{fmt.Sprintf("pour-step-%d", vc.pourStep)}
-	// 	if err := vc.saveCroppedCupImageToDataset(context.Background(), croppedCupDatasetID, tags); err != nil {
-	// 		vc.logger.Errorf("error saving cropped cup image: %v", err)
-	// 	}
-	// }
-	return nil
-}
-
-func (vc *VinoCart) TiltBottleBackward(ctx context.Context) error {
-	if vc.pourStep == 0 {
-		return nil
-	}
-
-	vc.pourStep--
-	vc.logger.Infof("TiltBottleBackward: pourStep: %d", vc.pourStep)
-	if err := vc.c.BottleArm.MoveToJointPositions(ctx, vc.pourJoints[vc.pourStep], nil); err != nil {
-		return err
-	}
-
-	// if vc.dataClient != nil {
-	// 	tags := []string{fmt.Sprintf("pour-step-%d", vc.pourStep)}
-	// 	if err := vc.saveCroppedCupImageToDataset(context.Background(), croppedCupDatasetID, tags); err != nil {
-	// 		vc.logger.Errorf("error saving cropped cup image: %v", err)
-	// 	}
-	// }
-	return nil
-}
-
-func (vc *VinoCart) ReturnBottleToPrePourPosition(ctx context.Context) error {
-	vc.logger.Infof("ReturnBottleToPrePourPosition: start at pourStep: %d", vc.pourStep)
-
-	if vc.pourStep == 0 {
-		return nil
-	}
-
-	var reversePour [][]referenceframe.Input
-	for i := vc.pourStep - 1; i >= 0; i-- {
-		reversePour = append(reversePour, vc.pourJoints[i])
-	}
-
-	err := vc.c.BottleArm.MoveThroughJointPositions(ctx, reversePour, nil, nil)
-	if err != nil {
-		return err
-	}
-
-	vc.pourStep = 0
 
 	return nil
 }
@@ -1786,12 +1658,6 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 }
 
 func (vc *VinoCart) captureImageToDataset(ctx context.Context) error {
-
-	// imgs, _, err := vc.c.GlassPourCam.Images(ctx, nil, nil)
-	// if err != nil {
-	// 	return err
-	// }
-
 	rec, err := vc.PourGlassFindCroppedRect(ctx)
 	if err != nil {
 		return err
@@ -1801,8 +1667,6 @@ func (vc *VinoCart) captureImageToDataset(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
-	// vc.logger.Infof("captured %d images", len(imgs))
 
 	if err := saveImageToDataset(ctx, vc.c.GlassPourCam.Name(), i, vc.dataClient, croppedCupDatasetID, nil); err != nil {
 		vc.logger.Errorf("error saving to dataset %v", err)
