@@ -3,7 +3,6 @@ package trainingscript
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -28,7 +27,6 @@ type EvaluationResult struct {
 }
 
 func getTestImages(ctx context.Context, dataClient *app.DataClient, datasetID string) ([]*app.BinaryData, error) {
-	fmt.Print(os.Getenv("VIAM_API_KEY"))
 	request := &app.DataByFilterOptions{
 		Filter: &app.Filter{
 			OrganizationIDs: []string{"e76d1b3b-0468-4efd-bb7f-fb1d2b352fcb"},
@@ -48,7 +46,7 @@ func getTestImages(ctx context.Context, dataClient *app.DataClient, datasetID st
 }
 
 func evaluateModel(
-	ctx context.Context, inferenceClient *InferenceClient, registryItemVersion, organizationID string, testImages []*app.BinaryData, logger logging.Logger,
+	ctx context.Context, inferenceClient *InferenceClient, modelName, registryItemVersion, organizationID string, testImages []*app.BinaryData, logger logging.Logger,
 ) (*EvaluationResult, error) {
 	result := &EvaluationResult{
 		PerClassMetrics: make(map[string]ClassMetrics),

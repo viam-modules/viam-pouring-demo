@@ -2,6 +2,7 @@ package trainingscript
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -15,9 +16,15 @@ import (
 	"time"
 )
 
-const modelName = "cropped-cup-fullness"
-const viamDevOrgID = "e76d1b3b-0468-4efd-bb7f-fb1d2b352fcb"
-const testDatasetID = "69791f05ecfc7364599781d1"
+type TrainingRequest struct {
+	DatasetID         string   `json:"dataset_id"`
+	PartID            string   `json:"part_id"`
+	ModelName         string   `json:"model_name"`
+	OrganizationID    string   `json:"org_id"`
+	TestDatasetID     string   `json:"test_dataset_id"`
+	Labels            []string `json:"labels"`
+	AccuracyThreshold float64  `json:"accuracy_threshold,omitempty"`
+}
 
 func init() {
 	functions.HTTP("TrainModelHTTP", TrainModelHTTP)
@@ -37,16 +44,18 @@ func TrainModelHTTP(w http.ResponseWriter, r *http.Request) {
 
 func TestModelHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	logger := logging.NewLogger("cloud-func")
+	logger := logging.NewLogger("tests-func")
 
+	testDatasetID := r.URL.Query().Get("test_dataset_id")
+	modelName := r.URL.Query().Get("model_name")
 	registryItemID := r.URL.Query().Get("registry_item_id")
 	version := r.URL.Query().Get("version")
 	orgID := r.URL.Query().Get("org_id")
 
-	if registryItemID == "" || version == "" || orgID == "" {
+	if registryItemID == "" || version == "" || orgID == "" || testDatasetID == "" || modelName == "" {
 		http.Error(
 			w,
-			"registry_item_id, version, and org_id are required",
+			"registry_item_id, version, test_dataset_id, and org_id are required",
 			http.StatusBadRequest,
 		)
 		return
@@ -66,6 +75,7 @@ func TestModelHandler(w http.ResponseWriter, r *http.Request) {
 		inferenceClient,
 		testDatasetID,
 		orgID,
+		modelName,
 		version,
 		logger,
 	)
@@ -74,23 +84,17 @@ func TestModelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(w, "tests passed: %v\n", ok)
+	logger.Infof("tests passed: %v\n", ok)
 }
 
 func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := logging.NewLogger("cloud-func")
 
-	// get dataset_id and part_id from query parameters
-	datasetID := r.URL.Query().Get("dataset_id")
-	partID := r.URL.Query().Get("part_id")
-
-	if datasetID == "" {
-		http.Error(w, "dataset_id query param not set", http.StatusBadRequest)
-		return
-	}
-	if partID == "" {
-		http.Error(w, "part_id query param not set", http.StatusBadRequest)
+	// get request params
+	req, err := decodeTrainingRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -107,9 +111,9 @@ func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
 	// submit training job
 	newVersionString := fmt.Sprintf("%s-script", time.Now().UTC().Format("2006-01-02T15-04-05"))
 	trainingID, err := mlClient.SubmitTrainingJob(ctx, app.SubmitTrainingJobArgs{
-		DatasetID:      datasetID,
-		OrganizationID: viamDevOrgID,
-		ModelName:      modelName,
+		DatasetID:      req.DatasetID,
+		OrganizationID: req.OrganizationID,
+		ModelName:      req.ModelName,
 		ModelVersion:   newVersionString,
 	}, app.ModelTypeSingleLabelClassification, []string{"full", "not-full"})
 	if err != nil {
@@ -121,7 +125,7 @@ func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
 	// poll and wait for training completion
 	pollCtx, cancel := context.WithTimeout(ctx, 50*time.Minute)
 	defer cancel()
-	trainingJobMetadata, err := pollTrainingStatus(pollCtx, mlClient, trainingID, logger)
+	_, err = pollTrainingStatus(pollCtx, mlClient, trainingID, logger)
 	if err != nil {
 		if strings.Contains(err.Error(), "canceled") {
 			logger.Infof(err.Error())
@@ -130,10 +134,10 @@ func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	logger.Infof("training complete, got %+v", trainingJobMetadata)
+	logger.Infof("training complete")
 
 	// test the model
-	shouldUpdateConfig, err := runTests(ctx, viamClient.DataClient(), inferenceClient, testDatasetID, viamDevOrgID, newVersionString, logger)
+	shouldUpdateConfig, err := runTests(ctx, viamClient.DataClient(), inferenceClient, req.TestDatasetID, req.OrganizationID, req.ModelName, newVersionString, logger)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to test trained model %v", err), http.StatusInternalServerError)
 		return
@@ -142,15 +146,15 @@ func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
 
 	// update config to new model version if model passes the tests
 	if shouldUpdateConfig {
-		part, _, err := appClient.GetRobotPart(ctx, partID)
+		part, _, err := appClient.GetRobotPart(ctx, req.PartID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to get robot part %v", err), http.StatusInternalServerError)
 			return
 		}
 		cfg := part.RobotConfig
-		updateConfig(part.RobotConfig, newVersionString)
+		updateConfig(part.RobotConfig, req.ModelName, newVersionString)
 
-		_, err = appClient.UpdateRobotPart(ctx, partID, part.Name, cfg)
+		_, err = appClient.UpdateRobotPart(ctx, req.PartID, part.Name, cfg)
 		if err != nil {
 			http.Error(w, "failed to update robot part", http.StatusInternalServerError)
 			return
@@ -158,6 +162,29 @@ func TrainModelHandler(w http.ResponseWriter, r *http.Request) {
 		logger.Infof("sucessfully updated robot config model version to %s", newVersionString)
 
 	}
+}
+
+func decodeTrainingRequest(r *http.Request) (*TrainingRequest, error) {
+	var req TrainingRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return nil, fmt.Errorf("invalid json body: %w", err)
+	}
+
+	if req.DatasetID == "" ||
+		req.PartID == "" ||
+		req.ModelName == "" ||
+		req.OrganizationID == "" ||
+		req.TestDatasetID == "" ||
+		len(req.Labels) < 2 {
+		return nil, fmt.Errorf("missing required fields")
+	}
+
+	if req.AccuracyThreshold == 0 {
+		req.AccuracyThreshold = 0.95
+	}
+
+	return &req, nil
 }
 
 func pollTrainingStatus(
@@ -193,7 +220,7 @@ func pollTrainingStatus(
 	}
 }
 
-func updateConfig(oldConfig map[string]interface{}, newVersion string) {
+func updateConfig(oldConfig map[string]interface{}, modelName, newVersion string) {
 	pkgs, ok := oldConfig["packages"].([]interface{})
 	if !ok {
 		panic("packages is not an array")
@@ -210,7 +237,7 @@ func updateConfig(oldConfig map[string]interface{}, newVersion string) {
 	}
 }
 
-func runTests(ctx context.Context, dataClient *app.DataClient, inferenceClient *InferenceClient, testDatasetID string, orgID, versionString string, logger logging.Logger) (bool, error) {
+func runTests(ctx context.Context, dataClient *app.DataClient, inferenceClient *InferenceClient, testDatasetID, orgID, modelName, versionString string, logger logging.Logger) (bool, error) {
 	testImages, err := getTestImages(ctx, dataClient, testDatasetID)
 	if err != nil {
 		return false, err
@@ -219,7 +246,7 @@ func runTests(ctx context.Context, dataClient *app.DataClient, inferenceClient *
 	logger.Infof("got %d test images", len(testImages))
 
 	evaluationResult, err := evaluateModel(
-		ctx, inferenceClient, versionString, orgID, testImages, logger,
+		ctx, inferenceClient, modelName, versionString, orgID, testImages, logger,
 	)
 	if err != nil {
 		return false, err
