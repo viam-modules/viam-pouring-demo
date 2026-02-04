@@ -81,6 +81,8 @@ type Config struct {
 	APIKeyID string `json:"api_key_id"`
 
 	Loop bool `json:"loop"`
+
+	UseMLModel bool `json:"use_ml"`
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
