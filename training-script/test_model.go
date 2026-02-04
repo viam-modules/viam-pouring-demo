@@ -33,6 +33,7 @@ func getTestImages(ctx context.Context, dataClient *app.DataClient, datasetID st
 			DatasetID: datasetID,
 			Interval:  app.CaptureInterval{Start: time.Unix(0, 0), End: time.Now()},
 		},
+		Limit: 200,
 	}
 
 	response, err := dataClient.BinaryDataByFilter(ctx, false, request)
