@@ -18,14 +18,22 @@ import (
 )
 
 type TrainingRequest struct {
-	DatasetID         string   `json:"dataset_id"`
-	FragmentIDs       []string `json:"fragment_ids"`
-	PartIDs           []string `json:"part_ids"`
-	ModelName         string   `json:"model_name"`
-	OrganizationID    string   `json:"org_id"`
-	TestDatasetID     string   `json:"test_dataset_id"`
-	Labels            []string `json:"labels"`
-	AccuracyThreshold float64  `json:"accuracy_threshold,omitempty"`
+	//training dataset id
+	DatasetID string `json:"dataset_id"`
+	// test dataset id
+	TestDatasetID string `json:"test_dataset_id"`
+	// ml model name
+	ModelName string `json:"model_name"`
+	// labels to train dataset on
+	Labels []string `json:"labels"`
+	// fragment ids to deploy new model onto
+	FragmentIDs []string `json:"fragment_ids"`
+	// part ids to deploy new model onto
+	PartIDs []string `json:"part_ids"`
+	// org id to which model belongs to
+	OrganizationID string `json:"org_id"`
+	// if model is above this float, will deploy. by default, 0.95
+	AccuracyThreshold float64 `json:"accuracy_threshold,omitempty"`
 }
 
 func init() {

@@ -164,7 +164,6 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 
 	vc.pourStep = 0
 
-	vc.pourLabel = make(chan string, 1)
 	vc.useMLModel = conf.UseMLModel
 	return vc, nil
 }
@@ -200,7 +199,6 @@ type VinoCart struct {
 
 	imgDirName string
 
-	pourLabel      chan string
 	useMLModelChan chan bool
 
 	useMLModel bool
@@ -373,10 +371,6 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		vc.pourStep = 0
 		if err := vc.cleanupImages(); err != nil {
 			vc.logger.Errorf("failed to cleanup images: %v\n", err)
-		}
-		select {
-		case <-vc.pourLabel:
-		default:
 		}
 		select {
 		case <-vc.useMLModelChan:
@@ -606,16 +600,16 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 	if pid == "" {
 		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
 	}
-
+	pourTime := filepath.Base(folderPath)
 	notFullOpts := &app.FileUploadOptions{
 		ComponentName: &componentName,
-		Tags:          []string{"not-full", folderPath},
+		Tags:          []string{"not-full", pourTime},
 		DatasetIDs:    []string{dataSetId},
 	}
 
 	fullOpts := &app.FileUploadOptions{
 		ComponentName: &componentName,
-		Tags:          []string{"full", folderPath},
+		Tags:          []string{"full", pourTime},
 		DatasetIDs:    []string{dataSetId},
 	}
 
@@ -1342,20 +1336,6 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 		return err
 	}
 
-	// wait for user to press a label before continuing
-	select {
-	case label := <-vc.pourLabel:
-		vc.logger.Infof("user labeled as %s", label)
-		if err := uploadTaggedImages(ctx, vc.c.Cam.Name().Name, vc.imgDirName, vc.dataClient, croppedCupTestDatasetID, label, vc.logger); err != nil {
-			vc.logger.Errorf("error labeling images for %s: %v", label, err)
-		}
-	case <-time.After(time.Second * 10):
-	}
-
-	if err = vc.cleanupImages(); err != nil {
-		vc.logger.Errorf("error cleaning up images %v", err)
-	}
-
 	err = vc.moveToCurrentXYAtCupHeight(ctx)
 	if err != nil {
 		return err
@@ -1652,6 +1632,26 @@ func (vc *VinoCart) captureImageToDataset(ctx context.Context) error {
 }
 
 func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
-	vc.pourLabel <- label
-	return nil
+	if vc.imgDirName == "" {
+		vc.logger.Warn("no images to label")
+		return nil
+	}
+
+	folderName := filepath.Base(vc.imgDirName)
+	pourTime, err := time.ParseInLocation("20060102_150405.000", folderName, time.Local)
+	if err != nil {
+		return fmt.Errorf("could not parse folder timestamp %q: %w", folderName, err)
+	}
+	if age := time.Since(pourTime); age > 15*time.Minute {
+		vc.logger.Infof("skipping upload of stale images (age: %v): %s", age, vc.imgDirName)
+		return nil
+	}
+
+	defer func() {
+		if err := vc.cleanupImages(); err != nil {
+			vc.logger.Errorf("failed to cleanup images: %v", err)
+		}
+	}()
+
+	return uploadTaggedImages(ctx, vc.c.Cam.Name().Name, vc.imgDirName, vc.dataClient, croppedCupDatasetID, label, vc.logger)
 }
