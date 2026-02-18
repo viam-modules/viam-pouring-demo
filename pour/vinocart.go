@@ -1637,6 +1637,12 @@ func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
 		return nil
 	}
 
+	defer func() {
+		if err := vc.cleanupImages(); err != nil {
+			vc.logger.Errorf("failed to cleanup images: %v", err)
+		}
+	}()
+
 	folderName := filepath.Base(vc.imgDirName)
 	pourTime, err := time.ParseInLocation("20060102_150405.000", folderName, time.Local)
 	if err != nil {
@@ -1646,12 +1652,6 @@ func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
 		vc.logger.Infof("skipping upload of stale images (age: %v): %s", age, vc.imgDirName)
 		return nil
 	}
-
-	defer func() {
-		if err := vc.cleanupImages(); err != nil {
-			vc.logger.Errorf("failed to cleanup images: %v", err)
-		}
-	}()
 
 	return uploadTaggedImages(ctx, vc.c.Cam.Name().Name, vc.imgDirName, vc.dataClient, croppedCupDatasetID, label, vc.logger)
 }
