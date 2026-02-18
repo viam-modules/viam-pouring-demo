@@ -4,12 +4,15 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -44,8 +47,15 @@ var vinowebStaticFS embed.FS
 const bottleName = "bottle-top"
 const gripperToCupCenterHack = -35
 
+const goodPour = "good-pour"
+const underPour = "under-pour"
+const overPour = "over-pour"
+const trainingDataDirName = "training"
+
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
+var croppedCupDatasetID = "697001c2f47281733615ac57"
+var croppedCupTestDatasetID = "69791f05ecfc7364599781d1"
 
 func init() {
 	resource.RegisterService(generic.API, VinoCartModel, resource.Registration[resource.Resource, *Config]{Constructor: newVinoCart})
@@ -67,7 +77,35 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
-	g, err := NewVinoCart(ctx, config, c, robotClient, nil, logger)
+	var dataClient *app.DataClient
+	var appClient *app.ViamClient
+	if config.APIKey != "" && config.APIKeyID != "" {
+		appClient, err = app.CreateViamClientWithAPIKey(
+			ctx,
+			app.Options{},
+			config.APIKey,
+			config.APIKeyID,
+			logger,
+		)
+	} else {
+		appClient, err = app.CreateViamClientFromEnvVars(ctx, nil, logger)
+	}
+
+	if err != nil {
+		logger.Warnf("can't connect to app: %v", err)
+	} else {
+		dataClient = appClient.DataClient()
+	}
+
+	// create directory where images for training data will live
+	if err := os.Mkdir(trainingDataDirName, 0755); err != nil {
+		if !os.IsExist(err) {
+			return nil, fmt.Errorf("failed to create directory: %w", err)
+		}
+		// Directory already exists, which is fine
+	}
+
+	g, err := NewVinoCart(ctx, config, c, robotClient, dataClient, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +162,9 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 		vc.server.ListenAndServe()
 	}()
 
+	vc.pourStep = 0
+
+	vc.useMLModel = conf.UseMLModel
 	return vc, nil
 }
 
@@ -153,6 +194,17 @@ type VinoCart struct {
 	status     string
 
 	server *http.Server
+
+	pourStep int
+
+	imgDirName string
+
+	useMLModelChan chan bool
+
+	useMLModel bool
+
+	cancelCapture context.CancelFunc
+	cancelPour    context.CancelFunc
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -223,6 +275,21 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.doAll(ctx, stage, step, 50)
 	}
 
+	if cmd["over-pour"] == true {
+		return nil, vc.labelPour(ctx, overPour)
+	}
+
+	if cmd["under-pour"] == true {
+		return nil, vc.labelPour(ctx, underPour)
+	}
+
+	if cmd["good-pour"] == true {
+		return nil, vc.labelPour(ctx, goodPour)
+	}
+
+	if cmd["stop-pour"] == true {
+		return nil, vc.CancelPour()
+	}
 	return nil, fmt.Errorf("need a command")
 }
 
@@ -300,6 +367,17 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
+	defer func() {
+		vc.pourStep = 0
+		if err := vc.cleanupImages(); err != nil {
+			vc.logger.Errorf("failed to cleanup images: %v\n", err)
+		}
+		select {
+		case <-vc.useMLModelChan:
+		default:
+		}
+	}()
+
 	g := errgroup.Group{}
 
 	cupHoldingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
@@ -366,8 +444,12 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		return err2
 	}
 	err3 := vc.doAll(ctx, "touch", "prep", 100)
+	if err3 != nil {
+		return err3
+	}
 
-	return err3
+	vc.logger.Info("finished resetting")
+	return nil
 }
 
 func (vc *VinoCart) GrabCup(ctx context.Context) error {
@@ -410,7 +492,7 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 
 	if vc.dataClient != nil {
 		vc.logger.Infof("uploading image to dataset for cup pick quality")
-		err := saveImageToDataset(ctx, vc.c.Cam.Name(), prepped, vc.dataClient, "683f8952383a821481d9b5c9")
+		err := saveImageToDataset(ctx, vc.c.Cam.Name(), prepped, vc.dataClient, "683f8952383a821481d9b5c9", nil)
 		if err != nil {
 			vc.logger.Warnf("can't saveCupImage: %v", err)
 		}
@@ -460,10 +542,146 @@ func saveImageToDatasetFromCamera(ctx context.Context, cam camera.Camera, dataCl
 	if err != nil {
 		return err
 	}
-	return saveImageToDataset(ctx, cam.Name(), i, dataClient, dataSetId)
+	return saveImageToDataset(ctx, cam.Name(), i, dataClient, dataSetId, nil)
 }
 
-func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string) error {
+func (vc *VinoCart) saveCroppedCupImageToDataset(ctx context.Context, dataSetId string, tags []string) error {
+	// Calculate the crop box for the cup
+	box, err := vc.PourGlassFindCroppedRect(ctx)
+	if err != nil {
+		return fmt.Errorf("error finding crop box: %w", err)
+	}
+
+	// Get the cropped cup image
+	croppedImg, err := vc.PourGlassFindCroppedImage(ctx, box)
+	if err != nil {
+		return fmt.Errorf("error getting cropped cup image: %w", err)
+	}
+
+	// Save the cropped image to the dataset with tags
+	if err := saveImageToDataset(ctx, vc.c.GlassPourCam.Name(), croppedImg, vc.dataClient, dataSetId, tags); err != nil {
+		return fmt.Errorf("error saving cropped cup image to dataset: %w", err)
+	}
+
+	return nil
+}
+
+func findFiles(ctx context.Context, root string) ([]string, error) {
+	var files []string
+	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func (vc *VinoCart) cleanupImages() error {
+	if vc.imgDirName == "" {
+		return nil
+	}
+	if err := os.RemoveAll(vc.imgDirName); err != nil {
+		return err
+	}
+	vc.imgDirName = ""
+	return nil
+}
+
+func uploadTaggedImages(ctx context.Context, componentName string, folderPath string, dataClient *app.DataClient, dataSetId string, label string, logger logging.Logger) error {
+	pid := os.Getenv("VIAM_MACHINE_PART_ID")
+	if pid == "" {
+		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
+	}
+	pourTime := filepath.Base(folderPath)
+	notFullOpts := &app.FileUploadOptions{
+		ComponentName: &componentName,
+		Tags:          []string{"not-full", pourTime},
+		DatasetIDs:    []string{dataSetId},
+	}
+
+	fullOpts := &app.FileUploadOptions{
+		ComponentName: &componentName,
+		Tags:          []string{"full", pourTime},
+		DatasetIDs:    []string{dataSetId},
+	}
+
+	files, err := findFiles(ctx, folderPath)
+	if err != nil {
+		return err
+	}
+
+	logger.Infof("found %d files in folder %s", len(files), folderPath)
+
+	numFiles := len(files)
+
+	// Our logic uploads a max of 2 not-full images per pour
+	// This is due to how during a pour, the vast majority of images are
+	// in a not-full state. Once the full state is hit, we stop pouring.
+	// If we were to upload all images, then they'd be heavily skewed towards not-full
+	switch label {
+
+	// tag last 2 images as not full
+	case underPour:
+		// guard against index out of bounds
+		endBoundary := max(0, numFiles-2)
+
+		for _, filepath := range files[endBoundary:] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
+				return err
+			}
+		}
+
+	// tag the last 2 images before the stopping point as not-full
+	case goodPour:
+		// guard against index out of bounds
+		threeFromEndBoundary := max(0, numFiles-3)
+		oneFromEndBoundary := max(0, numFiles-1)
+
+		for _, filepath := range files[threeFromEndBoundary:oneFromEndBoundary] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
+				return err
+			}
+		}
+		// tag the last image as full
+		if numFiles > 0 {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, files[numFiles-1], fullOpts); err != nil {
+				return err
+			}
+		}
+
+	// We assume that the last 3 images are full, this is an approximation of the amount of over-pouring
+	// We also label the 2 images before the full/over-pour section as not-full
+	case overPour:
+		// guard against index out of bounds
+		fiveFromEndBoundary := max(0, numFiles-5)
+		threeFromEndBoundary := max(0, numFiles-3)
+
+		for _, filepath := range files[fiveFromEndBoundary:threeFromEndBoundary] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
+				return err
+			}
+		}
+
+		for _, filepath := range files[threeFromEndBoundary:] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, fullOpts); err != nil {
+				return err
+			}
+		}
+	default:
+		return errors.New("not valid label")
+	}
+	return nil
+}
+
+func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string, tags []string) error {
 	pid := os.Getenv("VIAM_MACHINE_PART_ID")
 	if pid == "" {
 		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
@@ -482,6 +700,7 @@ func saveImageToDataset(ctx context.Context, component resource.Name, img image.
 		ComponentType: &ct,
 		ComponentName: &cn,
 		FileExtension: &pngString,
+		Tags:          tags,
 	}
 
 	id, err := dataClient.FileUploadFromBytes(ctx, pid, data, &opts)
@@ -531,6 +750,8 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	// -- setup world frame
 
 	obstacles := []*referenceframe.GeometriesInFrame{}
+	// Set a label on the cup geometry to avoid "unnamedWorldStateGeometry" collisions
+	obj.Geometry.SetLabel("cup")
 	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
 	vc.logger.Infof("add cup as obstacle %v", obj.Geometry)
 
@@ -799,7 +1020,6 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -860,6 +1080,20 @@ func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
 	return err
 }
 
+func (vc *VinoCart) getPourDetails(ctx context.Context, img image.Image) (string, float64, error) {
+	if vc.c.DataFullnessService == nil {
+		return "", 0, nil
+	}
+	cs, err := vc.c.DataFullnessService.Classifications(ctx, img, 1, nil)
+	if err != nil {
+		return "", 0, err
+	}
+	if len(cs) == 0 {
+		return "", 0, nil
+	}
+	return cs[0].Label(), cs[0].Score(), nil
+}
+
 func (vc *VinoCart) PourGlassFindCroppedRect(ctx context.Context) (*image.Rectangle, error) {
 	detections, err := vc.c.PourGlassFindService.DetectionsFromCamera(ctx, "", nil)
 	if err != nil {
@@ -900,7 +1134,7 @@ type subImager interface {
 	SubImage(r image.Rectangle) image.Image
 }
 
-func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Rectangle, loopNumber int) (image.Image, string, error) {
+func (vc *VinoCart) GetGlassPourCamImage(ctx context.Context, box *image.Rectangle, loopNumber int) (image.Image, string, error) {
 	img, err := vc.PourGlassFindCroppedImage(ctx, box)
 	if err != nil {
 		return nil, "", err
@@ -908,7 +1142,7 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Re
 
 	fn := ""
 	if loopNumber >= 0 {
-		fn, err = saveImage(img, loopNumber)
+		_, err = saveImage(img, vc.imgDirName, loopNumber, vc.logger)
 		if err != nil {
 			return nil, "", err
 		}
@@ -920,6 +1154,7 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Re
 func (vc *VinoCart) Pour(ctx context.Context) error {
 	vc.setStatus("pouring")
 
+	// set up gripper + arms
 	isHoldingCup, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
@@ -940,18 +1175,16 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	time.Sleep(500 * time.Millisecond)
 
-	start := time.Now()
-	loopNumber := 0
-
+	// oldModel vars
 	var pd *pourDetector
-
-	totalTime := 15 * time.Second
 	markedDifferent := false
 
+	totalTime := 15 * time.Second
+
 	pourContext, cancelPour := context.WithCancel(ctx)
+	vc.cancelPour = cancelPour
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
@@ -960,7 +1193,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "683d1210c83b3f3823ec70ff")
+			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "683f8952383a821481d9b5c9")
 			if err != nil {
 				vc.logger.Errorf("error saving cup cam to data set: %v", err)
 			}
@@ -971,7 +1204,6 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	vc.logger.Infof("got box for crop %v", box)
 
 	go func() {
@@ -994,44 +1226,105 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		}
 	}()
 
+	// create directory where we save images, named after start time
+	pourTime := ""
+	pourTime = time.Now().Format("20060102_150405.000")
+	subDir := filepath.Join(trainingDataDirName, pourTime)
+	if err := os.Mkdir(subDir, 0o755); err != nil {
+		return err
+	}
+	vc.imgDirName = subDir
+
+	timeoutReached := true
+
+	start := time.Now()
+	vc.logger.Infow("Got start timestamp for pour loop", "startTime", start.String())
+	loopNumber := 0
+
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
-		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, -1)
+		img, fn, err := vc.GetGlassPourCamImage(ctx, box, loopNumber)
 		if err != nil {
 			return err
 		}
 
-		if pd == nil {
-			pd = newPourDetector(img)
+		if vc.useMLModel {
+			vc.logger.Info("*** using ml pour model ***")
+
+			isFull, err := vc.handleMLPour(ctx, img, loopNumber)
+			if err != nil {
+				return err
+			}
+			if isFull {
+				timeoutReached = false
+				break
+			}
+
 		} else {
-			delta, _ := pd.differentDebug(img)
-			deltaMax := vc.conf.glassPourMotionThreshold()
-			vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
-			if delta >= deltaMax && !markedDifferent {
-				vc.logger.Infof(" **** motion detected *** ")
-				markedDifferent = true
-				totalTime = time.Since(start) + time.Second
+			vc.logger.Info("*** using 'started pouring' image detection to control pouring logic ***")
+
+			if pd == nil {
+				pd = newPourDetector(img)
+			} else {
+				delta, _ := pd.differentDebug(img)
+				deltaMax := vc.conf.glassPourMotionThreshold()
+				vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
+				if delta >= deltaMax && !markedDifferent {
+					vc.logger.Infof(" **** motion detected *** ")
+					markedDifferent = true
+					totalTime = time.Since(start) + time.Second
+				}
 			}
 		}
 
 		sleepTime := (100 * time.Millisecond) - time.Since(loopStart)
-		vc.logger.Debugf("going to sleep for %v", sleepTime)
+		vc.logger.Infof("going to sleep for %v", sleepTime)
 		time.Sleep(sleepTime)
 		loopNumber++
 	}
 
 	// cleanup done in defer above
+	if timeoutReached {
+		vc.logger.Infow(" **** pour timeout reached- stopping pour **** ", "elapsed time", time.Since(start).String())
+	}
 	return nil
 }
 
-func saveImage(img image.Image, loopNumber int) (string, error) {
-	fn := fmt.Sprintf("img-%d.png", loopNumber)
+func (vc *VinoCart) handleMLPour(ctx context.Context, img image.Image, loopNumber int) (bool, error) {
+	label, score, err := vc.getPourDetails(ctx, img)
+	if err != nil {
+		return false, err
+	}
+
+	compositeLogStr := fmt.Sprintf("loopNumber: %d, label: %s, score: %0.2f", loopNumber, label, score)
+
+	if label == "full" {
+		vc.logger.Infow(" **** should stop pour *** ", "loopInfo", compositeLogStr)
+		return true, nil
+	}
+	vc.logger.Infow(" **** should not stop pour *** ", "loopInfo", compositeLogStr)
+	return false, nil
+}
+
+func (vc *VinoCart) CancelPour() error {
+	if vc.cancelPour == nil {
+		return fmt.Errorf("no pour in progress")
+	}
+
+	vc.logger.Info("CancelPour called - canceling pour")
+	vc.cancelPour()
+	return nil
+}
+
+func saveImage(img image.Image, dirName string, loopNumber int, logger logging.Logger) (string, error) {
+	fn := fmt.Sprintf("%s/img-%02d.png", dirName, loopNumber)
 
 	file, err := os.Create(fn)
 	if err != nil {
 		return fn, fmt.Errorf("couldn't create filename %w", err)
 	}
+	logger.Infof("saving image %s", fn)
 	defer file.Close()
 	return fn, png.Encode(file, img)
 }
@@ -1108,6 +1401,11 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 
 	if err != nil && err != context.Canceled && pourContext.Err() != context.Canceled {
 		return err
+	}
+
+	// After moving through all joint positions, we wait for the caller to signal that the pour has been completed
+	select {
+	case <-pourContext.Done():
 	}
 
 	vc.logger.Infof("going back down")
@@ -1311,4 +1609,49 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 	}
 
 	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+}
+
+func (vc *VinoCart) captureImageToDataset(ctx context.Context) error {
+	rec, err := vc.PourGlassFindCroppedRect(ctx)
+	if err != nil {
+		return err
+	}
+
+	i, err := vc.PourGlassFindCroppedImage(ctx, rec)
+	if err != nil {
+		return err
+	}
+
+	if err := saveImageToDataset(ctx, vc.c.GlassPourCam.Name(), i, vc.dataClient, croppedCupDatasetID, nil); err != nil {
+		vc.logger.Errorf("error saving to dataset %v", err)
+	} else {
+		vc.logger.Infof("uploaded to dataset %s", croppedCupDatasetID)
+	}
+
+	return nil
+}
+
+func (vc *VinoCart) labelPour(ctx context.Context, label string) error {
+	if vc.imgDirName == "" {
+		vc.logger.Warn("no images to label")
+		return nil
+	}
+
+	defer func() {
+		if err := vc.cleanupImages(); err != nil {
+			vc.logger.Errorf("failed to cleanup images: %v", err)
+		}
+	}()
+
+	folderName := filepath.Base(vc.imgDirName)
+	pourTime, err := time.ParseInLocation("20060102_150405.000", folderName, time.Local)
+	if err != nil {
+		return fmt.Errorf("could not parse folder timestamp %q: %w", folderName, err)
+	}
+	if age := time.Since(pourTime); age > 15*time.Minute {
+		vc.logger.Infof("skipping upload of stale images (age: %v): %s", age, vc.imgDirName)
+		return nil
+	}
+
+	return uploadTaggedImages(ctx, vc.c.Cam.Name().Name, vc.imgDirName, vc.dataClient, croppedCupDatasetID, label, vc.logger)
 }
