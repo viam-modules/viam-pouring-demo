@@ -58,7 +58,7 @@ func JogJoint(ctx context.Context, a arm.Arm, j int, amount float64) error {
 		return err
 	}
 
-	inputs[j].Value += amount
+	inputs[j] += amount
 
 	return a.MoveToJointPositions(ctx, inputs, nil)
 }

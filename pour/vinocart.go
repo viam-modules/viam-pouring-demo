@@ -114,7 +114,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 		return nil, err
 	}
 
-	_, vc.server, err = vmodutils.PrepInModuleServer(realFS, logger.Sublogger("accesslog"))
+	_, vc.server, err = vmodutils.PrepInModuleServer(realFS, logger.Sublogger("accesslog"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -737,7 +737,7 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 	orig := positions[0]
 
 	vc.logger.Infof("pourPrepGrab orig: %v", orig)
-	positions[0].Value -= utils.DegToRad(2)
+	positions[0] -= utils.DegToRad(2)
 	vc.logger.Infof("pourPrepGrab hack: %v", positions[0])
 
 	err = vc.c.BottleArm.MoveToJointPositions(ctx, positions, nil)
@@ -755,7 +755,7 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 	time.Sleep(50 * time.Millisecond)
 
 	positions[0] = orig
-	positions[5].Value -= .3 // tilt bottle to increase friction
+	positions[5] -= .3 // tilt bottle to increase friction
 
 	err = vc.c.BottleArm.MoveToJointPositions(ctx, positions, nil)
 	if err != nil {
@@ -1157,7 +1157,7 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 		return err
 	}
 
-	myFs, err := touch.FrameSystemWithSomeParts(ctx, vc.robotClient, []string{vc.conf.BottleArm, vc.conf.BottleGripper}, vc.pourExtraFrames)
+	myFs, err := touch.FrameSystemWithSomeParts(ctx, vc.c.Rfs, []string{vc.conf.BottleArm, vc.conf.BottleGripper}, vc.pourExtraFrames)
 	if err != nil {
 		return err
 	}
@@ -1177,7 +1177,7 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 	if len(prepPositionConfig.Joints) != 6 {
 		return fmt.Errorf("prepPositionConfig.Joints wrong %v", prepPositionConfig.Joints)
 	}
-	startJoints := referenceframe.FloatsToInputs(prepPositionConfig.Joints)
+	startJoints := prepPositionConfig.Joints
 
 	startArmPose, err := vc.posConfig(ctx, allPostions[len(allPostions)-1][0]) // HACK HACK HACK
 	if err != nil {
@@ -1234,7 +1234,7 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 				vc.conf.BottleArm: startJoints,
 			}),
 		}
-		plan, err := armplanning.PlanMotion(ctx, vc.logger, req)
+		plan, _, err := armplanning.PlanMotion(ctx, vc.logger, req)
 		if err != nil {
 			return fmt.Errorf("can't plan pour prep: %w", err)
 		}

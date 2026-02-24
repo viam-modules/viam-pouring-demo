@@ -8,6 +8,7 @@ import (
 	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/resource"
+	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
 )
@@ -161,8 +162,10 @@ type Pour1Components struct {
 	Gripper      gripper.Gripper
 	Cam          camera.Camera
 	GlassPourCam camera.Camera
-	Motion       motion.Service
 	CamVision    vision.Service
+
+	Motion motion.Service
+	Rfs    framesystem.Service
 
 	CupFinder vision.Service
 
@@ -202,6 +205,11 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 	}
 
 	c.Motion, err = motion.FromDependencies(deps, "builtin")
+	if err != nil {
+		return nil, err
+	}
+
+	c.Rfs, err = framesystem.FromDependencies(deps)
 	if err != nil {
 		return nil, err
 	}
