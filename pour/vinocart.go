@@ -366,8 +366,34 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		return err2
 	}
 	err3 := vc.doAll(ctx, "touch", "prep", 100)
+	if err3 != nil {
+		return err3
+	}
 
-	return err3
+	// Lastly, open both grippers in the case that they are fully closed (which is different than holding something)
+	g.Go(func() error {
+		var err error
+		err = vc.c.Gripper.Open(ctx, nil)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		var err error
+		err = vc.c.BottleGripper.Open(ctx, nil)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	err4 := g.Wait()
+	if err4 != nil {
+		return err4
+	}
+	return nil
 }
 
 func (vc *VinoCart) GrabCup(ctx context.Context) error {
