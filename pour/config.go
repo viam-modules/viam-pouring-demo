@@ -71,6 +71,12 @@ type Config struct {
 	// optional offset for gripper height when grabbing/placing cup
 	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
 
+	// gap in mm between bottle-top and cup-top to avoid glass contact
+	PourGapMM float64 `json:"pour_gap_mm"`
+
+	// max L2 joint distance between consecutive tilt steps (radians)
+	PourTiltStepLimit float64 `json:"pour_tilt_step_limit"`
+
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 
@@ -153,6 +159,20 @@ func (c *Config) cupGripHeightOffset() float64 {
 		return c.CupGripHeightOffset
 	}
 	return 25
+}
+
+func (c *Config) pourGapMM() float64 {
+	if c.PourGapMM > 0 {
+		return c.PourGapMM
+	}
+	return 38
+}
+
+func (c *Config) pourTiltStepLimit() float64 {
+	if c.PourTiltStepLimit > 0 {
+		return c.PourTiltStepLimit
+	}
+	return 0.3
 }
 
 type StagePositions map[string][][]toggleswitch.Switch
