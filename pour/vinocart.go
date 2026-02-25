@@ -1208,6 +1208,15 @@ func (vc *VinoCart) posConfig(ctx context.Context, pos resource.Resource) (*touc
 }
 
 func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
+	// Include both arms so the planner avoids the left arm during right arm moves
+	myFs, err := touch.FrameSystemWithSomeParts(ctx, vc.c.Rfs,
+		[]string{vc.conf.BottleArm, vc.conf.BottleGripper, vc.conf.ArmName, vc.conf.GripperName},
+		vc.pourExtraFrames,
+	)
+	if err != nil {
+		return err
+	}
+
 	startJoints, err := vc.c.BottleArm.JointPositions(ctx, nil)
 	if err != nil {
 		return err
