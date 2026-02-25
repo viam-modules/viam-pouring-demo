@@ -42,7 +42,6 @@ import (
 var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
-const gripperToCupCenterHack = -35
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -187,6 +186,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 
 	if cmd["touch"] == true {
 		return nil, vc.Touch(ctx)
+	}
+
+	if cmd["stop"] == true {
+		return nil, multierr.Combine(vc.c.Arm.Stop(ctx, nil), vc.c.BottleArm.Stop(ctx, nil))
 	}
 
 	if cmd["pour-prep"] == true {
@@ -629,7 +632,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
+	goToPose := vc.getApproachPoint(obj, -vc.conf.cupWidth()/2, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose)
@@ -659,7 +662,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// we found a path!
 
-		goToPose = vc.getApproachPoint(obj, gripperToCupCenterHack, choices[idx])
+		goToPose = vc.getApproachPoint(obj, -vc.conf.cupWidth()/2, choices[idx])
 		vc.logger.Infof("going to move (2) to %v", goToPose)
 
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
@@ -706,6 +709,15 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 
 	p := touch.GetApproachPoint(c, deltaLinear, o)
 	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+
+	vc.logger.Infof("getApproachPoint: detected center=(%.1f, %.1f, %.1f) bbox=[(%.1f,%.1f)-(%.1f,%.1f)] extents=(%.1f, %.1f) cupWidth=%.1f deltaLinear=%.1f result=(%.1f, %.1f, %.1f) orientation=(OX=%.2f, OY=%.2f, OZ=%.2f, Theta=%.1f)",
+		c.X, c.Y, c.Z,
+		md.MinX, md.MinY, md.MaxX, md.MaxY,
+		md.MaxX-md.MinX, md.MaxY-md.MinY,
+		vc.conf.cupWidth(), deltaLinear,
+		p.X, p.Y, p.Z,
+		o.OX, o.OY, o.OZ, o.Theta,
+	)
 
 	return referenceframe.NewPoseInFrame(
 		"world",
