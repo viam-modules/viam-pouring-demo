@@ -1208,15 +1208,6 @@ func (vc *VinoCart) posConfig(ctx context.Context, pos resource.Resource) (*touc
 }
 
 func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
-	// Include both arms so the planner avoids the left arm during right arm moves
-	myFs, err := touch.FrameSystemWithSomeParts(ctx, vc.c.Rfs,
-		[]string{vc.conf.BottleArm, vc.conf.BottleGripper, vc.conf.ArmName, vc.conf.GripperName},
-		vc.pourExtraFrames,
-	)
-	if err != nil {
-		return err
-	}
-
 	startJoints, err := vc.c.BottleArm.JointPositions(ctx, nil)
 	if err != nil {
 		return err
@@ -1267,20 +1258,6 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 		vc.logger.Infof(" next: %v", goalPose.Pose())
 
 		vc.logger.Infof("myFs %v", myFs)
-
-		// Check if the bottle body would be too close to the cup at this tilt angle
-		ov := goalPose.Pose().Orientation().OrientationVectorDegrees()
-		axis := r3.Vector{X: ov.OX, Y: ov.OY, Z: ov.OZ}
-		bottleLength := vc.conf.BottleHeight - 70
-		bodyPoint := goalPose.Pose().Point().Sub(axis.Mul(bottleLength * 0.7))
-		cupCenter := cupTarget.Pose().Point()
-		bodyDist := bodyPoint.Sub(cupCenter).Norm()
-		minClearance := vc.conf.cupWidth()/2 + 40 + 10
-		vc.logger.Infof("bottle body dist to cup: %.1f (min: %.1f)", bodyDist, minClearance)
-		if bodyDist < minClearance {
-			vc.logger.Infof("stopping tilt: bottle body too close to cup (%.1fmm < %.1fmm)", bodyDist, minClearance)
-			break
-		}
 
 		req := &armplanning.PlanRequest{
 			FrameSystem: myFs,
