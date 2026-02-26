@@ -20,18 +20,25 @@
 
   interface Props {
     statusBar: Snippet;
+    detailPanel?: Snippet;
     panes: PaneData[];
-    status: string; // Add this line
+    status: string;
+    cupPanelOpen?: boolean;
   }
 
-  let { statusBar, panes, status }: Props = $props(); // Destructure status from props
+  let { statusBar, detailPanel, panes, status, cupPanelOpen = false }: Props = $props();
 </script>
 
-<main class="main-content">
+<main class="main-content" class:panel-expanded={cupPanelOpen}>
   <header class="status-bar">
     {@render statusBar()}
   </header>
 
+  {#if detailPanel}
+    {@render detailPanel()}
+  {/if}
+
+  {#if !cupPanelOpen}
   <section class="content-panes">
     <div class="expand-pane">
       <DataPane mode={status === "picking" ? "embedded" : "side-by-side"}>
@@ -65,6 +72,7 @@
       </div>
     {/if}
   </section>
+  {/if}
 </main>
 
 <style>
@@ -72,13 +80,17 @@
     background-color: white;
     display: grid;
     gap: 10px;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto 1fr;
     height: 90%;
     width: 95%;
     border-radius: 12px;
     overflow: hidden;
     padding: 20px;
-    margin: auto 0; /* Add vertical margin auto */
+    margin: auto 0;
+  }
+
+  .main-content.panel-expanded {
+    grid-template-rows: auto 1fr;
   }
 
   .status-bar {

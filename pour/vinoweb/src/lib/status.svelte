@@ -12,7 +12,15 @@
     message = "SENSING...",
     status = "standby",
     detection = { total_cup_objects: 0, valid_cups: 0, invalid_cups: 0, bottles: 0 },
-  }: { message?: string; status?: string; detection?: DetectionInfo } = $props();
+    onCupClick,
+    cupPanelOpen = false,
+  }: {
+    message?: string;
+    status?: string;
+    detection?: DetectionInfo;
+    onCupClick?: () => void;
+    cupPanelOpen?: boolean;
+  } = $props();
 
   const statusTypes: Record<
     string,
@@ -67,7 +75,9 @@
 
         <div class="right-content">
           <div class="detection-indicators">
-            <div class="detection-item">
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="detection-item cups-clickable" class:cups-active={cupPanelOpen} onclick={onCupClick}>
               <span class="detection-label">Cups</span>
               <span class="detection-count valid">
                 <svg class="check-icon" viewBox="0 0 16 16" fill="currentColor">
@@ -180,6 +190,24 @@
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+
+  .cups-clickable {
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.15s, border-color 0.15s;
+    border-bottom: 2px solid transparent;
+  }
+  .cups-clickable:hover {
+    background: #333;
+  }
+  .cups-active {
+    background: #2a2a2a;
+    border-bottom-color: #4589ff;
+  }
+  .cups-active .detection-label {
+    color: #4589ff;
   }
 
   .detection-label {

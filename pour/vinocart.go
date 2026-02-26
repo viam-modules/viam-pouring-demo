@@ -24,6 +24,7 @@ import (
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan/armplanning"
+	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/rimage"
@@ -162,8 +163,9 @@ type VinoCart struct {
 	statusLock sync.Mutex
 	status     string
 
-	detectionLock   sync.Mutex
-	detectionStatus DetectionStatus
+	detectionLock    sync.Mutex
+	detectionStatus  DetectionStatus
+	detectionObjects []*viz.Object
 
 	detectionCancel context.CancelFunc
 	detectionWG     sync.WaitGroup
@@ -208,6 +210,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 				"bottles":           det.Bottles,
 			},
 		}, nil
+	}
+
+	if cmd["cup_details"] == true {
+		return map[string]interface{}{"cups": vc.getCupDetails()}, nil
 	}
 
 	if cmd["stop"] == true {
@@ -326,6 +332,7 @@ func (vc *VinoCart) updateDetection(ctx context.Context) {
 	validCups := FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, nil)
 
 	vc.detectionLock.Lock()
+	vc.detectionObjects = objects
 	vc.detectionStatus = DetectionStatus{
 		TotalCupObjects: len(objects),
 		ValidCups:       len(validCups),
@@ -333,6 +340,60 @@ func (vc *VinoCart) updateDetection(ctx context.Context) {
 		Bottles:         0,
 	}
 	vc.detectionLock.Unlock()
+}
+
+func (vc *VinoCart) getCupDetails() []map[string]interface{} {
+	vc.detectionLock.Lock()
+	objects := vc.detectionObjects
+	vc.detectionLock.Unlock()
+
+	cups := make([]map[string]interface{}, 0, len(objects))
+	for idx, o := range objects {
+		analysis := AnalyzeObject(o, vc.conf.CupHeight, vc.conf.cupWidth(), 25)
+
+		pointsX := make([]interface{}, 0)
+		pointsY := make([]interface{}, 0)
+		pointsZ := make([]interface{}, 0)
+
+		maxPoints := 500
+		total := o.Size()
+		step := 1
+		if total > maxPoints {
+			step = total / maxPoints
+		}
+
+		i := 0
+		count := 0
+		o.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
+			if i%step == 0 {
+				pointsX = append(pointsX, p.X)
+				pointsY = append(pointsY, p.Y)
+				pointsZ = append(pointsZ, p.Z)
+				count++
+			}
+			i++
+			return count < maxPoints
+		})
+
+		cups = append(cups, map[string]interface{}{
+			"index":           idx,
+			"valid":           analysis.Valid,
+			"height":          analysis.Height,
+			"expected_height": analysis.ExpHeight,
+			"height_delta":    analysis.HeightDelta,
+			"height_pass":     analysis.HeightPass,
+			"width":           analysis.Width,
+			"expected_width":  analysis.ExpWidth,
+			"width_delta":     analysis.WidthDelta,
+			"width_pass":      analysis.WidthPass,
+			"good_delta":      analysis.GoodDelta,
+			"total_points":    total,
+			"points_x":        pointsX,
+			"points_y":        pointsY,
+			"points_z":        pointsZ,
+		})
+	}
+	return cups
 }
 
 func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {

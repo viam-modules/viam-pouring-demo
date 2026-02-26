@@ -6,6 +6,8 @@
   import { Struct, type JsonValue } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
+  import CupDetailPanel from "./lib/CupDetailPanel.svelte";
+  import type { CupDetail } from "./lib/CupDetailPanel.svelte";
   import type { Joint } from "./lib/types.js";
 
   // --- Pouring status ---
@@ -33,6 +35,40 @@
     invalid_cups: 0,
     bottles: 0,
   });
+
+  // --- Cup detail panel ---
+  let cupPanelOpen = $state(false);
+  let cupDetails: CupDetail[] = $state([]);
+  let cupDetailLastFetch = 0;
+  const cupDetailRefreshMs = 1000;
+
+  function toggleCupPanel() {
+    cupPanelOpen = !cupPanelOpen;
+    if (cupPanelOpen) {
+      cupDetailLastFetch = 0;
+    }
+  }
+
+  function parseCupDetails(r: any): CupDetail[] {
+    if (!r?.cups || !Array.isArray(r.cups)) return [];
+    return r.cups.map((c: any) => ({
+      index: c.index ?? 0,
+      valid: c.valid ?? false,
+      height: c.height ?? 0,
+      expected_height: c.expected_height ?? 0,
+      height_delta: c.height_delta ?? 0,
+      height_pass: c.height_pass ?? false,
+      width: c.width ?? 0,
+      expected_width: c.expected_width ?? 0,
+      width_delta: c.width_delta ?? 0,
+      width_pass: c.width_pass ?? false,
+      good_delta: c.good_delta ?? 0,
+      total_points: c.total_points ?? 0,
+      points_x: c.points_x ?? [],
+      points_y: c.points_y ?? [],
+      points_z: c.points_z ?? [],
+    }));
+  }
 
   const statusMessages: Record<StatusKey, string> = {
     standby: "Ready to pour!",
@@ -142,6 +178,19 @@
           // Optionally handle status polling error
         }
 
+        // --- Cup details (throttled, only when panel open) ---
+        if (cupPanelOpen && Date.now() - cupDetailLastFetch >= cupDetailRefreshMs) {
+          try {
+            const detailResult = await generic!.doCommand(
+              Struct.fromJson({ cup_details: true })
+            );
+            cupDetails = parseCupDetails(detailResult as any);
+            cupDetailLastFetch = Date.now();
+          } catch (err) {
+            // Optionally handle cup detail error
+          }
+        }
+
         // --- Joint positions ---
         if (leftArm && rightArm) {
           try {
@@ -179,10 +228,14 @@
 <div class="app-container">
   <aside class="sidebar"></aside>
 
-  <MainContent panes={panesData} {status}>
+  <MainContent panes={panesData} {status} {cupPanelOpen}>
     {#snippet statusBar()}
-      <div class="deploy-test-banner">FRONTEND V2 — DELETE THIS BANNER AFTER CONFIRMING DEPLOY</div>
-      <Status message={statusMessages[status]} {detection} />
+      <Status message={statusMessages[status]} {detection} onCupClick={toggleCupPanel} {cupPanelOpen} />
+    {/snippet}
+    {#snippet detailPanel()}
+      {#if cupPanelOpen}
+        <CupDetailPanel cups={cupDetails} onClose={() => cupPanelOpen = false} />
+      {/if}
     {/snippet}
   </MainContent>
 </div>
@@ -202,16 +255,5 @@
     color: white;
     padding: 40px;
     overflow-y: auto;
-  }
-  .deploy-test-banner {
-    background: #ff4d4d;
-    color: white;
-    text-align: center;
-    padding: 8px;
-    font-weight: bold;
-    font-size: 1rem;
-    letter-spacing: 0.1em;
-    border-radius: 4px;
-    margin-bottom: 8px;
   }
 </style>
