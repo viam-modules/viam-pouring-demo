@@ -150,6 +150,8 @@ func realMain() error {
 	case "sleep":
 		time.Sleep(time.Minute * 5)
 		return nil
+	case "loop":
+		return vc.Loop(ctx)
 
 	case "pose":
 		left, err := getAPose(ctx, client, "april-tag-tracker-left", "7")
