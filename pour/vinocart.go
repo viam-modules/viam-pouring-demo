@@ -217,6 +217,7 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	if cmd["demo"] == true {
 		return nil, vc.FullDemo(ctx)
 	}
+
 	if cmd["test_position"] != nil {
 		positionCmd, ok := cmd["test_position"].(map[string]interface{})
 		if !ok {
