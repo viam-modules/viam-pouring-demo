@@ -1028,7 +1028,27 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to plan bottle alignment: %w", err)
 	}
-	alignGoalJoints := alignPlan.Trajectory()[len(alignPlan.Trajectory())-1][vc.conf.BottleArm]
+	for i, step := range alignPlan.Trajectory() {
+		vc.logger.Infof("[bottle-to-cup-align] plan step %d: %v", i, step[vc.conf.BottleArm])
+	}
+	if len(alignPlan.Trajectory()) != 2 {
+		return fmt.Errorf("[bottle-to-cup-align] unexpected trajectory length (%d)", len(alignPlan.Trajectory()))
+	}
+	alignGoalJoints := alignPlan.Trajectory()[1][vc.conf.BottleArm]
+	alignL2 := referenceframe.InputsL2Distance(alignJoints, alignGoalJoints)
+	vc.logger.Infof("[bottle-to-cup-align] InputsL2Distance: %v", alignL2)
+	if alignL2 > 0.15 {
+		fn := "/tmp/align-plan-bad.json"
+		data, err := json.MarshalIndent(alignReq, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(fn, data, 0o600); err != nil {
+			return err
+		}
+		return fmt.Errorf("[bottle-to-cup-align] pos too far %v, written to: %s", alignL2, fn)
+	}
+	vc.logger.Infof("[bottle-to-cup-align] moving bottle arm to align with cup target")
 	err = vc.c.BottleArm.MoveToJointPositions(ctx, alignGoalJoints, nil)
 	if err != nil {
 		return fmt.Errorf("failed to align bottle to cup: %w", err)
@@ -1305,6 +1325,9 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 			return nil, fmt.Errorf("can't plan pour prep: %w", err)
 		}
 
+		for i, step := range plan.Trajectory() {
+			vc.logger.Infof("[pour-tilt] plan step %d: %v", i, step[vc.conf.BottleArm])
+		}
 		if len(plan.Trajectory()) != 2 {
 			return nil, fmt.Errorf("why is plan wrong (%d)\n %v", len(plan.Trajectory()), plan)
 		}
