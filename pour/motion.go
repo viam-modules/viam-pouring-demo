@@ -36,6 +36,10 @@ func SetXarmSpeedLog(ctx context.Context, a arm.Arm, speed, accel float64, logge
 	}
 }
 
+func planTagExtra(tag string) map[string]interface{} {
+	return map[string]interface{}{"plan_tag": tag}
+}
+
 func Jog(ctx context.Context, m motion.Service, n resource.Name, j r3.Vector) error {
 	pif, err := m.GetPose(ctx, n.ShortName(), "world", nil, nil)
 	if err != nil {
@@ -49,7 +53,7 @@ func Jog(ctx context.Context, m motion.Service, n resource.Name, j r3.Vector) er
 		),
 	)
 
-	return moveWithLinearConstraint(ctx, m, n, goTo)
+	return moveWithLinearConstraint(ctx, m, n, goTo, "jog")
 }
 
 func JogJoint(ctx context.Context, a arm.Arm, j int, amount float64) error {

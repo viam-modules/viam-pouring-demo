@@ -146,7 +146,11 @@ func realMain() error {
 		}
 		return nil
 	case "pour-motion-demo":
-		return vc.PourMotionDemo(ctx)
+		pp, err := vc.SetupPourPositions(ctx)
+		if err != nil {
+			return err
+		}
+		return vc.PourMotionDemo(ctx, pp)
 	case "sleep":
 		time.Sleep(time.Minute * 5)
 		return nil
