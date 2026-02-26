@@ -43,6 +43,7 @@ var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
 const cupTopName = "cup-top"
+const gripperToCupCenterHack float64 = -35
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -148,9 +149,6 @@ type VinoCart struct {
 	cupTop          *referenceframe.LinkInFrame
 	pourExtraFrames []*referenceframe.LinkInFrame
 	pourWorldState  *referenceframe.WorldState
-
-	pourJoints [][]referenceframe.Input
-	pourPoses  []*referenceframe.PoseInFrame
 
 	loopCancel    context.CancelFunc
 	loopWaitGroup sync.WaitGroup
@@ -640,7 +638,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, -35, o)
+	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose, "touch-pickup")
@@ -671,7 +669,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// we found a path!
 
-		goToPose = vc.getApproachPoint(obj, -35, choices[idx])
+		goToPose = vc.getApproachPoint(obj, gripperToCupCenterHack, choices[idx])
 		vc.logger.Infof("going to move (2) to %v", goToPose)
 
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-pickup")
@@ -1036,7 +1034,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		return fmt.Errorf("failed to align bottle to cup: %w", err)
 	}
 
-	err = vc.setupPourPositions(ctx)
+	pp, err := vc.SetupPourPositions(ctx)
 	if err != nil {
 		return err
 	}
@@ -1076,7 +1074,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
-		err := vc.doPourMotion(ctx, pourContext)
+		err := vc.doPourMotion(ctx, pourContext, pp)
 		if err != nil {
 			vc.logger.Infof("error pouring: %v", err)
 		}
@@ -1163,7 +1161,7 @@ func (vc *VinoCart) PutBack(ctx context.Context) error {
 	return vc.doAll(ctx, "put-back", "post-open", 100)
 }
 
-func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
+func (vc *VinoCart) PourMotionDemo(ctx context.Context, pp *PourPositions) error {
 	err := SetXarmSpeed(ctx, vc.c.BottleArm, 75, 75)
 	if err != nil {
 		return err
@@ -1180,7 +1178,7 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
-		err := vc.doPourMotion(ctx, pourContext)
+		err := vc.doPourMotion(ctx, pourContext, pp)
 		if err != nil {
 			vc.logger.Infof("eliot: %v", err)
 		}
@@ -1197,14 +1195,14 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context) error {
 	return nil
 }
 
-func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
+func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPositions) error {
 	err := SetXarmSpeed(ctx, vc.c.BottleArm, 20, 50)
 	if err != nil {
 		return err
 	}
 	defer SetXarmSpeedLog(ctx, vc.c.BottleArm, 50, 50, vc.logger)
 
-	err = vc.c.BottleArm.MoveThroughJointPositions(pourContext, vc.pourJoints, nil, nil)
+	err = vc.c.BottleArm.MoveThroughJointPositions(pourContext, pp.joints, nil, nil)
 
 	if err != nil && err != context.Canceled && pourContext.Err() != context.Canceled {
 		return err
@@ -1224,12 +1222,12 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context) error {
 
 	posesToDo := [][]referenceframe.Input{}
 
-	for i := len(vc.pourPoses) - 1; i >= 0; i-- {
-		if cur.Pose().Orientation().OrientationVectorDegrees().OZ > vc.pourPoses[i].Pose().Orientation().OrientationVectorDegrees().OZ {
+	for i := len(pp.poses) - 1; i >= 0; i-- {
+		if cur.Pose().Orientation().OrientationVectorDegrees().OZ > pp.poses[i].Pose().Orientation().OrientationVectorDegrees().OZ {
 			continue
 		}
 
-		posesToDo = append(posesToDo, vc.pourJoints[i])
+		posesToDo = append(posesToDo, pp.joints[i])
 	}
 
 	return vc.c.BottleArm.MoveThroughJointPositions(ctx, posesToDo, nil, nil)
@@ -1251,21 +1249,26 @@ func (vc *VinoCart) posConfig(ctx context.Context, pos resource.Resource) (*touc
 	return posConfig, nil
 }
 
-func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
+type PourPositions struct {
+	joints [][]referenceframe.Input
+	poses  []*referenceframe.PoseInFrame
+}
+
+func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, error) {
 	myFs, err := touch.FrameSystemWithSomeParts(ctx, vc.c.Rfs, []string{vc.conf.BottleArm, vc.conf.BottleGripper}, vc.pourExtraFrames)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	startJoints, err := vc.c.BottleArm.JointPositions(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	vc.logger.Infof("setupPourPositions startJoints (current): %v", startJoints)
 
 	bottleTopNow, err := vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get bottle-top pose: %w", err)
+		return nil, fmt.Errorf("failed to get bottle-top pose: %w", err)
 	}
 	bottleStart := bottleTopNow.Pose()
 	vc.logger.Infof("bottleStart (current bottle-top in world): %v", bottleStart)
@@ -1299,11 +1302,11 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 		}
 		plan, _, err := armplanning.PlanMotion(ctx, vc.logger, req)
 		if err != nil {
-			return fmt.Errorf("can't plan pour prep: %w", err)
+			return nil, fmt.Errorf("can't plan pour prep: %w", err)
 		}
 
 		if len(plan.Trajectory()) != 2 {
-			return fmt.Errorf("why is plan wrong (%d)\n %v", len(plan.Trajectory()), plan)
+			return nil, fmt.Errorf("why is plan wrong (%d)\n %v", len(plan.Trajectory()), plan)
 		}
 
 		myJoints := plan.Trajectory()[1][vc.conf.BottleArm]
@@ -1317,20 +1320,20 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 
 				data, err := json.MarshalIndent(req, "", "  ")
 				if err != nil {
-					return err
+					return nil, err
 				}
 				file, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				defer file.Close()
 
 				_, err = file.Write(data)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
-				return fmt.Errorf("pourPlan pos too far %v, written to: %s", d, fn)
+				return nil, fmt.Errorf("pourPlan pos too far %v, written to: %s", d, fn)
 
 			}
 		}
@@ -1350,10 +1353,7 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 		panic("Wtf")
 	}
 
-	vc.pourJoints = joints
-	vc.pourPoses = poses
-
-	return nil
+	return &PourPositions{joints: joints, poses: poses}, nil
 }
 
 func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.Name, p *referenceframe.PoseInFrame, planTag string) error {
