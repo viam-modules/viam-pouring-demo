@@ -6,7 +6,8 @@ import (
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
-	"go.viam.com/rdk/components/switch"
+	"go.viam.com/rdk/components/posetracker"
+	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/motion"
@@ -74,6 +75,11 @@ type Config struct {
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 
+	// Optional: PoseTracker for the center divider AprilTag
+	AprilTagService string `json:"april_tag_service"`
+	// Tag body name to query (default "0")
+	AprilTagID string `json:"april_tag_id"`
+
 	Loop bool `json:"loop"`
 }
 
@@ -131,6 +137,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		deps = append(deps, cfg.GlassPourCam)
 	}
 
+	if cfg.AprilTagService != "" {
+		optionals = append(optionals, cfg.AprilTagService)
+	}
+
 	return deps, optionals, nil
 }
 
@@ -176,6 +186,8 @@ type Pour1Components struct {
 
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
+
+	AprilTagTracker posetracker.PoseTracker
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -223,6 +235,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.PourGlassFindService != "" {
 		c.PourGlassFindService, err = vision.FromDependencies(deps, config.PourGlassFindService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.AprilTagService != "" {
+		c.AprilTagTracker, err = posetracker.FromDependencies(deps, config.AprilTagService)
 		if err != nil {
 			return nil, err
 		}
