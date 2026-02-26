@@ -204,6 +204,11 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	if cmd["demo"] == true {
 		return nil, vc.FullDemo(ctx)
 	}
+
+	if cmd["loop"] == true {
+		return nil, vc.Loop(ctx)
+	}
+
 	if cmd["test_position"] != nil {
 		positionCmd, ok := cmd["test_position"].(map[string]interface{})
 		if !ok {
@@ -297,6 +302,58 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 		return err
 	}
 	return vc.PutBack(ctx)
+}
+
+func (vc *VinoCart) waitForCupRemoval(ctx context.Context) error {
+	const requiredMisses = 3
+	vc.logger.Info("cup detection - waiting for cup to be removed")
+	notDetectedCount := 0
+
+	for {
+		objects, err := vc.FindCups(ctx)
+		if err != nil {
+			return err
+		}
+
+		if len(objects) == 0 {
+			notDetectedCount++
+			vc.logger.Infof("cup detection - cup not detected (%d/%d)", notDetectedCount, requiredMisses)
+			if notDetectedCount >= requiredMisses {
+				vc.logger.Info("cup confirmed removed, ready for next cup")
+				return nil
+			}
+		} else {
+			vc.logger.Info("cup detection - cup still present, resetting removal counter")
+			notDetectedCount = 0
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func (vc *VinoCart) Loop(ctx context.Context) error {
+	vc.logger.Info("cup detection - starting pour motion demo loop")
+
+	for {
+		objects, err := vc.FindCups(ctx)
+		if err != nil {
+			return err
+		}
+
+		if len(objects) > 0 {
+			vc.logger.Info("cup detection - found cup, starting demo")
+			vc.FullDemo(ctx)
+
+			time.Sleep(5 * time.Second)
+
+			if err := vc.waitForCupRemoval(ctx); err != nil {
+				return err
+			}
+		} else {
+			vc.logger.Info("cup detection - no cup found, sleeping 2 seconds")
+			time.Sleep(2 * time.Second)
+		}
+	}
 }
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
