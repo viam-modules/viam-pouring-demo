@@ -71,17 +71,6 @@ type Config struct {
 	// optional offset for gripper height when grabbing/placing cup
 	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
 
-	// horizontal offset from gripper center to cup center
-	GripperToCupCenter float64 `json:"gripper_to_cup_center"`
-
-	// vertical gap in mm between bottle-top and cup-top before pouring
-	PourGapHeightMM float64 `json:"pour_gap_height_mm"`
-	// horizontal offset in mm from cup center to pour point
-	PourGapDistanceMM float64 `json:"pour_gap_distance_mm"`
-
-	// max L2 joint distance between consecutive tilt steps (radians)
-	PourTiltStepLimit float64 `json:"pour_tilt_step_limit"`
-
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 
@@ -164,34 +153,6 @@ func (c *Config) cupGripHeightOffset() float64 {
 		return c.CupGripHeightOffset
 	}
 	return 25
-}
-
-func (c *Config) gripperToCupCenter() float64 {
-	if c.GripperToCupCenter != 0 {
-		return c.GripperToCupCenter
-	}
-	return -35
-}
-
-func (c *Config) pourGapHeightMM() float64 {
-	if c.PourGapHeightMM > 0 {
-		return c.PourGapHeightMM
-	}
-	return 38
-}
-
-func (c *Config) pourGapDistanceMM() float64 {
-	if c.PourGapDistanceMM > 0 {
-		return c.PourGapDistanceMM
-	}
-	return 35
-}
-
-func (c *Config) pourTiltStepLimit() float64 {
-	if c.PourTiltStepLimit > 0 {
-		return c.PourTiltStepLimit
-	}
-	return 0.3
 }
 
 type StagePositions map[string][][]toggleswitch.Switch

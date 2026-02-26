@@ -95,7 +95,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -vc.conf.pourGapDistanceMM(), Z: -35},
+			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -75, Z: -35},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
@@ -602,6 +602,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 				ComponentName: vc.c.Gripper.Name().ShortName(),
 				Destination:   goToPose,
 				WorldState:    worldState,
+				Extra:         planTagExtra("touch-approach"),
 			},
 		)
 
@@ -639,10 +640,10 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, vc.conf.gripperToCupCenter(), o)
+	goToPose := vc.getApproachPoint(obj, -35, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
-	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose)
+	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose, "touch-pickup")
 	if err != nil {
 		return err
 	}
@@ -660,6 +661,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 				ComponentName: vc.c.BottleGripper.Name().ShortName(),
 				Destination:   goToPose,
 				WorldState:    worldState,
+				Extra:         planTagExtra("handoff-approach"),
 			},
 		)
 		if err != nil {
@@ -669,10 +671,10 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// we found a path!
 
-		goToPose = vc.getApproachPoint(obj, vc.conf.gripperToCupCenter(), choices[idx])
+		goToPose = vc.getApproachPoint(obj, -35, choices[idx])
 		vc.logger.Infof("going to move (2) to %v", goToPose)
 
-		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
+		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-pickup")
 		if err != nil {
 			return err
 		}
@@ -687,7 +689,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// move to known spot
 		goToPose = vc.getApproachPoint(obj, 150, choices[idx])
-		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
+		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-lift")
 		if err != nil {
 			return err
 		}
@@ -700,7 +702,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// backup
 		goToPose = vc.getApproachPoint(obj, 250, choices[idx])
-		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
+		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-backup")
 		if err != nil {
 			return err
 		}
@@ -891,6 +893,7 @@ func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
 		motion.MoveReq{
 			ComponentName: vc.conf.GripperName,
 			Destination:   cur,
+			Extra:         planTagExtra("descend-cup-height"),
 		},
 	)
 	return err
@@ -1000,7 +1003,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get bottle-top pose: %w", err)
 	}
-	gapOffset := r3.Vector{Z: vc.conf.pourGapHeightMM()}
+	gapOffset := r3.Vector{Z: 50}
 	alignTarget := referenceframe.NewPoseInFrame("world",
 		spatialmath.NewPose(cupTarget.Pose().Point().Add(gapOffset), bottleTopNow.Pose().Orientation()),
 	)
@@ -1309,7 +1312,7 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 		if len(joints) > 0 {
 			d := referenceframe.InputsL2Distance(startJoints, myJoints)
 			vc.logger.Infof("\t InputsL2Distance: %v", d)
-			if d > vc.conf.pourTiltStepLimit() {
+			if d > 0.3 {
 				fn := "/tmp/pour-plan-bad.json"
 
 				data, err := json.MarshalIndent(req, "", "  ")
@@ -1353,13 +1356,14 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 	return nil
 }
 
-func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.Name, p *referenceframe.PoseInFrame) error {
+func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.Name, p *referenceframe.PoseInFrame, planTag string) error {
 	_, err := m.Move(
 		ctx,
 		motion.MoveReq{
 			ComponentName: n.ShortName(),
 			Destination:   p,
 			Constraints:   &LinearConstraint,
+			Extra:         planTagExtra(planTag),
 		},
 	)
 	return err
