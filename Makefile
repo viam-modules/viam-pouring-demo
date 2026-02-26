@@ -42,7 +42,7 @@ module: test module.tar.gz
 all: test module.tar.gz
 
 setup:
-	which apt > /dev/null 2>&1 && apt -y install nodejs || echo "no apt"
+	which apt > /dev/null 2>&1 && apt -y install nodejs npm || echo "no apt"
 
 pour/vinoweb/dist/index.html: pour/vinoweb/*.json pour/vinoweb/*.html pour/vinoweb/src/*.ts pour/vinoweb/src/*.svelte pour/vinoweb/src/lib/*.svelte
 	cd pour/vinoweb && npm install && npm run build

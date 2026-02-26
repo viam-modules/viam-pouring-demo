@@ -181,6 +181,7 @@
 
   <MainContent panes={panesData} {status}>
     {#snippet statusBar()}
+      <div class="deploy-test-banner">FRONTEND V2 — DELETE THIS BANNER AFTER CONFIRMING DEPLOY</div>
       <Status message={statusMessages[status]} {detection} />
     {/snippet}
   </MainContent>
@@ -201,5 +202,16 @@
     color: white;
     padding: 40px;
     overflow-y: auto;
+  }
+  .deploy-test-banner {
+    background: #ff4d4d;
+    color: white;
+    text-align: center;
+    padding: 8px;
+    font-weight: bold;
+    font-size: 1rem;
+    letter-spacing: 0.1em;
+    border-radius: 4px;
+    margin-bottom: 8px;
   }
 </style>
