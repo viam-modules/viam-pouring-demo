@@ -43,7 +43,6 @@ var vinowebStaticFS embed.FS
 
 const bottleName = "bottle-top"
 const cupTopName = "cup-top"
-const gripperToCupCenterHack = -35
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -96,7 +95,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -vc.conf.cupWidth() / 2, Z: -vc.conf.cupWidth() / 2},
+			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -vc.conf.pourGapDistanceMM(), Z: -vc.conf.pourGapDistanceMM()},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
@@ -640,7 +639,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
+	goToPose := vc.getApproachPoint(obj, vc.conf.gripperToCupCenter(), o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose)
@@ -670,7 +669,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// we found a path!
 
-		goToPose = vc.getApproachPoint(obj, gripperToCupCenterHack, choices[idx])
+		goToPose = vc.getApproachPoint(obj, vc.conf.gripperToCupCenter(), choices[idx])
 		vc.logger.Infof("going to move (2) to %v", goToPose)
 
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose)
@@ -716,6 +715,7 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 	c := md.Center()
 
 	p := touch.GetApproachPoint(c, deltaLinear, o)
+	p.Y -= 15
 	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
 
 	return referenceframe.NewPoseInFrame(
@@ -991,25 +991,45 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}
 
 	// Dynamic alignment: move bottle-top to cup-top + gap (replaces arm-pour-right-pos0)
+	// Uses armplanning.PlanMotion (right arm only) to avoid gripper-vs-gripper collision checks
 	cupTransforms := []*referenceframe.LinkInFrame{vc.cupTop}
 	cupTarget, err := vc.c.Motion.GetPose(ctx, cupTopName, "world", cupTransforms, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get cup-top pose: %w", err)
 	}
-	gapOffset := r3.Vector{Z: vc.conf.pourGapMM()}
+	bottleTopNow, err := vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get bottle-top pose: %w", err)
+	}
+	gapOffset := r3.Vector{Z: vc.conf.pourGapHeightMM()}
 	alignTarget := referenceframe.NewPoseInFrame("world",
-		spatialmath.NewPose(cupTarget.Pose().Point().Add(gapOffset), cupTarget.Pose().Orientation()),
+		spatialmath.NewPose(cupTarget.Pose().Point().Add(gapOffset), bottleTopNow.Pose().Orientation()),
 	)
 	vc.logger.Infof("aligning bottle-top to: %v", alignTarget.Pose())
-	alignWorldState, err := referenceframe.NewWorldState(nil, vc.pourExtraFrames)
+
+	alignFs, err := touch.FrameSystemWithSomeParts(ctx, vc.c.Rfs, []string{vc.conf.BottleArm, vc.conf.BottleGripper}, vc.pourExtraFrames)
 	if err != nil {
-		return fmt.Errorf("failed to create world state: %w", err)
+		return fmt.Errorf("failed to build align frame system: %w", err)
 	}
-	_, err = vc.c.Motion.Move(ctx, motion.MoveReq{
-		ComponentName: vc.conf.BottleGripper,
-		Destination:   alignTarget,
-		WorldState:    alignWorldState,
-	})
+	alignJoints, err := vc.c.BottleArm.JointPositions(ctx, nil)
+	if err != nil {
+		return err
+	}
+	alignReq := &armplanning.PlanRequest{
+		FrameSystem: alignFs,
+		Goals: []*armplanning.PlanState{
+			armplanning.NewPlanState(referenceframe.FrameSystemPoses{bottleName: alignTarget}, nil),
+		},
+		StartState: armplanning.NewPlanState(nil, referenceframe.FrameSystemInputs{
+			vc.conf.BottleArm: alignJoints,
+		}),
+	}
+	alignPlan, _, err := armplanning.PlanMotion(ctx, vc.logger, alignReq)
+	if err != nil {
+		return fmt.Errorf("failed to plan bottle alignment: %w", err)
+	}
+	alignGoalJoints := alignPlan.Trajectory()[len(alignPlan.Trajectory())-1][vc.conf.BottleArm]
+	err = vc.c.BottleArm.MoveToJointPositions(ctx, alignGoalJoints, nil)
 	if err != nil {
 		return fmt.Errorf("failed to align bottle to cup: %w", err)
 	}
