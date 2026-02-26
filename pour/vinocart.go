@@ -88,7 +88,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 
 	vc.bottleTop = referenceframe.NewLinkInFrame(
 		vc.conf.BottleGripper,
-		spatialmath.NewPose(r3.Vector{vc.conf.BottleHeight - 70, -7, 0}, &spatialmath.OrientationVectorDegrees{OX: 1}),
+		spatialmath.NewPose(r3.Vector{X: vc.conf.BottleHeight - 70, Y: -7, Z: 0}, &spatialmath.OrientationVectorDegrees{OX: 1}),
 		bottleName,
 		nil,
 	)
@@ -96,8 +96,8 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: gripperToCupCenterHack, Y: 0, Z: vc.conf.cupGripHeightOffset()},
-			&spatialmath.OrientationVectorDegrees{OZ: 1},
+			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -vc.conf.cupWidth() / 2, Z: -vc.conf.cupWidth() / 2},
+			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
 		nil,
@@ -985,11 +985,33 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Only execute step 0 (both arms to prep); skip arm-pour-right-pos0
-	// TODO Remove skip arm-pour-right-pos0 once the new pour position logic is working
 	err = vc.goTo(ctx, positions[0]...)
 	if err != nil {
 		return err
+	}
+
+	// Dynamic alignment: move bottle-top to cup-top + gap (replaces arm-pour-right-pos0)
+	cupTransforms := []*referenceframe.LinkInFrame{vc.cupTop}
+	cupTarget, err := vc.c.Motion.GetPose(ctx, cupTopName, "world", cupTransforms, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get cup-top pose: %w", err)
+	}
+	gapOffset := r3.Vector{Z: vc.conf.pourGapMM()}
+	alignTarget := referenceframe.NewPoseInFrame("world",
+		spatialmath.NewPose(cupTarget.Pose().Point().Add(gapOffset), cupTarget.Pose().Orientation()),
+	)
+	vc.logger.Infof("aligning bottle-top to: %v", alignTarget.Pose())
+	alignWorldState, err := referenceframe.NewWorldState(nil, vc.pourExtraFrames)
+	if err != nil {
+		return fmt.Errorf("failed to create world state: %w", err)
+	}
+	_, err = vc.c.Motion.Move(ctx, motion.MoveReq{
+		ComponentName: vc.conf.BottleGripper,
+		Destination:   alignTarget,
+		WorldState:    alignWorldState,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to align bottle to cup: %w", err)
 	}
 
 	err = vc.setupPourPositions(ctx)
@@ -1208,11 +1230,7 @@ func (vc *VinoCart) posConfig(ctx context.Context, pos resource.Resource) (*touc
 }
 
 func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
-	// Include both arms so the planner avoids the left arm during right arm moves
-	myFs, err := touch.FrameSystemWithSomeParts(ctx, vc.c.Rfs,
-		[]string{vc.conf.BottleArm, vc.conf.BottleGripper, vc.conf.ArmName, vc.conf.GripperName},
-		vc.pourExtraFrames,
-	)
+	myFs, err := touch.FrameSystemWithSomeParts(ctx, vc.c.Rfs, []string{vc.conf.BottleArm, vc.conf.BottleGripper}, vc.pourExtraFrames)
 	if err != nil {
 		return err
 	}
@@ -1223,32 +1241,12 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 	}
 	vc.logger.Infof("setupPourPositions startJoints (current): %v", startJoints)
 
-	leftJoints, err := vc.c.Arm.JointPositions(ctx, nil)
-	if err != nil {
-		return err
-	}
-	vc.logger.Infof("setupPourPositions leftJoints (frozen): %v", leftJoints)
-
-	// cup-top world position (target for bottle-top)
-	cupTransforms := []*referenceframe.LinkInFrame{vc.cupTop}
-	cupTarget, err := vc.c.Motion.GetPose(ctx, cupTopName, "world", cupTransforms, nil)
-	if err != nil {
-		return fmt.Errorf("failed to get cup-top pose: %w", err)
-	}
-	vc.logger.Infof("cup-top world position: %v", cupTarget.Pose().Point())
-
-	// bottle-top current world pose (for reachable orientation)
 	bottleTopNow, err := vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get bottle-top pose: %w", err)
 	}
-	vc.logger.Infof("bottle-top current world pose: %v", bottleTopNow.Pose())
-
-	// Target: cup-top position (shifted by pour gap), bottle's current orientation
-	gapOffset := r3.Vector{Z: vc.conf.pourGapMM()}
-	targetPoint := cupTarget.Pose().Point().Add(gapOffset)
-	bottleStart := spatialmath.NewPose(targetPoint, bottleTopNow.Pose().Orientation())
-	vc.logger.Infof("bottleStart (cup pos + gap + current orientation): %v", bottleStart)
+	bottleStart := bottleTopNow.Pose()
+	vc.logger.Infof("bottleStart (current bottle-top in world): %v", bottleStart)
 
 	o := bottleStart.Orientation().OrientationVectorDegrees()
 
@@ -1275,7 +1273,6 @@ func (vc *VinoCart) setupPourPositions(ctx context.Context) error {
 			},
 			StartState: armplanning.NewPlanState(nil, referenceframe.FrameSystemInputs{
 				vc.conf.BottleArm: startJoints,
-				vc.conf.ArmName:   leftJoints,
 			}),
 		}
 		plan, _, err := armplanning.PlanMotion(ctx, vc.logger, req)
