@@ -20,6 +20,20 @@
     | "manual mode";
   let status: StatusKey = $state("standby") as StatusKey;
 
+  // --- Detection status ---
+  interface DetectionInfo {
+    total_cup_objects: number;
+    valid_cups: number;
+    invalid_cups: number;
+    bottles: number;
+  }
+  let detection: DetectionInfo = $state({
+    total_cup_objects: 0,
+    valid_cups: 0,
+    invalid_cups: 0,
+    bottles: 0,
+  });
+
   const statusMessages: Record<StatusKey, string> = {
     standby: "Ready to pour!",
     looking: "Please place your glass in the indicated area",
@@ -103,19 +117,25 @@
           const result = await generic!.doCommand(
             Struct.fromJson({ status: true })
           );
-          if (
-            result &&
-            typeof result === "object" &&
-            "status" in result &&
-            typeof (result as any).status === "string"
-          ) {
-            const statusStr = (result as any).status;
-            if (
-              (Object.keys(statusMessages) as StatusKey[]).includes(
-                statusStr as StatusKey
-              )
-            ) {
-              status = statusStr as StatusKey;
+          if (result && typeof result === "object") {
+            const r = result as any;
+            if ("status" in r && typeof r.status === "string") {
+              const statusStr = r.status;
+              if (
+                (Object.keys(statusMessages) as StatusKey[]).includes(
+                  statusStr as StatusKey
+                )
+              ) {
+                status = statusStr as StatusKey;
+              }
+            }
+            if (r.detection && typeof r.detection === "object") {
+              detection = {
+                total_cup_objects: r.detection.total_cup_objects ?? 0,
+                valid_cups: r.detection.valid_cups ?? 0,
+                invalid_cups: r.detection.invalid_cups ?? 0,
+                bottles: r.detection.bottles ?? 0,
+              };
             }
           }
         } catch (err) {
@@ -161,7 +181,7 @@
 
   <MainContent panes={panesData} {status}>
     {#snippet statusBar()}
-      <Status message={statusMessages[status]} />
+      <Status message={statusMessages[status]} {detection} />
     {/snippet}
   </MainContent>
 </div>
