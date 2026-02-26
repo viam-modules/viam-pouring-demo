@@ -79,10 +79,23 @@ type Config struct {
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 
-	// Optional: PoseTracker for the center divider AprilTag
-	AprilTagService string `json:"april_tag_service"`
-	// Tag body name to query (default "0")
-	AprilTagID string `json:"april_tag_id"`
+	// Optional: PoseTracker for the center AprilTag (right camera)
+	AprilTagServiceRight string `json:"april_tag_service_right"`
+	// Optional: PoseTracker for the center AprilTag (left camera)
+	AprilTagServiceLeft string `json:"april_tag_service_left"`
+	// Tag body name to query for both cameras (default "0")
+	AprilTagIDCenter string `json:"april_tag_id_center"`
+	// Expected tag position in camera frame when right arm is correctly positioned
+	ExpectedTagX float64 `json:"expected_tag_x"`
+	ExpectedTagY float64 `json:"expected_tag_y"`
+	ExpectedTagZ float64 `json:"expected_tag_z"`
+	// Expected tag position in camera frame when left arm is correctly positioned
+	ExpectedTagXLeft float64 `json:"expected_tag_x_left"`
+	ExpectedTagYLeft float64 `json:"expected_tag_y_left"`
+	ExpectedTagZLeft float64 `json:"expected_tag_z_left"`
+
+	// Max allowed deviation from expected tag position in mm (default 10)
+	TagToleranceMM float64 `json:"tag_tolerance_mm"`
 
 	Loop bool `json:"loop"`
 }
@@ -154,8 +167,12 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		deps = append(deps, cfg.GlassPourCam)
 	}
 
-	if cfg.AprilTagService != "" {
-		optionals = append(optionals, cfg.AprilTagService)
+	if cfg.AprilTagServiceRight != "" {
+		optionals = append(optionals, cfg.AprilTagServiceRight)
+	}
+
+	if cfg.AprilTagServiceLeft != "" {
+		optionals = append(optionals, cfg.AprilTagServiceLeft)
 	}
 
 	return deps, optionals, nil
@@ -173,6 +190,13 @@ func (c *Config) glassPourMotionThreshold() float64 {
 		return c.GlassPourMotionThreshold
 	}
 	return 4
+}
+
+func (c *Config) tagToleranceMM() float64 {
+	if c.TagToleranceMM > 0 {
+		return c.TagToleranceMM
+	}
+	return 10
 }
 
 func (c *Config) cupGripHeightOffset() float64 {
@@ -203,7 +227,8 @@ type Pour1Components struct {
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
 
-	AprilTagTracker posetracker.PoseTracker
+	AprilTagTracker     posetracker.PoseTracker
+	AprilTagTrackerLeft posetracker.PoseTracker
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -251,8 +276,15 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	if config.AprilTagService != "" {
-		c.AprilTagTracker, err = posetracker.FromDependencies(deps, config.AprilTagService)
+	if config.AprilTagServiceRight != "" {
+		c.AprilTagTracker, err = posetracker.FromDependencies(deps, config.AprilTagServiceRight)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.AprilTagServiceLeft != "" {
+		c.AprilTagTrackerLeft, err = posetracker.FromDependencies(deps, config.AprilTagServiceLeft)
 		if err != nil {
 			return nil, err
 		}

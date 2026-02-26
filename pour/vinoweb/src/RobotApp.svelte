@@ -17,7 +17,8 @@
     | "pouring"
     | "placing"
     | "waiting"
-    | "manual mode";
+    | "manual mode"
+    | "error";
 
   interface Status {
     status: StatusKey;
@@ -34,6 +35,7 @@
     placing: "Placing glass down",
     waiting: "Please enjoy!",
     "manual mode": "Manual mode active",
+    error: "System error — check logs",
   };
 
   let isDevMode = $state(false);
