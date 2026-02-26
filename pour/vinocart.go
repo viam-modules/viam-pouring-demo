@@ -95,7 +95,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -vc.conf.pourGapDistanceMM(), Z: -vc.conf.pourGapDistanceMM()},
+			r3.Vector{X: -vc.conf.cupGripHeightOffset(), Y: -vc.conf.pourGapDistanceMM(), Z: -35},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
@@ -715,7 +715,6 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 	c := md.Center()
 
 	p := touch.GetApproachPoint(c, deltaLinear, o)
-	p.Y -= 15
 	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
 
 	return referenceframe.NewPoseInFrame(
