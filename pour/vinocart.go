@@ -21,6 +21,7 @@ import (
 
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/camera"
+	"go.viam.com/rdk/components/posetracker"
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan/armplanning"
@@ -181,6 +182,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, multierr.Combine(vc.c.Arm.Stop(ctx, nil), vc.c.BottleArm.Stop(ctx, nil))
 	}
 
+	if cmd["get_tag_position"] == true {
+		return vc.getTagPosition(ctx)
+	}
+
 	if vc.loopCancel != nil {
 		return nil, fmt.Errorf("in loop mode, can't do anything but get status")
 	}
@@ -194,7 +199,7 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	if cmd["touch"] == true {
-		return nil, vc.Touch(ctx)
+		return nil, vc.TouchCup(ctx)
 	}
 
 	if cmd["pour-prep"] == true {
@@ -238,6 +243,16 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 func (vc *VinoCart) run(ctx context.Context) {
 	defer vc.loopWaitGroup.Done()
 	for ctx.Err() == nil {
+		if err := vc.checkAprilTagCalibration(ctx); err != nil {
+			vc.setStatusWithMessage("error", err.Error())
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
+			continue
+		}
+
 		vc.setStatus("standby")
 		err := vc.WaitForCupAndGo(ctx)
 		if err != nil {
@@ -293,7 +308,7 @@ func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) FullDemo(ctx context.Context) error {
-	err := vc.Touch(ctx)
+	err := vc.TouchCup(ctx)
 	if err != nil {
 		return err
 	}
@@ -532,8 +547,13 @@ func saveImageToDataset(ctx context.Context, component resource.Name, img image.
 	return nil
 }
 
-func (vc *VinoCart) Touch(ctx context.Context) error {
-	vc.setStatus("looking")
+func (vc *VinoCart) TouchCup(ctx context.Context) error {
+	if err := vc.checkAprilTagCalibration(ctx); err != nil {
+		vc.setStatusWithMessage("error", err.Error())
+		return err
+	}
+
+	vc.setStatusWithMessage("looking", "Looking for cups")
 
 	err := vc.Reset(ctx)
 	if err != nil {
@@ -706,7 +726,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 			return err
 		}
 
-		return vc.Touch(ctx)
+		return vc.TouchCup(ctx)
 	}
 	return fmt.Errorf("no path for handoff")
 }
@@ -1398,6 +1418,103 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 		},
 	)
 	return err
+}
+
+// checkAprilTagCalibration checks both configured AprilTag trackers against
+// their expected camera-frame positions. Returns an error if any visible tag
+// is outside the configured tolerance. Returns nil if no trackers are
+// configured or if the expected position has not been set (all zeros).
+// getTagPosition returns the current camera-frame position of the AprilTag(s)
+// from both configured trackers. Useful for determining expected_tag_x/y/z config values.
+func (vc *VinoCart) getTagPosition(ctx context.Context) (map[string]interface{}, error) {
+	result := map[string]interface{}{}
+
+	queryTracker := func(tracker posetracker.PoseTracker, tagID, side string) {
+		if tracker == nil {
+			return
+		}
+		if tagID == "" {
+			tagID = "0"
+		}
+		poses, err := tracker.Poses(ctx, nil, nil)
+		if err != nil {
+			result[side+"_error"] = err.Error()
+			return
+		}
+		tagPose, ok := poses[tagID]
+		if !ok {
+			result[side+"_visible"] = false
+			return
+		}
+		pt := tagPose.Pose().Point()
+		result[side+"_visible"] = true
+		result[side+"_tag_x"] = pt.X
+		result[side+"_tag_y"] = pt.Y
+		result[side+"_tag_z"] = pt.Z
+	}
+
+	queryTracker(vc.c.AprilTagTracker, vc.conf.AprilTagIDCenter, "right")
+	queryTracker(vc.c.AprilTagTrackerLeft, vc.conf.AprilTagIDCenter, "left")
+
+	return result, nil
+}
+
+func (vc *VinoCart) checkAprilTagCalibration(ctx context.Context) error {
+	tagID := vc.conf.AprilTagIDCenter
+	if tagID == "" {
+		tagID = "0"
+	}
+
+	if vc.c.AprilTagTracker != nil {
+		expected := r3.Vector{X: vc.conf.ExpectedTagX, Y: vc.conf.ExpectedTagY, Z: vc.conf.ExpectedTagZ}
+		if err := vc.checkOneAprilTracker(ctx, vc.c.AprilTagTracker, tagID, expected, vc.conf.tagToleranceMM(), "right"); err != nil {
+			return err
+		}
+	}
+
+	if vc.c.AprilTagTrackerLeft != nil {
+		expected := r3.Vector{X: vc.conf.ExpectedTagXLeft, Y: vc.conf.ExpectedTagYLeft, Z: vc.conf.ExpectedTagZLeft}
+		if err := vc.checkOneAprilTracker(ctx, vc.c.AprilTagTrackerLeft, tagID, expected, vc.conf.tagToleranceMM(), "left"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// checkOneAprilTracker checks a single tracker's tag position against the
+// expected camera-frame position. Skips silently if the tag is not visible
+// or if expected is all zeros (unconfigured).
+func (vc *VinoCart) checkOneAprilTracker(ctx context.Context, tracker posetracker.PoseTracker, tagID string, expected r3.Vector, toleranceMM float64, side string) error {
+	poses, err := tracker.Poses(ctx, nil, nil)
+	if err != nil {
+		return fmt.Errorf("april tag (%s): failed to get poses: %w", side, err)
+	}
+
+	tagPose, ok := poses[tagID]
+	if !ok {
+		vc.logger.Infof("april tag %q (%s side) not visible, skipping calibration check", tagID, side)
+		return nil
+	}
+
+	if expected.X == 0 && expected.Y == 0 && expected.Z == 0 {
+		vc.logger.Debugf("april tag (%s side) expected position not configured, skipping check", side)
+		return nil
+	}
+
+	actual := tagPose.Pose().Point()
+	delta := r3.Vector{X: actual.X - expected.X, Y: actual.Y - expected.Y, Z: actual.Z - expected.Z}
+	dist := math.Sqrt(delta.X*delta.X + delta.Y*delta.Y + delta.Z*delta.Z)
+
+	vc.logger.Infof("april tag calibration (%s): actual=(%.1f, %.1f, %.1f) expected=(%.1f, %.1f, %.1f) dist=%.1fmm tolerance=%.1fmm",
+		side, actual.X, actual.Y, actual.Z, expected.X, expected.Y, expected.Z, dist, toleranceMM)
+
+	if dist > toleranceMM {
+		return fmt.Errorf("arm has drifted (%s side): tag is %.1fmm from expected position (tolerance %.1fmm) — please reposition the arm",
+			side, dist, toleranceMM)
+	}
+	vc.logger.Infof("april tag calibration (%s): OK — dist=%.1fmm within tolerance=%.1fmm", side, dist, toleranceMM)
+	return nil
 }
 
 func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {

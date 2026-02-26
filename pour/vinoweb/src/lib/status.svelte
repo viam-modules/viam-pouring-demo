@@ -33,6 +33,7 @@
     placing: { type: "teal", loading: true },
     waiting: { type: "green", icon: "checkmark--filled" },
     "manual mode": { type: "magenta", icon: "settings" },
+    error: { type: "red", icon: "warning--filled" },
   };
 
   $effect(() => {
