@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { CameraStream } from "@viamrobotics/svelte-sdk";
   import { CameraClient } from "@viamrobotics/sdk";
   import type { RobotClient } from "@viamrobotics/sdk";
   import { parsePCD } from "./parsePCD.js";
@@ -28,57 +29,270 @@
   // --- Hardcoded cup dimensions (mm) ---
   const CUP_HEIGHT = 109;
 
-  // Stemless wine glass profile rings: circumference → radius = C / (2π)
   const RINGS = [
     { label: "Base",  circumference: 200, heightFromFloor: 0,          color: "rgba(232,160,245,0.6)" },
     { label: "Belly", circumference: 270, heightFromFloor: 45,         color: "rgba(213,128,232,0.7)" },
     { label: "Rim",   circumference: 220, heightFromFloor: CUP_HEIGHT, color: "rgba(240,192,255,0.6)" },
   ].map(r => ({ ...r, radius: r.circumference / (2 * Math.PI) }));
 
-  const CUP_COLOR = "#e8a0f5";
+  // RealSense D400 series: the color sensor is physically offset from the
+  // depth sensor origin. The frame system transform targets the depth frame,
+  // but getProperties() returns color intrinsics and CameraStream shows the
+  // color image. This offset corrects for that mismatch (mm, in camera-local
+  // coords: +X right, +Y down, +Z forward).
+  const DEPTH_TO_COLOR_OFFSET = { x: 0, y: 0, z: 0 };
+
   const ROT_SPEED = 0.3;
   const PITCH = (Math.PI / 180) * 30;
   const COS_PITCH = Math.cos(PITCH);
   const SIN_PITCH = Math.sin(PITCH);
-  const PAD = 24;
+  const PAD_CSS = 20;
 
   let canvasRefs: (HTMLCanvasElement | undefined)[] = $state([]);
-  let leftOverlayRefs: (HTMLCanvasElement | undefined)[] = $state([]);
-  let rightOverlayRefs: (HTMLCanvasElement | undefined)[] = $state([]);
   let animId: number | null = null;
 
-  let leftCamImage: ImageBitmap | null = null;
-  let rightCamImage: ImageBitmap | null = null;
-  let leftCamStatus: string[] = ["Waiting for robot client..."];
-  let rightCamStatus: string[] = ["Waiting for robot client..."];
-  let leftCamClient: CameraClient | null = null;
-  let rightCamClient: CameraClient | null = null;
-  let camFetchInterval: ReturnType<typeof setInterval> | null = null;
-
-  interface CamIntrinsics {
-    width: number; height: number;
-    fx: number; fy: number;
-    cx: number; cy: number;
+  // --- Camera overlay state ---
+  interface CamIntrinsics { fx: number; fy: number; cx: number; cy: number; w: number; h: number; }
+  interface CamProjection {
+    points: { u: number; v: number; r: number; g: number; b: number }[];
+    rings: { color: string; pts: { u: number; v: number }[]; label: string }[];
+    centerLine: { u1: number; v1: number; u2: number; v2: number } | null;
   }
-  let leftIntrinsics: CamIntrinsics | null = null;
-  let rightIntrinsics: CamIntrinsics | null = null;
-  let intrinsicsFetched = false;
 
-  let leftFramePoints: Map<number, { x: number[]; y: number[]; z: number[] }> = new Map();
-  let rightFramePoints: Map<number, { x: number[]; y: number[]; z: number[] }> = new Map();
+  let leftIntrinsics: CamIntrinsics | null = $state(null);
+  let rightIntrinsics: CamIntrinsics | null = $state(null);
+  let intrinsicsFetched = false;
+  let leftOverlayRefs: (HTMLCanvasElement | undefined)[] = $state([]);
+  let rightOverlayRefs: (HTMLCanvasElement | undefined)[] = $state([]);
+  let leftProjections: (CamProjection | null)[] = $state([]);
+  let rightProjections: (CamProjection | null)[] = $state([]);
+  let projectionVersion = $state(0);
+
+  function transformPointToColor(R: number[][], t: number[], wx: number, wy: number, wz: number): [number, number, number] {
+    return [
+      R[0][0]*wx + R[0][1]*wy + R[0][2]*wz + t[0] - DEPTH_TO_COLOR_OFFSET.x,
+      R[1][0]*wx + R[1][1]*wy + R[1][2]*wz + t[1] - DEPTH_TO_COLOR_OFFSET.y,
+      R[2][0]*wx + R[2][1]*wy + R[2][2]*wz + t[2] - DEPTH_TO_COLOR_OFFSET.z,
+    ];
+  }
+
+  function projectPoint(cx: number, cy: number, cz: number, intr: CamIntrinsics): [number, number] | null {
+    if (cz <= 0.1) return null;
+    return [intr.fx * cx / cz + intr.cx, intr.fy * cy / cz + intr.cy];
+  }
+
+  async function getWorldToCamTransform(camName: string): Promise<{ R: number[][]; t: number[] } | null> {
+    if (!robotClient) return null;
+    const svc = (robotClient as any).robotService;
+    const D = 1000;
+    const mkPose = (x: number, y: number, z: number) => ({
+      source: { referenceFrame: "world", pose: { x, y, z, oX: 0, oY: 0, oZ: 1, theta: 0 } },
+      destination: camName,
+    });
+    const [r0, r1, r2, r3] = await Promise.all([
+      svc.transformPose(mkPose(0, 0, 0)),
+      svc.transformPose(mkPose(D, 0, 0)),
+      svc.transformPose(mkPose(0, D, 0)),
+      svc.transformPose(mkPose(0, 0, D)),
+    ]);
+    const p0 = r0.pose?.pose, p1 = r1.pose?.pose, p2 = r2.pose?.pose, p3 = r3.pose?.pose;
+    if (!p0 || !p1 || !p2 || !p3) return null;
+    const t = [p0.x, p0.y, p0.z];
+    const R = [
+      [(p1.x - p0.x) / D, (p2.x - p0.x) / D, (p3.x - p0.x) / D],
+      [(p1.y - p0.y) / D, (p2.y - p0.y) / D, (p3.y - p0.y) / D],
+      [(p1.z - p0.z) / D, (p2.z - p0.z) / D, (p3.z - p0.z) / D],
+    ];
+    return { R, t };
+  }
+
+  async function fetchIntrinsics() {
+    if (intrinsicsFetched || !robotClient) return;
+    intrinsicsFetched = true;
+    for (const [name, setter] of [["left-cam", (v: CamIntrinsics) => leftIntrinsics = v], ["right-cam", (v: CamIntrinsics) => rightIntrinsics = v]] as const) {
+      try {
+        const cam = new CameraClient(robotClient, name);
+        const props = await cam.getProperties();
+        const ip = props.intrinsicParameters;
+        if (ip && ip.focalXPx > 0) {
+          (setter as (v: CamIntrinsics) => void)({ fx: ip.focalXPx, fy: ip.focalYPx, cx: ip.centerXPx, cy: ip.centerYPx, w: ip.widthPx, h: ip.heightPx });
+          console.log(`[cam-overlay] ${name} intrinsics: ${ip.widthPx}x${ip.heightPx} fx=${ip.focalXPx.toFixed(1)}`);
+        }
+      } catch (e) {
+        console.warn(`[cam-overlay] ${name}: getProperties failed:`, e);
+      }
+    }
+  }
+
+  async function fetchTransformAndProject(camName: string, intr: CamIntrinsics): Promise<(CamProjection | null)[]> {
+    if (!robotClient) return objects.map(() => null);
+    try {
+      const xform = await getWorldToCamTransform(camName);
+      if (!xform) return objects.map(() => null);
+      const { R, t } = xform;
+
+      return objects.map(obj => {
+        if (!obj || obj.points_x.length === 0) return null;
+        const px = obj.points_x, py = obj.points_y, pz = obj.points_z;
+        const minZ = Math.min(...pz);
+        const maxZ = Math.max(...pz);
+        const pcHeight = (maxZ - minZ) || 1;
+        const rangeZ = pcHeight;
+
+        // Project point cloud
+        const points: CamProjection["points"] = [];
+        for (let i = 0; i < px.length; i++) {
+          const [cx, cy, cz] = transformPointToColor(R, t, px[i], py[i], pz[i]);
+          const uv = projectPoint(cx, cy, cz, intr);
+          if (!uv) continue;
+          const tz = (pz[i] - minZ) / rangeZ;
+          points.push({
+            u: uv[0], v: uv[1],
+            r: Math.round(60 + tz * 100),
+            g: Math.round(160 + tz * 95),
+            b: Math.round(255 - tz * 120),
+          });
+        }
+
+        // Bounding-box midpoint to match backend MetaData.Center()
+        const minX = Math.min(...px), maxX = Math.max(...px);
+        const minY = Math.min(...py), maxY = Math.max(...py);
+        const centX = (minX + maxX) / 2;
+        const centY = (minY + maxY) / 2;
+
+        // Project cup rings
+        const rings: CamProjection["rings"] = [];
+        const segments = 32;
+        for (const ring of RINGS) {
+          const ringZ = minZ + (ring.heightFromFloor / CUP_HEIGHT) * pcHeight;
+          const pts: { u: number; v: number }[] = [];
+          for (let ci = 0; ci <= segments; ci++) {
+            const angle = (ci / segments) * Math.PI * 2;
+            const wx = Math.cos(angle) * ring.radius;
+            const wy = Math.sin(angle) * ring.radius;
+            const [ccx, ccy, ccz] = transformPointToColor(R, t, centX + wx, centY + wy, ringZ);
+            const uv = projectPoint(ccx, ccy, ccz, intr);
+            if (uv) pts.push({ u: uv[0], v: uv[1] });
+          }
+          rings.push({ color: ring.color, pts, label: ring.label });
+        }
+
+        // Project center line
+        let centerLine: CamProjection["centerLine"] = null;
+        const sx = centX, sy = centY;
+        const [bx, by, bz] = transformPointToColor(R, t, sx, sy, minZ);
+        const [tx2, ty2, tz2] = transformPointToColor(R, t, sx, sy, maxZ);
+        const uvBot = projectPoint(bx, by, bz, intr);
+        const uvTop = projectPoint(tx2, ty2, tz2, intr);
+        if (uvBot && uvTop) centerLine = { u1: uvBot[0], v1: uvBot[1], u2: uvTop[0], v2: uvTop[1] };
+
+        return { points, rings, centerLine };
+      });
+    } catch (e) {
+      console.warn(`[cam-overlay] ${camName}: transformPose failed:`, e);
+      return objects.map(() => null);
+    }
+  }
+
+  async function refreshProjections() {
+    if (!robotClient) return;
+    await fetchIntrinsics();
+    if (leftIntrinsics) {
+      leftProjections = await fetchTransformAndProject("left-cam", leftIntrinsics);
+    }
+    if (rightIntrinsics) {
+      rightProjections = await fetchTransformAndProject("right-cam", rightIntrinsics);
+    }
+    projectionVersion++;
+  }
+
+  // Refresh projections when objects change
+  let lastObjRef: SegmentedObject[] | null = null;
+  $effect(() => {
+    if (objects !== lastObjRef && robotClient) {
+      lastObjRef = objects;
+      refreshProjections();
+    }
+  });
+
+  function renderCamOverlay(
+    canvas: HTMLCanvasElement,
+    proj: CamProjection | null,
+    intr: CamIntrinsics,
+  ) {
+    if (canvas.width !== intr.w || canvas.height !== intr.h) {
+      canvas.width = intr.w;
+      canvas.height = intr.h;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, intr.w, intr.h);
+    if (!proj) return;
+
+    // Draw rings
+    for (const ring of proj.rings) {
+      if (ring.pts.length < 2) continue;
+      ctx.strokeStyle = ring.color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(ring.pts[0].u, ring.pts[0].v);
+      for (let i = 1; i < ring.pts.length; i++) ctx.lineTo(ring.pts[i].u, ring.pts[i].v);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Draw center line
+    if (proj.centerLine) {
+      const cl = proj.centerLine;
+      ctx.strokeStyle = "rgba(232,160,245,0.5)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(cl.u1, cl.v1);
+      ctx.lineTo(cl.u2, cl.v2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Draw points (subsample for performance — draw every 3rd point)
+    for (let i = 0; i < proj.points.length; i += 3) {
+      const p = proj.points[i];
+      ctx.fillStyle = `rgba(${p.r}, ${p.g}, ${p.b}, 0.7)`;
+      ctx.fillRect(p.u - 1.5, p.v - 1.5, 3, 3);
+    }
+  }
+
+  // --- 3D PCD canvas rendering (unchanged) ---
+  function syncCanvasSize(canvas: HTMLCanvasElement) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const pw = Math.round(rect.width * dpr);
+    const ph = Math.round(rect.height * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+      scaleCache.clear();
+    }
+  }
 
   interface ScaleInfo {
     scale: number; minZ: number; maxZ: number; rangeZ: number;
     cx: number; cy: number; cz: number;
+    projCx: number; projCy: number;
   }
   let scaleCache = new Map<string, ScaleInfo>();
 
-  function scaleKey(obj: SegmentedObject): string {
+  function scaleKey(obj: SegmentedObject, w: number, h: number): string {
     const px = obj.points_x, py = obj.points_y;
-    return `${obj.index}:${px.length}:${px[0]}:${py[0]}:${px[px.length - 1]}`;
+    return `${obj.index}:${px.length}:${px[0]}:${py[0]}:${px[px.length - 1]}:${w}x${h}`;
   }
 
-  function computeScale(obj: SegmentedObject, w: number, h: number): ScaleInfo {
+  function scaledRingZ(ring: typeof RINGS[number], minZ: number, pcHeight: number): number {
+    return minZ + (ring.heightFromFloor / CUP_HEIGHT) * pcHeight;
+  }
+
+  function computeScale(obj: SegmentedObject, w: number, h: number, pad: number): ScaleInfo {
     const px = obj.points_x, py = obj.points_y, pz = obj.points_z;
     const n = px.length;
     let cx = 0, cy = 0, cz = 0;
@@ -89,30 +303,56 @@
       if (pz[j] > maxZ) maxZ = pz[j];
     }
     cx /= n; cy /= n; cz /= n;
+    const pcHeight = (maxZ - minZ) || 1;
 
-    const maxRingRadius = Math.max(...RINGS.map(r => r.radius));
-    let maxHalfX = maxRingRadius, maxHalfY = 0;
+    let projMinX = Infinity, projMaxX = -Infinity;
+    let projMinY = Infinity, projMaxY = -Infinity;
 
     for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
       const ca = Math.cos(a), sa = Math.sin(a);
+
       for (let j = 0; j < n; j++) {
         const dx = px[j] - cx, dy = py[j] - cy, dz = pz[j] - cz;
-        const hx = Math.abs(dx * ca - dy * sa);
-        const hy = Math.abs(-dz * COS_PITCH + (dx * sa + dy * ca) * SIN_PITCH);
-        if (hx > maxHalfX) maxHalfX = hx;
-        if (hy > maxHalfY) maxHalfY = hy;
+        const hx = dx * ca - dy * sa;
+        const hy = -dz * COS_PITCH + (dx * sa + dy * ca) * SIN_PITCH;
+        if (hx < projMinX) projMinX = hx;
+        if (hx > projMaxX) projMaxX = hx;
+        if (hy < projMinY) projMinY = hy;
+        if (hy > projMaxY) projMaxY = hy;
       }
+
       for (const ring of RINGS) {
-        const ringDz = (minZ + ring.heightFromFloor) - cz;
-        const hy = Math.abs(-ringDz * COS_PITCH + ring.radius * SIN_PITCH);
-        if (hy > maxHalfY) maxHalfY = hy;
+        const ringZv = scaledRingZ(ring, minZ, pcHeight);
+        const dzRing = ringZv - cz;
+        for (let ri = 0; ri < 8; ri++) {
+          const ra = (ri / 8) * Math.PI * 2;
+          const lx = Math.cos(ra) * ring.radius;
+          const ly = Math.sin(ra) * ring.radius;
+          const hx = lx * ca - ly * sa;
+          const hy = -dzRing * COS_PITCH + (lx * sa + ly * ca) * SIN_PITCH;
+          if (hx < projMinX) projMinX = hx;
+          if (hx > projMaxX) projMaxX = hx;
+          if (hy < projMinY) projMinY = hy;
+          if (hy > projMaxY) projMaxY = hy;
+        }
       }
+
+      const dzBot = minZ - cz;
+      const dzTop = maxZ - cz;
+      const hyBot = -dzBot * COS_PITCH;
+      const hyTop = -dzTop * COS_PITCH;
+      if (hyBot < projMinY) projMinY = hyBot;
+      if (hyBot > projMaxY) projMaxY = hyBot;
+      if (hyTop < projMinY) projMinY = hyTop;
+      if (hyTop > projMaxY) projMaxY = hyTop;
     }
-    maxHalfX = maxHalfX || 1;
-    maxHalfY = maxHalfY || 1;
-    const zoomPad = PAD + 16;
-    const scale = Math.min((w / 2 - zoomPad) / maxHalfX, (h / 2 - zoomPad) / maxHalfY);
-    return { scale, minZ, maxZ, rangeZ: (maxZ - minZ) || 1, cx, cy, cz };
+
+    const projCxv = (projMinX + projMaxX) / 2;
+    const projCyv = (projMinY + projMaxY) / 2;
+    const halfW = Math.max(projMaxX - projCxv, projCxv - projMinX) || 1;
+    const halfH = Math.max(projMaxY - projCyv, projCyv - projMinY) || 1;
+    const scale = Math.min((w / 2 - pad) / halfW, (h / 2 - pad) / halfH);
+    return { scale, minZ, maxZ, rangeZ: pcHeight, cx, cy, cz, projCx: projCxv, projCy: projCyv };
   }
 
   function renderAllCanvases() {
@@ -123,30 +363,40 @@
     for (let i = 0; i < objects.length; i++) {
       const canvas = canvasRefs[i];
       if (!canvas) continue;
+      syncCanvasSize(canvas);
       const ctx = canvas.getContext("2d");
       if (!ctx) continue;
+      const w = canvas.width, h = canvas.height;
       const obj = objects[i];
       if (!obj || obj.points_x.length === 0) {
         ctx.fillStyle = "#1a1a2e";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, w, h);
         ctx.fillStyle = "#525252";
         ctx.font = "12px IBM Plex Mono, monospace";
         ctx.textAlign = "center";
-        ctx.fillText("No points", canvas.width / 2, canvas.height / 2);
+        ctx.fillText("No points", w / 2, h / 2);
         continue;
       }
 
-      const key = scaleKey(obj);
+      const dpr = window.devicePixelRatio || 1;
+      const pad = PAD_CSS * dpr;
+      const key = scaleKey(obj, w, h);
       let info = scaleCache.get(key);
       if (!info) {
-        info = computeScale(obj, canvas.width, canvas.height);
+        info = computeScale(obj, w, h, pad);
         scaleCache.set(key, info);
         if (scaleCache.size > 20) scaleCache.delete(scaleCache.keys().next().value!);
       }
 
-      render3DView(ctx, canvas.width, canvas.height, obj, info, cosYaw, sinYaw);
-      renderCameraOverlay(leftOverlayRefs[i], obj, leftCamImage, leftIntrinsics, leftFramePoints.get(obj.index), leftCamStatus, "Left");
-      renderCameraOverlay(rightOverlayRefs[i], obj, rightCamImage, rightIntrinsics, rightFramePoints.get(obj.index), rightCamStatus, "Right");
+      render3DView(ctx, w, h, obj, info, cosYaw, sinYaw);
+
+      // Render camera overlays (static, not spinning)
+      if (leftIntrinsics && leftOverlayRefs[i] && leftProjections[i]) {
+        renderCamOverlay(leftOverlayRefs[i]!, leftProjections[i], leftIntrinsics);
+      }
+      if (rightIntrinsics && rightOverlayRefs[i] && rightProjections[i]) {
+        renderCamOverlay(rightOverlayRefs[i]!, rightProjections[i], rightIntrinsics);
+      }
     }
     animId = requestAnimationFrame(renderAllCanvases);
   }
@@ -156,27 +406,16 @@
     obj: SegmentedObject, info: ScaleInfo,
     cosYaw: number, sinYaw: number,
   ) {
-    const { scale, minZ, rangeZ, cx, cy, cz } = info;
+    const { scale, minZ, rangeZ, cx, cy, cz, projCx: pCx, projCy: pCy } = info;
     const px = obj.points_x, py = obj.points_y, pz = obj.points_z;
 
     ctx.fillStyle = "#1a1a2e";
     ctx.fillRect(0, 0, w, h);
 
-    // Compute projected centroid
-    let fCx = 0, fCy = 0;
-    for (let i = 0; i < px.length; i++) {
-      const dx = px[i] - cx, dy = py[i] - cy, dz = pz[i] - cz;
-      fCx += dx * cosYaw - dy * sinYaw;
-      fCy += -dz * COS_PITCH + (dx * sinYaw + dy * cosYaw) * SIN_PITCH;
-    }
-    fCx /= px.length; fCy /= px.length;
+    drawTableGrid(ctx, w, h, info, cosYaw, sinYaw, pCx, pCy);
+    drawCupRings(ctx, w, h, info, cosYaw, sinYaw, pCx, pCy);
+    drawCenterLine(ctx, w, h, info, pCx, pCy);
 
-    // Draw order: grid → rings → center line → points (on top) → axes
-    drawTableGrid(ctx, w, h, info, cosYaw, sinYaw, fCx, fCy);
-    drawCupRings(ctx, w, h, info, cosYaw, sinYaw, fCx, fCy);
-    drawCenterLine(ctx, w, h, info, fCx, fCy);
-
-    // --- Points (depth-sorted, drawn ON TOP of rings) ---
     const projected = new Array(px.length);
     for (let i = 0; i < px.length; i++) {
       const dx = px[i] - cx, dy = py[i] - cy, dz = pz[i] - cz;
@@ -187,12 +426,12 @@
     projected.sort((a: any, b: any) => a.depth - b.depth);
 
     for (const p of projected) {
-      const sx = (p.sx - fCx) * scale + w / 2;
-      const sy = (p.sy - fCy) * scale + h / 2;
-      const t = (p.z - minZ) / rangeZ;
-      const r = Math.round(60 + t * 100);
-      const g = Math.round(160 + t * 95);
-      const b = Math.round(255 - t * 120);
+      const sx = (p.sx - pCx) * scale + w / 2;
+      const sy = (p.sy - pCy) * scale + h / 2;
+      const tz = (p.z - minZ) / rangeZ;
+      const r = Math.round(60 + tz * 100);
+      const g = Math.round(160 + tz * 95);
+      const b = Math.round(255 - tz * 120);
       ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
       ctx.beginPath();
       ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
@@ -240,11 +479,11 @@
     info: ScaleInfo, cosYaw: number, sinYaw: number,
     fCx: number, fCy: number,
   ) {
-    const { scale, minZ, cz } = info;
+    const { scale, minZ, maxZ, cz } = info;
+    const pcHeight = maxZ - minZ;
     const segments = 48;
     const profileAngles = 8;
 
-    // Draw vertical profile lines connecting rings (wine glass silhouette)
     ctx.strokeStyle = "rgba(232,160,245,0.25)";
     ctx.lineWidth = 0.8;
     ctx.setLineDash([2, 4]);
@@ -252,7 +491,7 @@
       const angle = (ai / profileAngles) * Math.PI * 2;
       ctx.beginPath();
       for (const ring of RINGS) {
-        const ringZ = minZ + ring.heightFromFloor;
+        const ringZ = scaledRingZ(ring, minZ, pcHeight);
         const dzRing = ringZ - cz;
         const lx = Math.cos(angle) * ring.radius;
         const ly = Math.sin(angle) * ring.radius;
@@ -266,9 +505,8 @@
     }
     ctx.setLineDash([]);
 
-    // Draw ring circles
     for (const ring of RINGS) {
-      const ringZ = minZ + ring.heightFromFloor;
+      const ringZ = scaledRingZ(ring, minZ, pcHeight);
       const dzRing = ringZ - cz;
       ctx.strokeStyle = ring.color;
       ctx.lineWidth = 1.5;
@@ -299,12 +537,12 @@
     ctx: CanvasRenderingContext2D, w: number, h: number,
     info: ScaleInfo, fCx: number, fCy: number,
   ) {
-    const { scale, minZ, cz } = info;
+    const { scale, minZ, maxZ, cz } = info;
     ctx.strokeStyle = "rgba(232,160,245,0.4)";
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     const dzBot = minZ - cz;
-    const dzTop = (minZ + CUP_HEIGHT) - cz;
+    const dzTop = maxZ - cz;
     const syBot = (-dzBot * COS_PITCH - fCy) * scale + h / 2;
     const syTop = (-dzTop * COS_PITCH - fCy) * scale + h / 2;
     const sxCenter = (0 - fCx) * scale + w / 2;
@@ -316,207 +554,36 @@
   }
 
   function drawAxes(ctx: CanvasRenderingContext2D, w: number, h: number, cosYaw: number, sinYaw: number) {
-    const axLen = 20, ox = PAD, oy = h - PAD;
-    ctx.lineWidth = 1;
+    const dpr = window.devicePixelRatio || 1;
+    const pad = PAD_CSS * dpr;
+    const axLen = 20 * dpr, ox = pad, oy = h - pad;
+    ctx.lineWidth = 1 * dpr;
     ctx.strokeStyle = "#fa4d56";
     ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + axLen * cosYaw, oy + axLen * SIN_PITCH * sinYaw); ctx.stroke();
     ctx.strokeStyle = "#42be65";
     ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox - axLen * sinYaw, oy + axLen * SIN_PITCH * cosYaw); ctx.stroke();
     ctx.strokeStyle = "#4589ff";
     ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - axLen * COS_PITCH); ctx.stroke();
-    ctx.font = "9px IBM Plex Mono";
-    ctx.fillStyle = "#fa4d56"; ctx.fillText("X", ox + axLen * cosYaw + 4, oy + axLen * SIN_PITCH * sinYaw);
-    ctx.fillStyle = "#42be65"; ctx.fillText("Y", ox - axLen * sinYaw - 8, oy + axLen * SIN_PITCH * cosYaw);
-    ctx.fillStyle = "#4589ff"; ctx.fillText("Z", ox + 4, oy - axLen * COS_PITCH - 2);
-  }
-
-  function renderCameraOverlay(
-    canvas: HTMLCanvasElement | undefined,
-    obj: SegmentedObject,
-    camImage: ImageBitmap | null,
-    intrinsics: CamIntrinsics | null,
-    transformedPts: { x: number[]; y: number[]; z: number[] } | undefined,
-    camStatusLines: string[],
-    label: string,
-  ) {
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const w = canvas.width, h = canvas.height;
-
-    ctx.fillStyle = "#111";
-    ctx.fillRect(0, 0, w, h);
-
-    if (camImage) {
-      ctx.drawImage(camImage, 0, 0, w, h);
-    } else {
-      // Show troubleshooting log
-      ctx.fillStyle = "#777";
-      ctx.font = "10px IBM Plex Mono";
-      ctx.textAlign = "left";
-      const lineH = 14;
-      const startY = 20;
-      ctx.fillStyle = "#aaa";
-      ctx.fillText(`${label} — troubleshooting:`, 8, startY);
-      ctx.fillStyle = "#666";
-      for (let li = 0; li < camStatusLines.length; li++) {
-        const line = camStatusLines[li];
-        const color = line.startsWith("FAIL") ? "#fa4d56" : line.startsWith("OK") ? "#42be65" : "#888";
-        ctx.fillStyle = color;
-        ctx.fillText(line.slice(0, 60), 8, startY + (li + 1) * lineH);
-      }
-      ctx.textAlign = "start";
-    }
-
-    if (!transformedPts || !intrinsics) return;
-    const { x: tx, y: ty, z: tz } = transformedPts;
-    const { fx, fy, cx: pcx, cy: pcy, width: iw, height: ih } = intrinsics;
-    if (fx === 0 || fy === 0) return;
-    const scaleX = w / iw, scaleY = h / ih;
-
-    ctx.globalAlpha = 0.7;
-    for (let i = 0; i < tx.length; i++) {
-      if (tz[i] <= 0) continue;
-      const u = (fx * tx[i] / tz[i] + pcx) * scaleX;
-      const v = (fy * ty[i] / tz[i] + pcy) * scaleY;
-      if (u < 0 || u >= w || v < 0 || v >= h) continue;
-      ctx.fillStyle = CUP_COLOR;
-      ctx.beginPath();
-      ctx.arc(u, v, 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1.0;
-  }
-
-  async function ensureCamClients() {
-    if (!robotClient) return false;
-    if (!leftCamClient) leftCamClient = new CameraClient(robotClient, "left-cam");
-    if (!rightCamClient) rightCamClient = new CameraClient(robotClient, "right-cam");
-    return true;
-  }
-
-  async function fetchIntrinsics() {
-    if (intrinsicsFetched || !(await ensureCamClients())) return;
-    try {
-      const p = await leftCamClient!.getProperties();
-      if (p.intrinsicParameters) {
-        const ip = p.intrinsicParameters;
-        leftIntrinsics = { width: ip.widthPx, height: ip.heightPx, fx: ip.focalXPx, fy: ip.focalYPx, cx: ip.centerXPx, cy: ip.centerYPx };
-      }
-    } catch (e) { console.warn("left-cam intrinsics:", e); }
-    try {
-      const p = await rightCamClient!.getProperties();
-      if (p.intrinsicParameters) {
-        const ip = p.intrinsicParameters;
-        rightIntrinsics = { width: ip.widthPx, height: ip.heightPx, fx: ip.focalXPx, fy: ip.focalYPx, cx: ip.centerXPx, cy: ip.centerYPx };
-      }
-    } catch (e) { console.warn("right-cam intrinsics:", e); }
-    intrinsicsFetched = true;
-  }
-
-  async function fetchOneCameraImage(client: CameraClient, label: string): Promise<{ image: ImageBitmap | null; status: string[] }> {
-    const log: string[] = [];
-    // 1) renderFrame("image/jpeg")
-    try {
-      const blob = await client.renderFrame("image/jpeg");
-      log.push(`renderFrame(jpeg): ${blob.size} bytes`);
-      if (blob.size > 0) {
-        const bmp = await createImageBitmap(blob);
-        log.push("OK - image decoded");
-        console.log(`[cam] ${label}: renderFrame OK (${blob.size} bytes)`);
-        return { image: bmp, status: log };
-      }
-      log.push("WARN: blob empty");
-    } catch (e: any) {
-      const msg = e?.message?.slice(0, 80) || "unknown error";
-      log.push(`FAIL: ${msg}`);
-      console.warn(`[cam] ${label}: renderFrame:`, msg);
-    }
-    // 2) getImage("image/jpeg") → ArrayBuffer → Blob
-    try {
-      const bytes = await client.getImage("image/jpeg");
-      log.push(`getImage(jpeg): ${bytes.length} bytes`);
-      const copy = new Uint8Array(bytes).buffer as ArrayBuffer;
-      const blob = new Blob([copy], { type: "image/jpeg" });
-      if (blob.size > 0) {
-        const bmp = await createImageBitmap(blob);
-        log.push("OK - image decoded");
-        console.log(`[cam] ${label}: getImage OK (${bytes.length} bytes)`);
-        return { image: bmp, status: log };
-      }
-    } catch (e: any) {
-      const msg = e?.message?.slice(0, 80) || "unknown error";
-      log.push(`FAIL: ${msg}`);
-      console.warn(`[cam] ${label}: getImage(jpeg):`, msg);
-    }
-    // 3) getImage() no mime → try as PNG
-    try {
-      const bytes = await client.getImage();
-      log.push(`getImage(default): ${bytes.length} bytes`);
-      const copy = new Uint8Array(bytes).buffer as ArrayBuffer;
-      const blob = new Blob([copy], { type: "image/png" });
-      if (blob.size > 0) {
-        const bmp = await createImageBitmap(blob);
-        log.push("OK - decoded as PNG");
-        console.log(`[cam] ${label}: getImage(default) OK (${bytes.length} bytes)`);
-        return { image: bmp, status: log };
-      }
-    } catch (e: any) {
-      const msg = e?.message?.slice(0, 80) || "unknown error";
-      log.push(`FAIL: ${msg}`);
-      console.warn(`[cam] ${label}: getImage(default):`, msg);
-    }
-    return { image: null, status: log };
-  }
-
-  async function fetchCameraImages() {
-    if (!(await ensureCamClients())) {
-      leftCamStatus = ["No robot client available"];
-      rightCamStatus = ["No robot client available"];
-      return;
-    }
-    const left = await fetchOneCameraImage(leftCamClient!, "left-cam");
-    leftCamImage = left.image;
-    leftCamStatus = left.status;
-    const right = await fetchOneCameraImage(rightCamClient!, "right-cam");
-    rightCamImage = right.image;
-    rightCamStatus = right.status;
-  }
-
-  async function fetchTransformedPoints() {
-    if (!robotClient) return;
-    for (const obj of objects) {
-      if (!obj.rawPCD || obj.rawPCD.length === 0) continue;
-      try {
-        const pcd = await robotClient.transformPCD(obj.rawPCD, "cup-finder-segment", "left-cam");
-        leftFramePoints.set(obj.index, parsePCD(pcd));
-      } catch (_) {}
-      try {
-        const pcd = await robotClient.transformPCD(obj.rawPCD, "cup-finder-segment", "right-cam");
-        rightFramePoints.set(obj.index, parsePCD(pcd));
-      } catch (_) {}
-    }
+    const fontSize = Math.round(9 * dpr);
+    ctx.font = `${fontSize}px IBM Plex Mono`;
+    ctx.fillStyle = "#fa4d56"; ctx.fillText("X", ox + axLen * cosYaw + 4 * dpr, oy + axLen * SIN_PITCH * sinYaw);
+    ctx.fillStyle = "#42be65"; ctx.fillText("Y", ox - axLen * sinYaw - 8 * dpr, oy + axLen * SIN_PITCH * cosYaw);
+    ctx.fillStyle = "#4589ff"; ctx.fillText("Z", ox + 4 * dpr, oy - axLen * COS_PITCH - 2 * dpr);
   }
 
   onMount(() => {
     animId = requestAnimationFrame(renderAllCanvases);
-    fetchIntrinsics();
-    fetchCameraImages();
-    fetchTransformedPoints();
-    camFetchInterval = setInterval(() => {
-      fetchCameraImages();
-      fetchTransformedPoints();
-    }, 2000);
   });
 
   onDestroy(() => {
     if (animId !== null) cancelAnimationFrame(animId);
-    if (camFetchInterval !== null) clearInterval(camFetchInterval);
   });
 
   function fmt(v: number): string {
     return v.toFixed(1);
   }
+
+  const PART_ID = "xxx";
 </script>
 
 <div class="panel-container">
@@ -568,29 +635,19 @@
             <div class="pc-half">
               <canvas
                 bind:this={canvasRefs[i]}
-                width="500"
-                height="500"
                 class="pc-canvas"
               ></canvas>
             </div>
             <div class="cam-half">
               <div class="cam-wrapper">
                 <span class="cam-label">Left Camera</span>
-                <canvas
-                  bind:this={leftOverlayRefs[i]}
-                  width="640"
-                  height="480"
-                  class="cam-canvas"
-                ></canvas>
+                <CameraStream name="left-cam" partID={PART_ID} />
+                <canvas bind:this={leftOverlayRefs[i]} class="cam-overlay"></canvas>
               </div>
               <div class="cam-wrapper">
                 <span class="cam-label">Right Camera</span>
-                <canvas
-                  bind:this={rightOverlayRefs[i]}
-                  width="640"
-                  height="480"
-                  class="cam-canvas"
-                ></canvas>
+                <CameraStream name="right-cam" partID={PART_ID} />
+                <canvas bind:this={rightOverlayRefs[i]} class="cam-overlay"></canvas>
               </div>
             </div>
           </div>
@@ -715,16 +772,15 @@
     padding: 8px;
   }
   .pc-half {
-    flex: 0 0 auto;
-    aspect-ratio: 1;
-    width: 50%;
-    max-width: 500px;
+    flex: 0 0 350px;
+    width: 350px;
+    height: 350px;
   }
   .pc-canvas {
     border-radius: 4px;
     display: block;
-    width: 100%;
-    height: 100%;
+    width: 350px;
+    height: 350px;
   }
   .cam-half {
     flex: 1 1 50%;
@@ -737,6 +793,24 @@
     position: relative;
     flex: 1;
     min-height: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #111;
+  }
+  .cam-wrapper :global(video) {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .cam-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    object-fit: contain;
   }
   .cam-label {
     position: absolute;
@@ -748,13 +822,6 @@
     background: rgba(0,0,0,0.6);
     padding: 2px 6px;
     border-radius: 3px;
-  }
-  .cam-canvas {
-    border-radius: 4px;
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    background: #111;
+    pointer-events: none;
   }
 </style>
