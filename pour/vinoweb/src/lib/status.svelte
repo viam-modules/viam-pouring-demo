@@ -1,23 +1,16 @@
 <script lang="ts">
   import { Tag, InlineLoading } from "carbon-components-svelte";
 
-  interface DetectionInfo {
-    total_cup_objects: number;
-    valid_cups: number;
-    invalid_cups: number;
-    bottles: number;
-  }
-
   let {
     message = "SENSING...",
     status = "standby",
-    detection = { total_cup_objects: 0, valid_cups: 0, invalid_cups: 0, bottles: 0 },
+    objectCount = 0,
     onCupClick,
     cupPanelOpen = false,
   }: {
     message?: string;
     status?: string;
-    detection?: DetectionInfo;
+    objectCount?: number;
     onCupClick?: () => void;
     cupPanelOpen?: boolean;
   } = $props();
@@ -78,34 +71,9 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div class="detection-item cups-clickable" class:cups-active={cupPanelOpen} onclick={onCupClick}>
-              <span class="detection-label">Cups</span>
-              <span class="detection-count valid">
-                <svg class="check-icon" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.646 5.354l-4 4a.5.5 0 0 1-.707 0l-2-2a.5.5 0 1 1 .707-.708L7.293 9.293l3.646-3.647a.5.5 0 0 1 .707.708z"/>
-                </svg>
-                {detection.valid_cups}
-              </span>
-              {#if detection.invalid_cups > 0}
-                <span class="detection-count invalid">
-                  <svg class="x-icon" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm2.854 9.146a.5.5 0 0 1-.708.708L8 8.707l-2.146 2.147a.5.5 0 0 1-.708-.708L7.293 8 5.146 5.854a.5.5 0 1 1 .708-.708L8 7.293l2.146-2.147a.5.5 0 0 1 .708.708L8.707 8l2.147 2.146z"/>
-                  </svg>
-                  {detection.invalid_cups}
-                </span>
-              {/if}
-            </div>
-
-            <span class="detection-divider">|</span>
-
-            <div class="detection-item">
-              <span class="detection-label">Bottles</span>
-              <span class="detection-count" class:valid={detection.bottles > 0} class:dimmed={detection.bottles === 0}>
-                {#if detection.bottles > 0}
-                  <svg class="check-icon" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.646 5.354l-4 4a.5.5 0 0 1-.707 0l-2-2a.5.5 0 1 1 .707-.708L7.293 9.293l3.646-3.647a.5.5 0 0 1 .707.708z"/>
-                  </svg>
-                {/if}
-                {detection.bottles}
+              <span class="detection-label">Objects</span>
+              <span class="detection-count" class:valid={objectCount > 0} class:dimmed={objectCount === 0}>
+                {objectCount}
               </span>
             </div>
           </div>
@@ -231,27 +199,8 @@
     color: #42be65;
   }
 
-  .detection-count.invalid {
-    color: #fa4d56;
-  }
-
   .detection-count.dimmed {
     color: #6f6f6f;
-  }
-
-  .check-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .x-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .detection-divider {
-    color: #525252;
-    font-size: 0.85rem;
   }
 
   .loading-wrapper :global(.bx--inline-loading) {

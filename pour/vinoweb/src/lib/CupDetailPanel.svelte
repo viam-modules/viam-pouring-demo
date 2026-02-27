@@ -1,29 +1,18 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { Tag } from "carbon-components-svelte";
 
-  export interface CupDetail {
+  export interface SegmentedObject {
     index: number;
-    valid: boolean;
-    height: number;
-    expected_height: number;
-    height_delta: number;
-    height_pass: boolean;
-    width: number;
-    expected_width: number;
-    width_delta: number;
-    width_pass: boolean;
-    good_delta: number;
-    total_points: number;
+    totalPoints: number;
     points_x: number[];
     points_y: number[];
     points_z: number[];
   }
 
   let {
-    cups = [],
+    objects = [],
     onClose,
-  }: { cups: CupDetail[]; onClose: () => void } = $props();
+  }: { objects: SegmentedObject[]; onClose: () => void } = $props();
 
   const ROT_SPEED = 0.3;
   const PITCH = (Math.PI / 180) * 30;
@@ -45,16 +34,16 @@
 
   let scaleCache = new Map<string, ScaleInfo>();
 
-  function scaleKey(cup: CupDetail): string {
-    const px = cup.points_x;
-    const py = cup.points_y;
-    return `${cup.index}:${px.length}:${px[0]}:${py[0]}:${px[px.length - 1]}`;
+  function scaleKey(obj: SegmentedObject): string {
+    const px = obj.points_x;
+    const py = obj.points_y;
+    return `${obj.index}:${px.length}:${px[0]}:${py[0]}:${px[px.length - 1]}`;
   }
 
-  function computeScale(cup: CupDetail, w: number, h: number): ScaleInfo {
-    const px = cup.points_x;
-    const py = cup.points_y;
-    const pz = cup.points_z;
+  function computeScale(obj: SegmentedObject, w: number, h: number): ScaleInfo {
+    const px = obj.points_x;
+    const py = obj.points_y;
+    const pz = obj.points_z;
     const n = px.length;
 
     let cx = 0, cy = 0, cz = 0;
@@ -115,18 +104,18 @@
     const cosYaw = Math.cos(yaw);
     const sinYaw = Math.sin(yaw);
 
-    for (let i = 0; i < cups.length; i++) {
+    for (let i = 0; i < objects.length; i++) {
       const canvas = canvasRefs[i];
       if (!canvas) continue;
       const ctx = canvas.getContext("2d");
       if (!ctx) continue;
-      const cup = cups[i];
-      if (!cup) continue;
+      const obj = objects[i];
+      if (!obj) continue;
 
       const w = canvas.width;
       const h = canvas.height;
 
-      if (cup.points_x.length === 0) {
+      if (obj.points_x.length === 0) {
         ctx.fillStyle = "#1a1a2e";
         ctx.fillRect(0, 0, w, h);
         ctx.fillStyle = "#525252";
@@ -136,10 +125,10 @@
         continue;
       }
 
-      const key = scaleKey(cup);
+      const key = scaleKey(obj);
       let info = scaleCache.get(key);
       if (!info) {
-        info = computeScale(cup, w, h);
+        info = computeScale(obj, w, h);
         scaleCache.set(key, info);
         if (scaleCache.size > 20) {
           const first = scaleCache.keys().next().value!;
@@ -147,7 +136,7 @@
         }
       }
 
-      renderFrame(ctx, w, h, cup, info, yaw, cosYaw, sinYaw);
+      renderFrame(ctx, w, h, obj, info, cosYaw, sinYaw);
     }
 
     animId = requestAnimationFrame(renderAllCanvases);
@@ -156,14 +145,14 @@
   function renderFrame(
     ctx: CanvasRenderingContext2D,
     w: number, h: number,
-    cup: CupDetail,
+    obj: SegmentedObject,
     info: ScaleInfo,
-    yaw: number, cosYaw: number, sinYaw: number,
+    cosYaw: number, sinYaw: number,
   ) {
-    const { scale, minZ, rangeZ, cx, cy, cz } = info;
-    const px = cup.points_x;
-    const py = cup.points_y;
-    const pz = cup.points_z;
+    const { scale, minZ, rangeZ, cx, cy } = info;
+    const px = obj.points_x;
+    const py = obj.points_y;
+    const pz = obj.points_z;
 
     ctx.fillStyle = "#1a1a2e";
     ctx.fillRect(0, 0, w, h);
@@ -173,7 +162,7 @@
     for (let i = 0; i < px.length; i++) {
       const dx = px[i] - cx;
       const dy = py[i] - cy;
-      const dz = pz[i] - cz;
+      const dz = pz[i] - info.cz;
       const rx = dx * cosYaw - dy * sinYaw;
       const ry = dx * sinYaw + dy * cosYaw;
       const sx = rx;
@@ -222,10 +211,6 @@
     ctx.fillText("Z", axOx + 4, axOy - axLen * COS_PITCH - 2);
   }
 
-  function fmt(v: number): string {
-    return v.toFixed(1);
-  }
-
   onMount(() => {
     animId = requestAnimationFrame(renderAllCanvases);
   });
@@ -237,7 +222,7 @@
 
 <div class="panel-container">
   <div class="panel-header">
-    <span class="panel-title">Cup Detection Details</span>
+    <span class="panel-title">Segmented Objects</span>
     <button class="close-btn" onclick={onClose} aria-label="Close panel">
       <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
         <path d="M12 4.7L11.3 4 8 7.3 4.7 4 4 4.7 7.3 8 4 11.3l.7.7L8 8.7l3.3 3.3.7-.7L8.7 8z"/>
@@ -245,65 +230,23 @@
     </button>
   </div>
 
-  {#if cups.length === 0}
+  {#if objects.length === 0}
     <div class="empty-state">No objects detected</div>
   {:else}
-    <div class="cups-grid">
-      {#each cups as cup, i (cup.index)}
-        <div class="cup-card" class:valid={cup.valid} class:invalid={!cup.valid}>
+    <div class="objects-grid">
+      {#each objects as obj, i (obj.index)}
+        <div class="object-card">
           <div class="card-header">
-            <span class="cup-label">Object {cup.index}</span>
-            <Tag type={cup.valid ? "green" : "red"}>
-              {cup.valid ? "VALID" : "INVALID"}
-            </Tag>
+            <span class="object-label">Object {obj.index}</span>
+            <span class="point-badge">{obj.totalPoints} pts</span>
           </div>
-
           <div class="card-body">
-            <div class="pointcloud-wrapper">
-              <canvas
-                bind:this={canvasRefs[i]}
-                width="500"
-                height="500"
-                class="pointcloud-canvas"
-              ></canvas>
-              <span class="point-count">{cup.total_points} pts</span>
-            </div>
-
-            <div class="constraints">
-              <div class="constraint-row" class:pass={cup.height_pass} class:fail={!cup.height_pass}>
-                <div class="constraint-header">
-                  <span class="constraint-icon">{cup.height_pass ? "✓" : "✗"}</span>
-                  <span class="constraint-name">Height</span>
-                </div>
-                <div class="constraint-detail">
-                  <span class="constraint-value">{fmt(cup.height)}mm</span>
-                  <span class="constraint-expected">expected {fmt(cup.expected_height)}mm</span>
-                </div>
-                <div class="constraint-delta">
-                  Δ {fmt(cup.height_delta)}mm
-                  {#if !cup.height_pass}
-                    <span class="threshold-note">exceeds {fmt(cup.good_delta)}mm threshold</span>
-                  {/if}
-                </div>
-              </div>
-
-              <div class="constraint-row" class:pass={cup.width_pass} class:fail={!cup.width_pass}>
-                <div class="constraint-header">
-                  <span class="constraint-icon">{cup.width_pass ? "✓" : "✗"}</span>
-                  <span class="constraint-name">Width</span>
-                </div>
-                <div class="constraint-detail">
-                  <span class="constraint-value">{fmt(cup.width)}mm</span>
-                  <span class="constraint-expected">expected {fmt(cup.expected_width)}mm</span>
-                </div>
-                <div class="constraint-delta">
-                  Δ {fmt(cup.width_delta)}mm
-                  {#if !cup.width_pass}
-                    <span class="threshold-note">exceeds {fmt(cup.good_delta)}mm threshold</span>
-                  {/if}
-                </div>
-              </div>
-            </div>
+            <canvas
+              bind:this={canvasRefs[i]}
+              width="500"
+              height="500"
+              class="pointcloud-canvas"
+            ></canvas>
           </div>
         </div>
       {/each}
@@ -363,7 +306,7 @@
     font-size: 0.85rem;
   }
 
-  .cups-grid {
+  .objects-grid {
     padding: 12px;
     display: flex;
     flex-direction: row;
@@ -374,21 +317,15 @@
     min-height: 0;
   }
 
-  .cup-card {
+  .object-card {
     background: #222;
     border-radius: 6px;
-    border-top: 3px solid #525252;
+    border-top: 3px solid #4589ff;
     overflow: hidden;
     flex: 0 0 calc(50% - 6px);
     min-width: 280px;
     display: flex;
     flex-direction: column;
-  }
-  .cup-card.valid {
-    border-top-color: #42be65;
-  }
-  .cup-card.invalid {
-    border-top-color: #fa4d56;
   }
 
   .card-header {
@@ -400,30 +337,21 @@
     flex-shrink: 0;
   }
 
-  .cup-label {
+  .object-label {
     color: #e0e0e0;
     font-size: 0.8rem;
     font-weight: 600;
   }
 
-  .card-header :global(.bx--tag) {
-    margin: 0;
+  .point-badge {
+    color: #6f6f6f;
     font-size: 0.7rem;
   }
 
   .card-body {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px;
     flex: 1;
     min-height: 0;
-  }
-
-  .pointcloud-wrapper {
-    position: relative;
-    flex: 1;
-    min-height: 0;
+    padding: 4px;
   }
 
   .pointcloud-canvas {
@@ -432,90 +360,5 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
-  }
-
-  .point-count {
-    position: absolute;
-    bottom: 4px;
-    right: 6px;
-    font-size: 0.65rem;
-    color: #6f6f6f;
-  }
-
-  .constraints {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .constraint-row {
-    padding: 8px 10px;
-    border-radius: 4px;
-    background: #2a2a2a;
-  }
-  .constraint-row.pass {
-    border-left: 2px solid #42be65;
-  }
-  .constraint-row.fail {
-    border-left: 2px solid #fa4d56;
-    background: #2a1f1f;
-  }
-
-  .constraint-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 4px;
-  }
-
-  .constraint-icon {
-    font-size: 0.85rem;
-  }
-  .pass .constraint-icon {
-    color: #42be65;
-  }
-  .fail .constraint-icon {
-    color: #fa4d56;
-  }
-
-  .constraint-name {
-    color: #e0e0e0;
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .constraint-detail {
-    display: flex;
-    gap: 8px;
-    align-items: baseline;
-  }
-
-  .constraint-value {
-    color: #f4f4f4;
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-
-  .constraint-expected {
-    color: #6f6f6f;
-    font-size: 0.75rem;
-  }
-
-  .constraint-delta {
-    color: #a8a8a8;
-    font-size: 0.75rem;
-    margin-top: 2px;
-  }
-  .fail .constraint-delta {
-    color: #fa4d56;
-  }
-
-  .threshold-note {
-    color: #fa4d56;
-    font-style: italic;
-    margin-left: 4px;
   }
 </style>

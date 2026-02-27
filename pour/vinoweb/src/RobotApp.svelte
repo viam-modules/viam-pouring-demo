@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { useRobotClient } from "@viamrobotics/svelte-sdk";
-  import { GenericServiceClient } from "@viamrobotics/sdk";
-  import { ArmClient } from "@viamrobotics/sdk";
-  import { Struct, type JsonValue } from "@bufbuild/protobuf";
+  import { GenericServiceClient, VisionClient, ArmClient } from "@viamrobotics/sdk";
+  import { Struct } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
   import CupDetailPanel from "./lib/CupDetailPanel.svelte";
-  import type { CupDetail } from "./lib/CupDetailPanel.svelte";
+  import type { SegmentedObject } from "./lib/CupDetailPanel.svelte";
+  import { parsePCD } from "./lib/parsePCD.js";
   import type { Joint } from "./lib/types.js";
 
   // --- Pouring status ---
@@ -22,52 +22,15 @@
     | "manual mode";
   let status: StatusKey = $state("standby") as StatusKey;
 
-  // --- Detection status ---
-  interface DetectionInfo {
-    total_cup_objects: number;
-    valid_cups: number;
-    invalid_cups: number;
-    bottles: number;
-  }
-  let detection: DetectionInfo = $state({
-    total_cup_objects: 0,
-    valid_cups: 0,
-    invalid_cups: 0,
-    bottles: 0,
-  });
+  // --- Detection state (driven by frontend vision calls) ---
+  let objectCount = $state(0);
+  let segmentedObjects: SegmentedObject[] = $state([]);
 
   // --- Cup detail panel ---
   let cupPanelOpen = $state(false);
-  let cupDetails: CupDetail[] = $state([]);
-  let cupDetailLastFetch = 0;
-  const cupDetailRefreshMs = 1000;
 
   function toggleCupPanel() {
     cupPanelOpen = !cupPanelOpen;
-    if (cupPanelOpen) {
-      cupDetailLastFetch = 0;
-    }
-  }
-
-  function parseCupDetails(r: any): CupDetail[] {
-    if (!r?.cups || !Array.isArray(r.cups)) return [];
-    return r.cups.map((c: any) => ({
-      index: c.index ?? 0,
-      valid: c.valid ?? false,
-      height: c.height ?? 0,
-      expected_height: c.expected_height ?? 0,
-      height_delta: c.height_delta ?? 0,
-      height_pass: c.height_pass ?? false,
-      width: c.width ?? 0,
-      expected_width: c.expected_width ?? 0,
-      width_delta: c.width_delta ?? 0,
-      width_pass: c.width_pass ?? false,
-      good_delta: c.good_delta ?? 0,
-      total_points: c.total_points ?? 0,
-      points_x: c.points_x ?? [],
-      points_y: c.points_y ?? [],
-      points_z: c.points_z ?? [],
-    }));
   }
 
   const statusMessages: Record<StatusKey, string> = {
@@ -131,9 +94,12 @@
 
   // --- Robot client and polling logic ---
   const robotClientStore = useRobotClient(() => "xxx");
-  let generic: GenericServiceClient | null = null;
+  let cartClient: GenericServiceClient | null = null;
+  let visionClient: VisionClient | null = null;
   let pollingHandle: ReturnType<typeof setInterval> | null = null;
-  let pollingInterval = 250; // Polling interval in milliseconds
+  let pollingInterval = 250;
+  let visionLastFetch = 0;
+  const visionRefreshMs = 1000;
 
   // -- Robot Arms ---
   let leftArm: ArmClient | null = null;
@@ -145,12 +111,13 @@
     if (robotClient && !pollingHandle) {
       if (!leftArm) leftArm = new ArmClient(robotClient, "left-arm");
       if (!rightArm) rightArm = new ArmClient(robotClient, "right-arm");
-      if (!generic) generic = new GenericServiceClient(robotClient, "cart");
+      if (!cartClient) cartClient = new GenericServiceClient(robotClient, "cart");
+      if (!visionClient) visionClient = new VisionClient(robotClient, "cup-finder-segment");
 
       pollingHandle = setInterval(async () => {
-        // --- Status ---
+        // --- Cart status (pour workflow state) ---
         try {
-          const result = await generic!.doCommand(
+          const result = await cartClient!.doCommand(
             Struct.fromJson({ status: true })
           );
           if (result && typeof result === "object") {
@@ -165,29 +132,31 @@
                 status = statusStr as StatusKey;
               }
             }
-            if (r.detection && typeof r.detection === "object") {
-              detection = {
-                total_cup_objects: r.detection.total_cup_objects ?? 0,
-                valid_cups: r.detection.valid_cups ?? 0,
-                invalid_cups: r.detection.invalid_cups ?? 0,
-                bottles: r.detection.bottles ?? 0,
-              };
-            }
           }
         } catch (err) {
           // Optionally handle status polling error
         }
 
-        // --- Cup details (throttled, only when panel open) ---
-        if (cupPanelOpen && Date.now() - cupDetailLastFetch >= cupDetailRefreshMs) {
+        // --- Vision: GetObjectPointClouds (throttled) ---
+        if (Date.now() - visionLastFetch >= visionRefreshMs) {
           try {
-            const detailResult = await generic!.doCommand(
-              Struct.fromJson({ cup_details: true })
-            );
-            cupDetails = parseCupDetails(detailResult as any);
-            cupDetailLastFetch = Date.now();
+            const pcos = await visionClient!.getObjectPointClouds("");
+            objectCount = pcos.length;
+
+            const parsed: SegmentedObject[] = pcos.map((pco, idx) => {
+              const pc = parsePCD(pco.pointCloud);
+              return {
+                index: idx,
+                totalPoints: pc.x.length,
+                points_x: pc.x,
+                points_y: pc.y,
+                points_z: pc.z,
+              };
+            });
+            segmentedObjects = parsed;
+            visionLastFetch = Date.now();
           } catch (err) {
-            // Optionally handle cup detail error
+            // Optionally handle vision error
           }
         }
 
@@ -211,7 +180,7 @@
           } catch (err) {
             // Optionally handle right arm error
           }
-          panesData = panesData; // triggers $state reactivity without remounting children
+          panesData = panesData;
         }
       }, pollingInterval);
     }
@@ -230,11 +199,11 @@
 
   <MainContent panes={panesData} {status} {cupPanelOpen}>
     {#snippet statusBar()}
-      <Status message={statusMessages[status]} {detection} onCupClick={toggleCupPanel} {cupPanelOpen} />
+      <Status message={statusMessages[status]} {objectCount} onCupClick={toggleCupPanel} {cupPanelOpen} />
     {/snippet}
     {#snippet detailPanel()}
       {#if cupPanelOpen}
-        <CupDetailPanel cups={cupDetails} onClose={() => cupPanelOpen = false} />
+        <CupDetailPanel objects={segmentedObjects} onClose={() => cupPanelOpen = false} />
       {/if}
     {/snippet}
   </MainContent>
