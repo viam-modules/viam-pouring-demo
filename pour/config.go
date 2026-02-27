@@ -79,22 +79,19 @@ type Config struct {
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 
+	// Optional: PoseTracker for the gripper AprilTag visible to glass-cam during pour
+	GlassPourAprilTagService string `json:"glass_pour_april_tag_service"`
+	// AprilTag ID to query from the gripper tracker (default "0")
+	GlassPourAprilTagID string `json:"glass_pour_april_tag_id"`
+
 	// Optional: PoseTracker for the center AprilTag (right camera)
 	AprilTagServiceRight string `json:"april_tag_service_right"`
 	// Optional: PoseTracker for the center AprilTag (left camera)
 	AprilTagServiceLeft string `json:"april_tag_service_left"`
 	// Tag body name to query for both cameras (default "0")
 	AprilTagIDCenter string `json:"april_tag_id_center"`
-	// Expected tag position in camera frame when right arm is correctly positioned
-	ExpectedTagX float64 `json:"expected_tag_x"`
-	ExpectedTagY float64 `json:"expected_tag_y"`
-	ExpectedTagZ float64 `json:"expected_tag_z"`
-	// Expected tag position in camera frame when left arm is correctly positioned
-	ExpectedTagXLeft float64 `json:"expected_tag_x_left"`
-	ExpectedTagYLeft float64 `json:"expected_tag_y_left"`
-	ExpectedTagZLeft float64 `json:"expected_tag_z_left"`
 
-	// Max allowed deviation from expected tag position in mm (default 10)
+	// Max allowed deviation between the two cameras' world-frame tag positions in mm (default 10)
 	TagToleranceMM float64 `json:"tag_tolerance_mm"`
 
 	Loop bool `json:"loop"`
@@ -175,6 +172,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		optionals = append(optionals, cfg.AprilTagServiceLeft)
 	}
 
+	if cfg.GlassPourAprilTagService != "" {
+		optionals = append(optionals, cfg.GlassPourAprilTagService)
+	}
+
 	return deps, optionals, nil
 }
 
@@ -229,6 +230,8 @@ type Pour1Components struct {
 
 	AprilTagTracker     posetracker.PoseTracker
 	AprilTagTrackerLeft posetracker.PoseTracker
+
+	GlassPourAprilTagTracker posetracker.PoseTracker
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -285,6 +288,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.AprilTagServiceLeft != "" {
 		c.AprilTagTrackerLeft, err = posetracker.FromDependencies(deps, config.AprilTagServiceLeft)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.GlassPourAprilTagService != "" {
+		c.GlassPourAprilTagTracker, err = posetracker.FromDependencies(deps, config.GlassPourAprilTagService)
 		if err != nil {
 			return nil, err
 		}

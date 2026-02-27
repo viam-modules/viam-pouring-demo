@@ -167,7 +167,8 @@ func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta
 		}
 
 		if heightDelta > goodDelta || widthDelta > goodDelta {
-			logger.Warnf("%s discarded object %d", objectType, idx)
+			logger.Warnf("%s discarded object %d: height=%.2f (correct=%.2f) width=%.2f (correct=%.2f)",
+				objectType, idx, height, correctHeight, width, correctWidth)
 			continue
 		}
 
