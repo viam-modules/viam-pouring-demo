@@ -8,8 +8,10 @@ import (
 	"image"
 	"image/png"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -47,6 +49,8 @@ const cupTopName = "cup-top"
 const gripperToCupCenterHack float64 = -35
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
+var noCupObjects = fmt.Errorf("no cup objects")
+var noBottleObjects = fmt.Errorf("no bottle objects")
 var noObjects = fmt.Errorf("no objects")
 
 func init() {
@@ -156,6 +160,7 @@ type VinoCart struct {
 
 	statusLock sync.Mutex
 	status     string
+	message    string
 
 	server *http.Server
 }
@@ -175,15 +180,11 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	if cmd["status"] == true {
-		return map[string]interface{}{"status": vc.getStatus()}, nil
+		return vc.getStatus(), nil
 	}
 
 	if cmd["stop"] == true {
 		return nil, multierr.Combine(vc.c.Arm.Stop(ctx, nil), vc.c.BottleArm.Stop(ctx, nil))
-	}
-
-	if cmd["get_tag_position"] == true {
-		return vc.getTagPosition(ctx)
 	}
 
 	if vc.loopCancel != nil {
@@ -191,8 +192,15 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	defer func() {
+		if r := recover(); r != nil {
+			vc.logger.Errorf("DoCommand panic: %v\n%s", r, debug.Stack())
+		}
 		vc.setStatus("manual mode")
 	}()
+
+	if cmd["get_tag_position"] == true {
+		return vc.getTagPosition(ctx)
+	}
 
 	if cmd["reset"] == true {
 		return nil, vc.Reset(ctx)
@@ -261,17 +269,25 @@ func (vc *VinoCart) run(ctx context.Context) {
 	}
 }
 
-func (vc *VinoCart) getStatus() string {
+func (vc *VinoCart) getStatus() map[string]interface{} {
 	vc.statusLock.Lock()
 	defer vc.statusLock.Unlock()
-	return vc.status
+	return map[string]interface{}{
+		"status":  vc.status,
+		"message": vc.message,
+	}
 }
 
 func (vc *VinoCart) setStatus(s string) {
-	vc.logger.Infof("setStatus: %v", s)
+	vc.setStatusWithMessage(s, "")
+}
+
+func (vc *VinoCart) setStatusWithMessage(s string, msg string) {
+	vc.logger.Infof("setStatus: %v (message: %v)", s, msg)
 	vc.statusLock.Lock()
 	defer vc.statusLock.Unlock()
 	vc.status = s
+	vc.message = msg
 }
 
 func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
@@ -1112,6 +1128,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
+	defer cancelPour()
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
@@ -1422,10 +1439,8 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 
 // checkAprilTagCalibration checks both configured AprilTag trackers against
 // their expected camera-frame positions. Returns an error if any visible tag
-// is outside the configured tolerance. Returns nil if no trackers are
-// configured or if the expected position has not been set (all zeros).
-// getTagPosition returns the current camera-frame position of the AprilTag(s)
-// from both configured trackers. Useful for determining expected_tag_x/y/z config values.
+// getTagPosition returns the world-frame position of the center AprilTag as seen
+// by each configured tracker. Useful for verifying the cross-camera calibration check.
 func (vc *VinoCart) getTagPosition(ctx context.Context) (map[string]interface{}, error) {
 	result := map[string]interface{}{}
 
@@ -1446,8 +1461,13 @@ func (vc *VinoCart) getTagPosition(ctx context.Context) (map[string]interface{},
 			result[side+"_visible"] = false
 			return
 		}
-		pt := tagPose.Pose().Point()
 		result[side+"_visible"] = true
+		worldPose, err := vc.robotClient.TransformPose(ctx, tagPose, "world", nil)
+		if err != nil {
+			result[side+"_transform_error"] = err.Error()
+			return
+		}
+		pt := worldPose.Pose().Point()
 		result[side+"_tag_x"] = pt.X
 		result[side+"_tag_y"] = pt.Y
 		result[side+"_tag_z"] = pt.Z
@@ -1456,72 +1476,116 @@ func (vc *VinoCart) getTagPosition(ctx context.Context) (map[string]interface{},
 	queryTracker(vc.c.AprilTagTracker, vc.conf.AprilTagIDCenter, "right")
 	queryTracker(vc.c.AprilTagTrackerLeft, vc.conf.AprilTagIDCenter, "left")
 
+	if err := vc.checkAprilTagCalibration(ctx); err != nil {
+		result["calibration_ok"] = false
+		result["calibration_error"] = err.Error()
+	} else {
+		result["calibration_ok"] = true
+	}
+
 	return result, nil
 }
 
+
+// checkAprilTagCalibration checks that the left and right cameras agree on
+// the center AprilTag's world-frame position. If they disagree by more than
+// TagToleranceMM, at least one arm base has drifted. Skips silently if either
+// tracker is unconfigured or the tag is not visible to either camera.
 func (vc *VinoCart) checkAprilTagCalibration(ctx context.Context) error {
+	if vc.c.AprilTagTracker == nil || vc.c.AprilTagTrackerLeft == nil {
+		return nil
+	}
+
 	tagID := vc.conf.AprilTagIDCenter
 	if tagID == "" {
 		tagID = "0"
 	}
 
-	if vc.c.AprilTagTracker != nil {
-		expected := r3.Vector{X: vc.conf.ExpectedTagX, Y: vc.conf.ExpectedTagY, Z: vc.conf.ExpectedTagZ}
-		if err := vc.checkOneAprilTracker(ctx, vc.c.AprilTagTracker, tagID, expected, vc.conf.tagToleranceMM(), "right"); err != nil {
-			return err
-		}
-	}
-
-	if vc.c.AprilTagTrackerLeft != nil {
-		expected := r3.Vector{X: vc.conf.ExpectedTagXLeft, Y: vc.conf.ExpectedTagYLeft, Z: vc.conf.ExpectedTagZLeft}
-		if err := vc.checkOneAprilTracker(ctx, vc.c.AprilTagTrackerLeft, tagID, expected, vc.conf.tagToleranceMM(), "left"); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// checkOneAprilTracker checks a single tracker's tag position against the
-// expected camera-frame position. Skips silently if the tag is not visible
-// or if expected is all zeros (unconfigured).
-func (vc *VinoCart) checkOneAprilTracker(ctx context.Context, tracker posetracker.PoseTracker, tagID string, expected r3.Vector, toleranceMM float64, side string) error {
-	poses, err := tracker.Poses(ctx, nil, nil)
+	rightPoses, err := vc.c.AprilTagTracker.Poses(ctx, nil, nil)
 	if err != nil {
-		return fmt.Errorf("april tag (%s): failed to get poses: %w", side, err)
+		return fmt.Errorf("april tag (right): failed to get poses: %w", err)
 	}
-
-	tagPose, ok := poses[tagID]
+	rightTagPose, ok := rightPoses[tagID]
 	if !ok {
-		vc.logger.Infof("april tag %q (%s side) not visible, skipping calibration check", tagID, side)
+		vc.logger.Infof("april tag %q not visible from right camera, skipping calibration check", tagID)
 		return nil
 	}
 
-	if expected.X == 0 && expected.Y == 0 && expected.Z == 0 {
-		vc.logger.Debugf("april tag (%s side) expected position not configured, skipping check", side)
+	leftPoses, err := vc.c.AprilTagTrackerLeft.Poses(ctx, nil, nil)
+	if err != nil {
+		return fmt.Errorf("april tag (left): failed to get poses: %w", err)
+	}
+	leftTagPose, ok := leftPoses[tagID]
+	if !ok {
+		vc.logger.Infof("april tag %q not visible from left camera, skipping calibration check", tagID)
 		return nil
 	}
 
-	actual := tagPose.Pose().Point()
-	delta := r3.Vector{X: actual.X - expected.X, Y: actual.Y - expected.Y, Z: actual.Z - expected.Z}
+	rightWorld, err := vc.robotClient.TransformPose(ctx, rightTagPose, "world", nil)
+	if err != nil {
+		return fmt.Errorf("april tag (right): failed to transform to world frame: %w", err)
+	}
+	leftWorld, err := vc.robotClient.TransformPose(ctx, leftTagPose, "world", nil)
+	if err != nil {
+		return fmt.Errorf("april tag (left): failed to transform to world frame: %w", err)
+	}
+
+	rp := rightWorld.Pose().Point()
+	lp := leftWorld.Pose().Point()
+	delta := r3.Vector{X: rp.X - lp.X, Y: rp.Y - lp.Y, Z: rp.Z - lp.Z}
 	dist := math.Sqrt(delta.X*delta.X + delta.Y*delta.Y + delta.Z*delta.Z)
+	toleranceMM := vc.conf.tagToleranceMM()
 
-	vc.logger.Infof("april tag calibration (%s): actual=(%.1f, %.1f, %.1f) expected=(%.1f, %.1f, %.1f) dist=%.1fmm tolerance=%.1fmm",
-		side, actual.X, actual.Y, actual.Z, expected.X, expected.Y, expected.Z, dist, toleranceMM)
+	vc.logger.Infof("april tag calibration: right_world=(%.1f, %.1f, %.1f) left_world=(%.1f, %.1f, %.1f) dist=%.1fmm tolerance=%.1fmm",
+		rp.X, rp.Y, rp.Z, lp.X, lp.Y, lp.Z, dist, toleranceMM)
 
 	if dist > toleranceMM {
-		return fmt.Errorf("arm has drifted (%s side): tag is %.1fmm from expected position (tolerance %.1fmm) — please reposition the arm",
-			side, dist, toleranceMM)
+		return fmt.Errorf("arm positions disagree: left and right cameras see the tag %.1fmm apart in world frame (tolerance %.1fmm) — please reposition the arms",
+			dist, toleranceMM)
 	}
-	vc.logger.Infof("april tag calibration (%s): OK — dist=%.1fmm within tolerance=%.1fmm", side, dist, toleranceMM)
+	vc.logger.Infof("april tag calibration: OK — cameras agree within %.1fmm (tolerance %.1fmm)", dist, toleranceMM)
 	return nil
 }
 
 func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
+	if vc.c.CupFinder == nil {
+		return nil, fmt.Errorf("cup_finder_service not configured")
+	}
 	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 15, "FindCups", vc.logger), nil
+}
+
+// GetCups finds the cups and returns them and their obstacles
+// requireCupToBePresent: if true, returns an error if no cups are found. This is useful for when we require a cup to be present such as picking it up.
+// allowMultiple: if true, returns multiple cups if found. This is useful for when we want to return all the cups found as obstacles to avoid.
+func (vc *VinoCart) GetCups(ctx context.Context, requireCupToBePresent bool, allowMultiple bool) ([]*viz.Object, []*referenceframe.GeometriesInFrame, error) {
+	start := time.Now()
+	objects, err := vc.FindCups(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	vc.logger.Infof("num cups: %v in %v", len(objects), time.Since(start))
+	for _, o := range objects {
+		vc.logger.Infof("\t cups: %v", o)
+	}
+
+	if len(objects) == 0 && requireCupToBePresent {
+		return nil, nil, noCupObjects
+	}
+
+	if len(objects) > 1 && !allowMultiple {
+		return nil, nil, fmt.Errorf("too many cups %d", len(objects))
+	}
+
+	obstacles := []*referenceframe.GeometriesInFrame{}
+	for i, o := range objects {
+		o.Geometry.SetLabel(fmt.Sprintf("cup-%d", i))
+		obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{o.Geometry}))
+	}
+	return objects, obstacles, nil
 }
