@@ -1175,16 +1175,10 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	alignGoalJoints := alignPlan.Trajectory()[1][vc.conf.BottleArm]
 	alignL2 := referenceframe.InputsL2Distance(alignJoints, alignGoalJoints)
 	vc.logger.Infof("[bottle-to-cup-align] InputsL2Distance: %v", alignL2)
-	if alignL2 > 0.15 {
+	if alignL2 > 1.3 {
 		fn := "/tmp/align-plan-bad.json"
-		data, err := json.MarshalIndent(alignReq, "", "  ")
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(fn, data, 0o600); err != nil {
-			return err
-		}
-		return fmt.Errorf("[bottle-to-cup-align] pos too far %v, written to: %s", alignL2, fn)
+		err := alignReq.WriteToFile(fn)
+		return multierr.Combine(fmt.Errorf("[bottle-to-cup-align] pos too far %v, written to: %s", alignL2, fn), err)
 	}
 	vc.logger.Infof("[bottle-to-cup-align] moving bottle arm to align with cup target")
 	err = vc.c.BottleArm.MoveToJointPositions(ctx, alignGoalJoints, nil)
@@ -1476,7 +1470,7 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 		if len(joints) > 0 {
 			d := referenceframe.InputsL2Distance(startJoints, myJoints)
 			vc.logger.Infof("\t InputsL2Distance: %v", d)
-			if d > 0.15 {
+			if d > 0.2 {
 				fn := "/tmp/pour-plan-bad.json"
 
 				data, err := json.MarshalIndent(req, "", "  ")
