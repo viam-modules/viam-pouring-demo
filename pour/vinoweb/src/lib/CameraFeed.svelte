@@ -11,10 +11,101 @@
   }
 
   let { name, partID, label, overlay }: Props = $props();
+
+  let streamKey = $state(0);
+  let reconnecting = $state(false);
+  let containerRef: HTMLDivElement | undefined = $state();
+
+  const HEALTH_CHECK_MS = 3000;
+  const RECONNECT_DELAY_MS = 2000;
+
+  $effect(() => {
+    void streamKey;
+
+    let healthTimer: ReturnType<typeof setInterval> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let trackListeners: { track: MediaStreamTrack; handler: () => void }[] = [];
+    let settled = false;
+
+    const mountDelay = setTimeout(() => {
+      settled = true;
+      if (!containerRef) return;
+      const video = containerRef.querySelector("video");
+      if (!video) return;
+
+      function isStreamDead(): boolean {
+        if (!video!.srcObject || !(video!.srcObject instanceof MediaStream)) {
+          return false;
+        }
+        const tracks = video!.srcObject.getTracks();
+        return tracks.length > 0 && tracks.every((t) => t.readyState === "ended");
+      }
+
+      function doReconnect() {
+        if (reconnecting) return;
+        reconnecting = true;
+        cleanupTrackListeners();
+        if (healthTimer) clearInterval(healthTimer);
+        healthTimer = null;
+
+        reconnectTimer = setTimeout(() => {
+          streamKey++;
+          reconnecting = false;
+        }, RECONNECT_DELAY_MS);
+      }
+
+      function attachTrackListeners() {
+        cleanupTrackListeners();
+        if (!video!.srcObject || !(video!.srcObject instanceof MediaStream)) return;
+        for (const track of video!.srcObject.getTracks()) {
+          const handler = () => doReconnect();
+          track.addEventListener("ended", handler);
+          trackListeners.push({ track, handler });
+        }
+      }
+
+      function cleanupTrackListeners() {
+        for (const { track, handler } of trackListeners) {
+          track.removeEventListener("ended", handler);
+        }
+        trackListeners = [];
+      }
+
+      healthTimer = setInterval(() => {
+        if (reconnecting) return;
+        if (!video!.srcObject || !(video!.srcObject instanceof MediaStream)) return;
+
+        attachTrackListeners();
+
+        if (isStreamDead()) {
+          doReconnect();
+        }
+      }, HEALTH_CHECK_MS);
+    }, 1000);
+
+    return () => {
+      clearTimeout(mountDelay);
+      if (healthTimer) clearInterval(healthTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      for (const { track, handler } of trackListeners) {
+        track.removeEventListener("ended", handler);
+      }
+    };
+  });
 </script>
 
-<div class="camera-feed">
-  <CameraStream {name} {partID} />
+<div class="camera-feed" bind:this={containerRef}>
+  {#key streamKey}
+    <CameraStream {name} {partID} />
+  {/key}
+
+  {#if reconnecting}
+    <div class="reconnect-overlay">
+      <div class="reconnect-spinner"></div>
+      <span class="reconnect-text">Reconnecting...</span>
+    </div>
+  {/if}
+
   {#if overlay}
     <div class="overlay left">
       {@render overlay()}
@@ -66,6 +157,40 @@
     color: #ffffff;
     border: none;
     border-radius: 15px;
+  }
+
+  .reconnect-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+  }
+
+  .reconnect-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #4589ff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .reconnect-text {
+    color: #c6c6c6;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
   }
 
   .overlay.left {

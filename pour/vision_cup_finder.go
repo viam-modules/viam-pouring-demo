@@ -142,6 +142,39 @@ func (vcf *visionCupFinder) DoCommand(ctx context.Context, extra map[string]inte
 	return nil, nil
 }
 
+type CupConstraintResult struct {
+	Height      float64
+	ExpHeight   float64
+	HeightDelta float64
+	HeightPass  bool
+	Width       float64
+	ExpWidth    float64
+	WidthDelta  float64
+	WidthPass   bool
+	Valid       bool
+	GoodDelta   float64
+}
+
+func AnalyzeObject(o *viz.Object, correctHeight, correctWidth, goodDelta float64) CupConstraintResult {
+	md := o.MetaData()
+	height := md.MaxZ
+	width := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
+	heightDelta := math.Abs(height - correctHeight)
+	widthDelta := math.Abs(correctWidth - width)
+	return CupConstraintResult{
+		Height:      height,
+		ExpHeight:   correctHeight,
+		HeightDelta: heightDelta,
+		HeightPass:  heightDelta <= goodDelta,
+		Width:       width,
+		ExpWidth:    correctWidth,
+		WidthDelta:  widthDelta,
+		WidthPass:   widthDelta <= goodDelta,
+		Valid:       heightDelta <= goodDelta && widthDelta <= goodDelta,
+		GoodDelta:   goodDelta,
+	}
+}
+
 func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, logger logging.Logger) []*viz.Object {
 	good := []*viz.Object{}
 
