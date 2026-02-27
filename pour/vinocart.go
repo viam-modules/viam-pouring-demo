@@ -1039,14 +1039,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	vc.logger.Infof("[bottle-to-cup-align] InputsL2Distance: %v", alignL2)
 	if alignL2 > 0.15 {
 		fn := "/tmp/align-plan-bad.json"
-		data, err := json.MarshalIndent(alignReq, "", "  ")
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(fn, data, 0o600); err != nil {
-			return err
-		}
-		return fmt.Errorf("[bottle-to-cup-align] pos too far %v, written to: %s", alignL2, fn)
+		err := alignReq.WriteToFile(fn)
+		return multierr.Combine(fmt.Errorf("[bottle-to-cup-align] pos too far %v, written to: %s", alignL2, fn), err)
 	}
 	vc.logger.Infof("[bottle-to-cup-align] moving bottle arm to align with cup target")
 	err = vc.c.BottleArm.MoveToJointPositions(ctx, alignGoalJoints, nil)
