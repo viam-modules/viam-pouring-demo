@@ -1332,7 +1332,7 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 		if len(joints) > 0 {
 			d := referenceframe.InputsL2Distance(startJoints, myJoints)
 			vc.logger.Infof("\t InputsL2Distance: %v", d)
-			if d > 0.15 {
+			if d > 0.2 {
 				fn := "/tmp/pour-plan-bad.json"
 
 				data, err := json.MarshalIndent(req, "", "  ")
