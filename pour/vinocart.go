@@ -1034,18 +1034,45 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	if len(alignPlan.Trajectory()) != 2 {
 		return fmt.Errorf("[bottle-to-cup-align] unexpected trajectory length (%d)", len(alignPlan.Trajectory()))
 	}
-	alignGoalJoints := alignPlan.Trajectory()[1][vc.conf.BottleArm]
-	alignL2 := referenceframe.InputsL2Distance(alignJoints, alignGoalJoints)
-	vc.logger.Infof("[bottle-to-cup-align] InputsL2Distance: %v", alignL2)
-	if alignL2 > 1.3 {
-		fn := "/tmp/align-plan-bad.json"
-		err := alignReq.WriteToFile(fn)
-		return multierr.Combine(fmt.Errorf("[bottle-to-cup-align] pos too far %v, written to: %s", alignL2, fn), err)
+	const maxAlignTries = 5
+	var lastErr error
+	for try := 1; try <= maxAlignTries; try++ {
+		alignGoalJoints := alignPlan.Trajectory()[1][vc.conf.BottleArm]
+		alignL2 := referenceframe.InputsL2Distance(alignJoints, alignGoalJoints)
+		vc.logger.Infof("[bottle-to-cup-align][try %d] InputsL2Distance: %v", try, alignL2)
+		if alignL2 > 1.3 {
+			fn := fmt.Sprintf("/tmp/align-plan-bad-try-%d.json", try)
+			debugErr := alignReq.WriteToFile(fn)
+			if debugErr != nil {
+				vc.logger.Errorf("[bottle-to-cup-align][try %d] failed to write debug: %v", try, debugErr)
+			} else {
+				vc.logger.Warnf("[bottle-to-cup-align][try %d] debug written to %s", try, fn)
+			}
+			lastErr = fmt.Errorf("[bottle-to-cup-align][try %d] pos too far: %v", try, alignL2)
+			// On all but the final try, replan 
+			if try < maxAlignTries {
+				vc.logger.Warnf("[bottle-to-cup-align][try %d] L2 too high, replanning...", try)
+				alignPlan, _, err = armplanning.PlanMotion(ctx, vc.logger, alignReq)
+				if err != nil {
+					return fmt.Errorf("failed to replan bottle alignment on try %d: %w", try, err)
+				}
+				continue
+			} else {
+				return lastErr
+			}
+		}
+		vc.logger.Infof("[bottle-to-cup-align][try %d] moving bottle arm to align with cup target", try)
+		err = vc.c.BottleArm.MoveToJointPositions(ctx, alignGoalJoints, nil)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to align bottle to cup on try %d: %w", try, err)
+			continue
+		}
+		// Success!
+		lastErr = nil
+		break
 	}
-	vc.logger.Infof("[bottle-to-cup-align] moving bottle arm to align with cup target")
-	err = vc.c.BottleArm.MoveToJointPositions(ctx, alignGoalJoints, nil)
-	if err != nil {
-		return fmt.Errorf("failed to align bottle to cup: %w", err)
+	if lastErr != nil {
+		return lastErr
 	}
 
 	pp, err := vc.SetupPourPositions(ctx)
@@ -1334,24 +1361,10 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 			vc.logger.Infof("\t InputsL2Distance: %v", d)
 			if d > 0.2 {
 				fn := "/tmp/pour-plan-bad.json"
-
-				data, err := json.MarshalIndent(req, "", "  ")
-				if err != nil {
-					return nil, err
+				if writeErr := req.WriteToFile(fn); writeErr != nil {
+					vc.logger.Errorf("failed to write pour debug: %v", writeErr)
 				}
-				file, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-				if err != nil {
-					return nil, err
-				}
-				defer file.Close()
-
-				_, err = file.Write(data)
-				if err != nil {
-					return nil, err
-				}
-
 				return nil, fmt.Errorf("pourPlan pos too far %v, written to: %s", d, fn)
-
 			}
 		}
 
