@@ -98,7 +98,6 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 	if err != nil {
 		logger.Warnf("can't connect to app: %v", err)
 	} else {
-		defer appClient.Close()
 		dataClient = appClient.DataClient()
 	}
 
@@ -110,7 +109,7 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		// Directory already exists, which is fine
 	}
 
-	g, err := NewVinoCart(ctx, config, c, robotClient, dataClient, logger)
+	g, err := NewVinoCart(ctx, config, c, robotClient, appClient, dataClient, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -119,11 +118,12 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 	return g, nil
 }
 
-func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client robot.Robot, dataClient *app.DataClient, logger logging.Logger) (*VinoCart, error) {
+func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client robot.Robot, appClient *app.ViamClient, dataClient *app.DataClient, logger logging.Logger) (*VinoCart, error) {
 	vc := &VinoCart{
 		conf:        conf,
 		c:           c,
 		robotClient: client,
+		appClient:   appClient,
 		dataClient:  dataClient,
 		logger:      logger,
 	}
@@ -186,6 +186,7 @@ type VinoCart struct {
 	conf   *Config
 
 	robotClient robot.Robot
+	appClient   *app.ViamClient
 	dataClient  *app.DataClient
 
 	c *Pour1Components
@@ -222,7 +223,11 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 		vc.loopWaitGroup.Wait()
 	}
 
-	return multierr.Combine(vc.robotClient.Close(ctx), vc.server.Close())
+	var appClientErr error
+	if vc.appClient != nil {
+		appClientErr = vc.appClient.Close()
+	}
+	return multierr.Combine(vc.robotClient.Close(ctx), vc.server.Close(), appClientErr)
 }
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
