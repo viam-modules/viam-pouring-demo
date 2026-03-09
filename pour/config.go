@@ -9,7 +9,6 @@ import (
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
-	"go.viam.com/rdk/services/datamanager"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
 )
@@ -75,7 +74,6 @@ type Config struct {
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 	DataFullnessService  string `json:"data_fullness_service"`
-	DataManagerService   string `json:"data_management_service"`
 
 	// pass in the org api key for data client
 	APIKey   string `json:"api_key"`
@@ -127,10 +125,6 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.CupFinderService != "" {
 		optionals = append(optionals, cfg.CupFinderService)
-	}
-
-	if cfg.DataManagerService != "" {
-		optionals = append(optionals, cfg.DataManagerService)
 	}
 
 	if cfg.BottleGripper != "" {
@@ -194,7 +188,6 @@ type Pour1Components struct {
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
 	DataFullnessService  vision.Service
-	DataManagerService   datamanager.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -256,13 +249,6 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.DataFullnessService != "" {
 		c.DataFullnessService, err = vision.FromDependencies(deps, config.DataFullnessService)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if config.DataManagerService != "" {
-		c.DataManagerService, err = datamanager.FromDependencies(deps, config.DataManagerService)
 		if err != nil {
 			return nil, err
 		}

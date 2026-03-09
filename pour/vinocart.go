@@ -54,10 +54,12 @@ const overPour = "over-pour"
 const trainingDataDirName = "training"
 
 const pickQualityDatasetID = "683f8952383a821481d9b5c9"
+const pourGlassFindDatasetID = "683d1210c83b3f3823ec70ff"
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
-var croppedCupDatasetID = "697001c2f47281733615ac57"
+
+const croppedCupDatasetID = "697001c2f47281733615ac57"
 
 func init() {
 	resource.RegisterService(generic.API, VinoCartModel, resource.Registration[resource.Resource, *Config]{Constructor: newVinoCart})
@@ -96,6 +98,7 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 	if err != nil {
 		logger.Warnf("can't connect to app: %v", err)
 	} else {
+		defer appClient.Close()
 		dataClient = appClient.DataClient()
 	}
 
@@ -206,8 +209,7 @@ type VinoCart struct {
 
 	useMLModel bool
 
-	cancelCapture context.CancelFunc
-	cancelPour    context.CancelFunc
+	cancelPour context.CancelFunc
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -641,8 +643,8 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 		threeFromEndBoundary := max(0, numFiles-3)
 		oneFromEndBoundary := max(0, numFiles-1)
 
-		for _, filepath := range files[threeFromEndBoundary:oneFromEndBoundary] {
-			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
+		for _, path := range files[threeFromEndBoundary:oneFromEndBoundary] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, path, notFullOpts); err != nil {
 				return err
 			}
 		}
@@ -660,14 +662,14 @@ func uploadTaggedImages(ctx context.Context, componentName string, folderPath st
 		fiveFromEndBoundary := max(0, numFiles-5)
 		threeFromEndBoundary := max(0, numFiles-3)
 
-		for _, filepath := range files[fiveFromEndBoundary:threeFromEndBoundary] {
-			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, notFullOpts); err != nil {
+		for _, path := range files[fiveFromEndBoundary:threeFromEndBoundary] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, path, notFullOpts); err != nil {
 				return err
 			}
 		}
 
-		for _, filepath := range files[threeFromEndBoundary:] {
-			if _, err := dataClient.FileUploadFromPath(ctx, pid, filepath, fullOpts); err != nil {
+		for _, path := range files[threeFromEndBoundary:] {
+			if _, err := dataClient.FileUploadFromPath(ctx, pid, path, fullOpts); err != nil {
 				return err
 			}
 		}
@@ -1273,7 +1275,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, pickQualityDatasetID)
+			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, pourGlassFindDatasetID)
 			if err != nil {
 				vc.logger.Errorf("error saving cup cam to data set: %v", err)
 			}
@@ -1307,13 +1309,18 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}()
 
 	// create directory where we save images, named after start time
-	pourTime := ""
-	pourTime = time.Now().Format("20060102_150405.000")
+	pourTime := time.Now().Format("20060102_150405.000")
 	subDir := filepath.Join(trainingDataDirName, pourTime)
 	if err := os.Mkdir(subDir, 0o755); err != nil {
 		return err
 	}
 	vc.imgDirName = subDir
+
+	if vc.useMLModel {
+		vc.logger.Info("*** using ml pour model ***")
+	} else {
+		vc.logger.Info("*** using image delta logic ***")
+	}
 
 	start := time.Now()
 	vc.logger.Infow("Got start timestamp for pour loop", "startTime", start.String())
@@ -1328,8 +1335,6 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		}
 
 		if vc.useMLModel {
-			vc.logger.Info("*** using ml pour model ***")
-
 			isFull, err := vc.handleMLPour(ctx, img, loopNumber)
 			if err != nil {
 				return err
@@ -1337,10 +1342,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			if isFull {
 				break
 			}
-
 		} else {
-			vc.logger.Info("*** using image delta logic ***")
-
 			if pd == nil {
 				pd = newPourDetector(img)
 			} else {

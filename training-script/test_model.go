@@ -150,22 +150,6 @@ func logEvaluationSummary(logger logging.Logger, result *EvaluationResult) {
 	for class := range result.ConfusionMatrix {
 		classes = append(classes, class)
 	}
-
-	// // header with fixed width
-	// header := fmt.Sprintf("%-12s", "Actual\\Pred")
-	// for _, class := range classes {
-	// 	header += fmt.Sprintf("%10s", class)
-	// }
-	// logger.Infof(header)
-
-	// // rows
-	// for actual, row := range result.ConfusionMatrix {
-	// 	line := fmt.Sprintf("%-12s", actual)
-	// 	for _, predicted := range classes {
-	// 		line += fmt.Sprintf("%10d", row[predicted])
-	// 	}
-	// 	logger.Infof(line)
-	// }
 }
 
 func createTestResultsDataset(
