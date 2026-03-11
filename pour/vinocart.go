@@ -3,7 +3,6 @@ package pour
 import (
 	"context"
 	"embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -1253,7 +1252,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 				vc.logger.Warnf("[bottle-to-cup-align][try %d] debug written to %s", try, fn)
 			}
 			lastErr = fmt.Errorf("[bottle-to-cup-align][try %d] pos too far: %v", try, alignL2)
-			// On all but the final try, replan 
+			// On all but the final try, replan
 			if try < maxAlignTries {
 				vc.logger.Warnf("[bottle-to-cup-align][try %d] L2 too high, replanning...", try)
 				alignPlan, _, err = armplanning.PlanMotion(ctx, vc.logger, alignReq)
