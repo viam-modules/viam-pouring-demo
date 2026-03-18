@@ -5,14 +5,10 @@
     message = "SENSING...",
     status = "standby",
     objectCount = 0,
-    onCupClick,
-    cupPanelOpen = false,
   }: {
     message?: string;
     status?: string;
     objectCount?: number;
-    onCupClick?: () => void;
-    cupPanelOpen?: boolean;
   } = $props();
 
   const statusTypes: Record<
@@ -68,9 +64,7 @@
 
         <div class="right-content">
           <div class="detection-indicators">
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="detection-item cups-clickable" class:cups-active={cupPanelOpen} onclick={onCupClick}>
+            <div class="detection-item">
               <span class="detection-label">Objects</span>
               <span class="detection-count" class:valid={objectCount > 0} class:dimmed={objectCount === 0}>
                 {objectCount}
@@ -158,24 +152,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-  }
-
-  .cups-clickable {
-    cursor: pointer;
     padding: 4px 8px;
-    border-radius: 4px;
-    transition: background 0.15s, border-color 0.15s;
-    border-bottom: 2px solid transparent;
-  }
-  .cups-clickable:hover {
-    background: #333;
-  }
-  .cups-active {
-    background: #2a2a2a;
-    border-bottom-color: #4589ff;
-  }
-  .cups-active .detection-label {
-    color: #4589ff;
   }
 
   .detection-label {

@@ -8,9 +8,10 @@
     partID: string;
     label: string;
     overlay?: Snippet;
+    fullOverlay?: Snippet;
   }
 
-  let { name, partID, label, overlay }: Props = $props();
+  let { name, partID, label, overlay, fullOverlay }: Props = $props();
 
   let streamKey = $state(0);
   let reconnecting = $state(false);
@@ -99,6 +100,10 @@
     <CameraStream {name} {partID} />
   {/key}
 
+  {#if fullOverlay}
+    {@render fullOverlay()}
+  {/if}
+
   {#if reconnecting}
     <div class="reconnect-overlay">
       <div class="reconnect-spinner"></div>
@@ -111,8 +116,8 @@
       {@render overlay()}
     </div>
   {/if}
-  <div class="camera-label">
-    <Tag type="blue" size="sm">{label}</Tag>
+  <div class="camera-label" class:disconnected={reconnecting}>
+    <Tag type={reconnecting ? "red" : "blue"} size="sm">{label}</Tag>
   </div>
 </div>
 
@@ -157,6 +162,10 @@
     color: #ffffff;
     border: none;
     border-radius: 15px;
+  }
+
+  .camera-label.disconnected :global(.bx--tag) {
+    background-color: rgba(218, 30, 40, 0.85);
   }
 
   .reconnect-overlay {

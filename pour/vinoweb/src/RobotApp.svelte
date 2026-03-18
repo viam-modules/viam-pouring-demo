@@ -5,10 +5,8 @@
   import { Struct } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
-  import CupDetailPanel from "./lib/CupDetailPanel.svelte";
-  import type { SegmentedObject } from "./lib/CupDetailPanel.svelte";
+  import type { SegmentedObject, Joint } from "./lib/types.js";
   import { parsePCD } from "./lib/parsePCD.js";
-  import type { Joint } from "./lib/types.js";
 
   type StatusKey =
     | "standby"
@@ -23,9 +21,6 @@
 
   let objectCount = $state(0);
   let segmentedObjects: SegmentedObject[] = $state([]);
-
-  let cupPanelOpen = $state(false);
-  function toggleCupPanel() { cupPanelOpen = !cupPanelOpen; }
 
   const statusMessages: Record<StatusKey, string> = {
     standby: "Ready to pour!",
@@ -55,11 +50,6 @@
   const initialJoints = Array.from(jointGenerator()) as Joint[];
   let leftJoints = $state([...initialJoints]);
   let rightJoints = $state([...initialJoints]);
-
-  let panesData = $state([
-    { joints: leftJoints, tableTitle: "Left Arm", camera: { name: "left-cam", partID: "xxx", label: "Left Camera" } },
-    { joints: rightJoints, tableTitle: "Right Arm", camera: { name: "right-cam", partID: "xxx", label: "Right Camera" } },
-  ]);
 
   const robotClientStore = useRobotClient(() => "xxx");
   let cartClient: GenericServiceClient | null = null;
@@ -100,7 +90,6 @@
             segmentedObjects = pcos.map((pco, idx) => {
               const pc = parsePCD(pco.pointCloud);
 
-              // Unit detection: if points look like meters (max abs < 10), convert to mm
               let maxAbs = 0;
               for (let k = 0; k < pc.x.length; k++) {
                 const ax = Math.abs(pc.x[k]), ay = Math.abs(pc.y[k]), az = Math.abs(pc.z[k]);
@@ -115,14 +104,6 @@
                   pc.y[k] *= unitScale;
                   pc.z[k] *= unitScale;
                 }
-                console.log(`[vision] Object ${idx}: PCD in meters, converted to mm (scale=${unitScale}, maxAbs=${maxAbs.toFixed(4)})`);
-              }
-
-              if (idx === 0 && pc.x.length > 0) {
-                let sx = 0, sy = 0, sz = 0;
-                for (let k = 0; k < pc.x.length; k++) { sx += pc.x[k]; sy += pc.y[k]; sz += pc.z[k]; }
-                sx /= pc.x.length; sy /= pc.x.length; sz /= pc.x.length;
-                console.log(`[vision] Object 0 centroid: (${sx.toFixed(1)}, ${sy.toFixed(1)}, ${sz.toFixed(1)}) mm, ${pc.x.length} pts`);
               }
 
               let dims: { x: number; y: number; z: number } | undefined;
@@ -151,9 +132,8 @@
         }
 
         if (leftArm && rightArm) {
-          try { const lj = await leftArm.getJointPositions(); panesData[0].joints = lj.values.map((position, index) => ({ index, position })); } catch (_) {}
-          try { const rj = await rightArm.getJointPositions(); panesData[1].joints = rj.values.map((position, index) => ({ index, position })); } catch (_) {}
-          panesData = panesData;
+          try { const lj = await leftArm.getJointPositions(); leftJoints = lj.values.map((position, index) => ({ index, position })); } catch (_) {}
+          try { const rj = await rightArm.getJointPositions(); rightJoints = rj.values.map((position, index) => ({ index, position })); } catch (_) {}
         }
       }, pollingInterval);
     }
@@ -163,18 +143,15 @@
 
 <div class="app-container">
   <aside class="sidebar"></aside>
-  <MainContent panes={panesData} {status} {cupPanelOpen}>
+  <MainContent
+    {segmentedObjects}
+    robotClient={robotClientStore.current ?? null}
+    {leftJoints}
+    {rightJoints}
+    {status}
+  >
     {#snippet statusBar()}
-      <Status message={statusMessages[status]} {objectCount} onCupClick={toggleCupPanel} {cupPanelOpen} />
-    {/snippet}
-    {#snippet detailPanel()}
-      {#if cupPanelOpen}
-        <CupDetailPanel
-          objects={segmentedObjects}
-          robotClient={robotClientStore.current ?? null}
-          onClose={() => cupPanelOpen = false}
-        />
-      {/if}
+      <Status message={statusMessages[status]} {objectCount} />
     {/snippet}
   </MainContent>
 </div>
