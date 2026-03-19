@@ -82,17 +82,8 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 
 	var dataClient *app.DataClient
 	var appClient *app.ViamClient
-	if config.APIKey != "" && config.APIKeyID != "" {
-		appClient, err = app.CreateViamClientWithAPIKey(
-			ctx,
-			app.Options{},
-			config.APIKey,
-			config.APIKeyID,
-			logger,
-		)
-	} else {
-		appClient, err = app.CreateViamClientFromEnvVars(ctx, nil, logger)
-	}
+
+	appClient, err = app.CreateViamClientFromEnvVars(ctx, nil, logger)
 
 	if err != nil {
 		logger.Warnf("can't connect to app: %v", err)
@@ -170,10 +161,6 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 		vc.logger.Infof("web listening on %s", vc.server.Addr)
 		vc.server.ListenAndServe()
 	}()
-
-	vc.pourStep = 0
-
-	vc.useMLModel = conf.UseMLModel
 	return vc, nil
 }
 
@@ -203,11 +190,7 @@ type VinoCart struct {
 
 	server *http.Server
 
-	pourStep int
-
 	imgDirName string
-
-	useMLModel bool
 
 	cancelPour context.CancelFunc
 }
@@ -381,7 +364,6 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
 	defer func() {
-		vc.pourStep = 0
 		if err := vc.cleanupImages(); err != nil {
 			vc.logger.Errorf("failed to cleanup images: %v\n", err)
 		}
@@ -1086,10 +1068,10 @@ func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
 }
 
 func (vc *VinoCart) getPourDetails(ctx context.Context, img image.Image) (string, float64, error) {
-	if vc.c.DataFullnessService == nil {
+	if vc.c.GlassFullnessService == nil {
 		return "", 0, nil
 	}
-	cs, err := vc.c.DataFullnessService.Classifications(ctx, img, 1, nil)
+	cs, err := vc.c.GlassFullnessService.Classifications(ctx, img, 1, nil)
 	if err != nil {
 		return "", 0, err
 	}
@@ -1341,8 +1323,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}
 	vc.imgDirName = subDir
 
-	if vc.useMLModel {
-		vc.logger.Info("*** using ml pour model ***")
+	if vc.conf.UseGlassFullnessMLModel {
+		vc.logger.Info("*** using glass fullness ml model ***")
 	} else {
 		vc.logger.Info("*** using image delta logic ***")
 	}
@@ -1359,8 +1341,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			return err
 		}
 
-		if vc.useMLModel {
-			isFull, err := vc.handleMLPour(ctx, img, loopNumber)
+		if vc.conf.UseGlassFullnessMLModel {
+			isFull, err := vc.getInferenceFromFullnessModel(ctx, img, loopNumber)
 			if err != nil {
 				return err
 			}
@@ -1383,7 +1365,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		}
 
 		sleepTime := (100 * time.Millisecond) - time.Since(loopStart)
-		vc.logger.Infof("going to sleep for %v", sleepTime)
+		vc.logger.Debugf("going to sleep for %v", sleepTime)
 		time.Sleep(sleepTime)
 		loopNumber++
 	}
@@ -1393,7 +1375,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	return nil
 }
 
-func (vc *VinoCart) handleMLPour(ctx context.Context, img image.Image, loopNumber int) (bool, error) {
+func (vc *VinoCart) getInferenceFromFullnessModel(ctx context.Context, img image.Image, loopNumber int) (bool, error) {
 	label, score, err := vc.getPourDetails(ctx, img)
 	if err != nil {
 		return false, err

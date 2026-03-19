@@ -73,15 +73,11 @@ type Config struct {
 
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
-	DataFullnessService  string `json:"data_fullness_service"`
-
-	// pass in the org api key for data client
-	APIKey   string `json:"api_key"`
-	APIKeyID string `json:"api_key_id"`
+	GlassFullnessService  string `json:"glass_fullness_service"`
 
 	Loop bool `json:"loop"`
 
-	UseMLModel bool `json:"use_ml"`
+	UseGlassFullnessMLModel bool `json:"use_glass_fullness_model"`
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
@@ -95,8 +91,8 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		deps = append(deps, cfg.PourGlassFindService)
 	}
 
-	if cfg.DataFullnessService != "" {
-		deps = append(deps, cfg.DataFullnessService)
+	if cfg.GlassFullnessService != "" {
+		deps = append(deps, cfg.GlassFullnessService)
 	}
 
 	if cfg.ArmName == "" {
@@ -187,7 +183,7 @@ type Pour1Components struct {
 
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
-	DataFullnessService  vision.Service
+	GlassFullnessService  vision.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -247,8 +243,8 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	if config.DataFullnessService != "" {
-		c.DataFullnessService, err = vision.FromDependencies(deps, config.DataFullnessService)
+	if config.GlassFullnessService != "" {
+		c.GlassFullnessService, err = vision.FromDependencies(deps, config.GlassFullnessService)
 		if err != nil {
 			return nil, err
 		}
