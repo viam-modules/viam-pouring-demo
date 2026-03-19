@@ -86,7 +86,7 @@ func realMain() error {
 		dataClient = appClient.DataClient()
 	}
 
-	vc, err := pour.NewVinoCart(ctx, cfg, p1c, client, dataClient, logger)
+	vc, err := pour.NewVinoCart(ctx, cfg, p1c, client, nil, dataClient, logger)
 	if err != nil {
 		return err
 	}

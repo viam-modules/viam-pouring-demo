@@ -6,7 +6,7 @@ import (
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
-	"go.viam.com/rdk/components/switch"
+	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/motion"
@@ -73,8 +73,11 @@ type Config struct {
 
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
+	GlassFullnessService  string `json:"glass_fullness_service"`
 
 	Loop bool `json:"loop"`
+
+	UseGlassFullnessMLModel bool `json:"use_glass_fullness_model"`
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
@@ -86,6 +89,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.PourGlassFindService != "" {
 		deps = append(deps, cfg.PourGlassFindService)
+	}
+
+	if cfg.GlassFullnessService != "" {
+		deps = append(deps, cfg.GlassFullnessService)
 	}
 
 	if cfg.ArmName == "" {
@@ -176,6 +183,7 @@ type Pour1Components struct {
 
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
+	GlassFullnessService  vision.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
@@ -230,6 +238,13 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 
 	if config.CupFinderService != "" {
 		c.CupFinder, err = vision.FromDependencies(deps, config.CupFinderService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if config.GlassFullnessService != "" {
+		c.GlassFullnessService, err = vision.FromDependencies(deps, config.GlassFullnessService)
 		if err != nil {
 			return nil, err
 		}
