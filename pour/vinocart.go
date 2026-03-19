@@ -1266,14 +1266,13 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	}
 	time.Sleep(500 * time.Millisecond)
 
-	// oldModel vars
 	start := time.Now()
 	loopNumber := 0
 
 	var pd *pourDetector
-	markedDifferent := false
 
 	totalTime := 15 * time.Second
+	markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
 	vc.cancelPour = cancelPour
