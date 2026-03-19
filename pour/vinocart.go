@@ -1267,6 +1267,9 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	time.Sleep(500 * time.Millisecond)
 
 	// oldModel vars
+	start := time.Now()
+	loopNumber := 0
+
 	var pd *pourDetector
 	markedDifferent := false
 
@@ -1328,10 +1331,6 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	} else {
 		vc.logger.Info("*** using image delta logic ***")
 	}
-
-	start := time.Now()
-	vc.logger.Infow("Got start timestamp for pour loop", "startTime", start.String())
-	loopNumber := 0
 
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
