@@ -8,8 +8,7 @@ import (
 	"image"
 	"image/png"
 	"io/fs"
-	"math"
-	"net/http"
+"net/http"
 	"os"
 	"runtime/debug"
 	"sync"
@@ -23,7 +22,6 @@ import (
 
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/camera"
-	"go.viam.com/rdk/components/posetracker"
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan/armplanning"
@@ -61,7 +59,7 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
-	c, err := Pour1ComponentsFromDependencies(config, deps)
+	c, err := Pour1ComponentsFromDependencies(config, deps, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +247,7 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 func (vc *VinoCart) run(ctx context.Context) {
 	defer vc.loopWaitGroup.Done()
 	for ctx.Err() == nil {
-		if err := vc.checkAprilTagCalibration(ctx); err != nil {
+		if err := vc.checkCalibration(ctx); err != nil {
 			vc.setStatusWithMessage("error", err.Error())
 			select {
 			case <-ctx.Done():
@@ -1432,110 +1430,32 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 
 // checkAprilTagCalibration checks both configured AprilTag trackers against
 // their expected camera-frame positions. Returns an error if any visible tag
-// getTagPosition returns the world-frame position of the center AprilTag as seen
-// by each configured tracker. Useful for verifying the cross-camera calibration check.
+// getTagPosition delegates to the calibration sensor's Readings.
 func (vc *VinoCart) getTagPosition(ctx context.Context) (map[string]interface{}, error) {
-	result := map[string]interface{}{}
-
-	queryTracker := func(tracker posetracker.PoseTracker, tagID, side string) {
-		if tracker == nil {
-			return
-		}
-		if tagID == "" {
-			tagID = "0"
-		}
-		poses, err := tracker.Poses(ctx, nil, nil)
-		if err != nil {
-			result[side+"_error"] = err.Error()
-			return
-		}
-		tagPose, ok := poses[tagID]
-		if !ok {
-			result[side+"_visible"] = false
-			return
-		}
-		result[side+"_visible"] = true
-		worldPose, err := vc.robotClient.TransformPose(ctx, tagPose, "world", nil)
-		if err != nil {
-			result[side+"_transform_error"] = err.Error()
-			return
-		}
-		pt := worldPose.Pose().Point()
-		result[side+"_tag_x"] = pt.X
-		result[side+"_tag_y"] = pt.Y
-		result[side+"_tag_z"] = pt.Z
+	if vc.c.CalibrationSensor == nil {
+		return map[string]interface{}{"calibration_ok": true, "reason": "no calibration sensor configured"}, nil
 	}
-
-	queryTracker(vc.c.AprilTagTracker, vc.conf.AprilTagIDCenter, "right")
-	queryTracker(vc.c.AprilTagTrackerLeft, vc.conf.AprilTagIDCenter, "left")
-
-	if err := vc.checkAprilTagCalibration(ctx); err != nil {
-		result["calibration_ok"] = false
-		result["calibration_error"] = err.Error()
-	} else {
-		result["calibration_ok"] = true
-	}
-
-	return result, nil
+	return vc.c.CalibrationSensor.Readings(ctx, nil)
 }
 
-// checkAprilTagCalibration checks that the left and right cameras agree on
-// the center AprilTag's world-frame position. If they disagree by more than
-// TagToleranceMM, at least one arm base has drifted. Skips silently if either
-// tracker is unconfigured or the tag is not visible to either camera.
-func (vc *VinoCart) checkAprilTagCalibration(ctx context.Context) error {
-	if vc.c.AprilTagTracker == nil || vc.c.AprilTagTrackerLeft == nil {
+// checkCalibration reads from the calibration-checker sensor and returns
+// an error if calibration_ok is false.
+func (vc *VinoCart) checkCalibration(ctx context.Context) error {
+	if vc.c.CalibrationSensor == nil {
 		return nil
 	}
-
-	tagID := vc.conf.AprilTagIDCenter
-	if tagID == "" {
-		tagID = "0"
-	}
-
-	rightPoses, err := vc.c.AprilTagTracker.Poses(ctx, nil, nil)
+	readings, err := vc.c.CalibrationSensor.Readings(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("april tag (right): failed to get poses: %w", err)
+		return fmt.Errorf("calibration sensor error: %w", err)
 	}
-	rightTagPose, ok := rightPoses[tagID]
+	ok, _ := readings["calibration_ok"].(bool)
 	if !ok {
-		vc.logger.Infof("april tag %q not visible from right camera, skipping calibration check", tagID)
-		return nil
+		errMsg, _ := readings["error"].(string)
+		if errMsg == "" {
+			errMsg = "calibration check failed"
+		}
+		return fmt.Errorf("%s", errMsg)
 	}
-
-	leftPoses, err := vc.c.AprilTagTrackerLeft.Poses(ctx, nil, nil)
-	if err != nil {
-		return fmt.Errorf("april tag (left): failed to get poses: %w", err)
-	}
-	leftTagPose, ok := leftPoses[tagID]
-	if !ok {
-		vc.logger.Infof("april tag %q not visible from left camera, skipping calibration check", tagID)
-		return nil
-	}
-
-	rightWorld, err := vc.robotClient.TransformPose(ctx, rightTagPose, "world", nil)
-	if err != nil {
-		return fmt.Errorf("april tag (right): failed to transform to world frame: %w", err)
-	}
-	leftWorld, err := vc.robotClient.TransformPose(ctx, leftTagPose, "world", nil)
-	if err != nil {
-		return fmt.Errorf("april tag (left): failed to transform to world frame: %w", err)
-	}
-
-	rp := rightWorld.Pose().Point()
-	lp := leftWorld.Pose().Point()
-	delta := r3.Vector{X: rp.X - lp.X, Y: rp.Y - lp.Y, Z: rp.Z - lp.Z}
-	dist := math.Sqrt(delta.X*delta.X + delta.Y*delta.Y + delta.Z*delta.Z)
-	toleranceMM := vc.conf.tagToleranceMM()
-
-	vc.logger.Infof("april tag calibration: right_world=(%.1f, %.1f, %.1f) left_world=(%.1f, %.1f, %.1f) dist=%.1fmm tolerance=%.1fmm",
-		rp.X, rp.Y, rp.Z, lp.X, lp.Y, lp.Z, dist, toleranceMM)
-
-	if dist > toleranceMM {
-		return fmt.Errorf("arm positions disagree: left and right cameras see the tag %.1fmm apart in world frame (tolerance %.1fmm) — please reposition the arms",
-			dist, toleranceMM)
-	}
-	vc.logger.Infof("april tag calibration: OK — cameras agree within %.1fmm (tolerance %.1fmm)", dist, toleranceMM)
 	return nil
 }
 

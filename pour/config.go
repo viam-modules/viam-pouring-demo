@@ -7,7 +7,9 @@ import (
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/posetracker"
+	"go.viam.com/rdk/components/sensor"
 	toggleswitch "go.viam.com/rdk/components/switch"
+	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/motion"
@@ -80,15 +82,8 @@ type Config struct {
 	// AprilTag ID to query from the gripper tracker (default "0")
 	GlassPourAprilTagID string `json:"glass_pour_april_tag_id"`
 
-	// Optional: PoseTracker for the center AprilTag (right camera)
-	AprilTagServiceRight string `json:"april_tag_service_right"`
-	// Optional: PoseTracker for the center AprilTag (left camera)
-	AprilTagServiceLeft string `json:"april_tag_service_left"`
-	// Tag body name to query for both cameras (default "0")
-	AprilTagIDCenter string `json:"april_tag_id_center"`
-
-	// Max allowed deviation between the two cameras' world-frame tag positions in mm (default 10)
-	TagToleranceMM float64 `json:"tag_tolerance_mm"`
+	// Optional: calibration-checker sensor from vmodutils
+	CalibrationSensor string `json:"calibration_sensor"`
 
 	Loop bool `json:"loop"`
 }
@@ -147,12 +142,8 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		deps = append(deps, cfg.GlassPourCam)
 	}
 
-	if cfg.AprilTagServiceRight != "" {
-		optionals = append(optionals, cfg.AprilTagServiceRight)
-	}
-
-	if cfg.AprilTagServiceLeft != "" {
-		optionals = append(optionals, cfg.AprilTagServiceLeft)
+	if cfg.CalibrationSensor != "" {
+		optionals = append(optionals, cfg.CalibrationSensor)
 	}
 
 	if cfg.GlassPourAprilTagService != "" {
@@ -174,13 +165,6 @@ func (c *Config) glassPourMotionThreshold() float64 {
 		return c.GlassPourMotionThreshold
 	}
 	return 4
-}
-
-func (c *Config) tagToleranceMM() float64 {
-	if c.TagToleranceMM > 0 {
-		return c.TagToleranceMM
-	}
-	return 10
 }
 
 func (c *Config) cupGripHeightOffset() float64 {
@@ -212,15 +196,20 @@ type Pour1Components struct {
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
 
-	AprilTagTracker     posetracker.PoseTracker
-	AprilTagTrackerLeft posetracker.PoseTracker
+	CalibrationSensor sensor.Sensor
 
 	GlassPourAprilTagTracker posetracker.PoseTracker
 }
 
-func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
+func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies, logger ...logging.Logger) (*Pour1Components, error) {
 	var err error
 	c := &Pour1Components{}
+
+	warnOptional := func(name, kind string, err error) {
+		if len(logger) > 0 && logger[0] != nil {
+			logger[0].Warnf("optional dependency %s (%s) not available: %v", name, kind, err)
+		}
+	}
 
 	c.Arm, err = arm.FromDependencies(deps, config.ArmName)
 	if err != nil {
@@ -268,31 +257,24 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	if config.AprilTagServiceRight != "" {
-		c.AprilTagTracker, err = posetracker.FromDependencies(deps, config.AprilTagServiceRight)
+	if config.CalibrationSensor != "" {
+		c.CalibrationSensor, err = sensor.FromDependencies(deps, config.CalibrationSensor)
 		if err != nil {
-			return nil, err
-		}
-	}
-
-	if config.AprilTagServiceLeft != "" {
-		c.AprilTagTrackerLeft, err = posetracker.FromDependencies(deps, config.AprilTagServiceLeft)
-		if err != nil {
-			return nil, err
+			warnOptional(config.CalibrationSensor, "calibration sensor", err)
 		}
 	}
 
 	if config.GlassPourAprilTagService != "" {
 		c.GlassPourAprilTagTracker, err = posetracker.FromDependencies(deps, config.GlassPourAprilTagService)
 		if err != nil {
-			return nil, err
+			warnOptional(config.GlassPourAprilTagService, "pose tracker", err)
 		}
 	}
 
 	if config.CupFinderService != "" {
 		c.CupFinder, err = vision.FromDependencies(deps, config.CupFinderService)
 		if err != nil {
-			return nil, err
+			warnOptional(config.CupFinderService, "cup finder", err)
 		}
 	}
 
