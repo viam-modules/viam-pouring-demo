@@ -7,18 +7,20 @@
   }: { show: boolean; message: string } = $props();
 
   let dismissed = $state(false);
-  let lastMessage = $state("");
+  let snoozed = $state(false);
+  let wasShowing = $state(false);
   let modalEl: HTMLDivElement | null = $state(null);
 
-  // Re-show if the error message changes (new calibration failure)
+  // Re-show (unless snoozed) only when the error clears and comes back
   $effect(() => {
-    if (message && message !== lastMessage) {
-      dismissed = false;
-      lastMessage = message;
+    if (show && !wasShowing) {
+      // error just appeared (or reappeared after recovering)
+      if (!snoozed) dismissed = false;
     }
+    wasShowing = show;
   });
 
-  const visible = $derived(show && !dismissed);
+  const visible = $derived(show && !dismissed && !snoozed);
 
   // Focus modal when it becomes visible so keyboard/screen readers work
   $effect(() => {
@@ -50,9 +52,14 @@
         {message || "April tag alignment check failed. Please reposition the arms."}
       </p>
       <p class="modal-hint">The robot will not operate until the arms are realigned.</p>
-      <button class="dismiss-btn" onclick={() => (dismissed = true)}>
-        Acknowledge &amp; Dismiss
-      </button>
+      <div class="btn-row">
+        <button class="snooze-btn" onclick={() => (snoozed = true)}>
+          Ignore for session
+        </button>
+        <button class="dismiss-btn" onclick={() => (dismissed = true)}>
+          Acknowledge &amp; Dismiss
+        </button>
+      </div>
     </div>
   </div>
 {/if}
@@ -118,19 +125,38 @@
     margin: 0 0 28px;
   }
 
-  .dismiss-btn {
-    background: #f1c21b;
-    color: #161616;
+  .btn-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+
+  .dismiss-btn,
+  .snooze-btn {
     border: none;
     border-radius: 6px;
-    padding: 10px 28px;
+    padding: 10px 24px;
     font-size: 0.925rem;
     font-weight: 600;
     cursor: pointer;
     transition: background 0.15s;
   }
 
+  .dismiss-btn {
+    background: #f1c21b;
+    color: #161616;
+  }
+
   .dismiss-btn:hover {
     background: #d2a106;
+  }
+
+  .snooze-btn {
+    background: #393939;
+    color: #c6c6c6;
+  }
+
+  .snooze-btn:hover {
+    background: #4c4c4c;
   }
 </style>
