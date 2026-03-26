@@ -1,20 +1,18 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import type { RobotClient } from "@viamrobotics/sdk";
   import PointCloud3D from "./PointCloud3D.svelte";
-  import CameraWithOverlay from "./CameraWithOverlay.svelte";
+  import CameraFeed from "./CameraFeed.svelte";
   import type { Joint, SegmentedObject } from "./types.js";
 
   interface Props {
     statusBar: Snippet;
     segmentedObjects: SegmentedObject[];
-    robotClient: RobotClient | null;
     leftJoints: Joint[];
     rightJoints: Joint[];
     status: string;
   }
 
-  let { statusBar, segmentedObjects, robotClient, leftJoints, rightJoints, status }: Props = $props();
+  let { statusBar, segmentedObjects, leftJoints, rightJoints, status }: Props = $props();
 </script>
 
 <main class="main-content">
@@ -51,10 +49,10 @@
 
     <div class="right-col">
       <div class="cam-area">
-        <CameraWithOverlay camName="left-cam" label="Left Camera" objects={segmentedObjects} {robotClient} />
+        <CameraFeed name="left-cam" partID="xxx" label="Left Camera" />
       </div>
       <div class="cam-area">
-        <CameraWithOverlay camName="right-cam" label="Right Camera" objects={segmentedObjects} {robotClient} />
+        <CameraFeed name="right-cam" partID="xxx" label="Right Camera" />
       </div>
     </div>
   </section>

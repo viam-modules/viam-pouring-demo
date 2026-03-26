@@ -145,7 +145,6 @@
   <aside class="sidebar"></aside>
   <MainContent
     {segmentedObjects}
-    robotClient={robotClientStore.current ?? null}
     {leftJoints}
     {rightJoints}
     {status}

@@ -8,10 +8,9 @@
     partID: string;
     label: string;
     overlay?: Snippet;
-    fullOverlay?: Snippet;
   }
 
-  let { name, partID, label, overlay, fullOverlay }: Props = $props();
+  let { name, partID, label, overlay }: Props = $props();
 
   let streamKey = $state(0);
   let reconnecting = $state(false);
@@ -99,10 +98,6 @@
   {#key streamKey}
     <CameraStream {name} {partID} />
   {/key}
-
-  {#if fullOverlay}
-    {@render fullOverlay()}
-  {/if}
 
   {#if reconnecting}
     <div class="reconnect-overlay">
