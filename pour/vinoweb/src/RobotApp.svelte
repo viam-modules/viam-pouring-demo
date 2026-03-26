@@ -6,6 +6,7 @@
   import { Struct, type JsonValue } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
+  import CalibrationWarning from "./lib/CalibrationWarning.svelte";
   import type { Joint } from "./lib/types.js";
 
   // --- Pouring status ---
@@ -158,6 +159,13 @@
 
 <div class="app-container">
   <aside class="sidebar"></aside>
+  <CalibrationWarning
+    show={robotStatus.status === "error"}
+    message={robotStatus.message}
+  />
+  {#if isDevMode}
+    <div id="dev-container">Dev mode</div>
+  {/if}
 
   <MainContent panes={panesData} {status}>
     {#snippet statusBar()}
@@ -168,6 +176,7 @@
 
 <style>
   .app-container {
+    position: relative;
     height: calc(100vh - 80px);
     width: 100%;
     max-width: 1920px;
