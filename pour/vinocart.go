@@ -49,8 +49,6 @@ const cupTopName = "cup-top"
 const gripperToCupCenterHack float64 = -35
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
-var noCupObjects = fmt.Errorf("no cup objects")
-var noBottleObjects = fmt.Errorf("no bottle objects")
 var noObjects = fmt.Errorf("no objects")
 
 func init() {
@@ -1558,33 +1556,3 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 15, "FindCups", vc.logger), nil
 }
 
-// GetCups finds the cups and returns them and their obstacles
-// requireCupToBePresent: if true, returns an error if no cups are found. This is useful for when we require a cup to be present such as picking it up.
-// allowMultiple: if true, returns multiple cups if found. This is useful for when we want to return all the cups found as obstacles to avoid.
-func (vc *VinoCart) GetCups(ctx context.Context, requireCupToBePresent bool, allowMultiple bool) ([]*viz.Object, []*referenceframe.GeometriesInFrame, error) {
-	start := time.Now()
-	objects, err := vc.FindCups(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	vc.logger.Infof("num cups: %v in %v", len(objects), time.Since(start))
-	for _, o := range objects {
-		vc.logger.Infof("\t cups: %v", o)
-	}
-
-	if len(objects) == 0 && requireCupToBePresent {
-		return nil, nil, noCupObjects
-	}
-
-	if len(objects) > 1 && !allowMultiple {
-		return nil, nil, fmt.Errorf("too many cups %d", len(objects))
-	}
-
-	obstacles := []*referenceframe.GeometriesInFrame{}
-	for i, o := range objects {
-		o.Geometry.SetLabel(fmt.Sprintf("cup-%d", i))
-		obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{o.Geometry}))
-	}
-	return objects, obstacles, nil
-}
