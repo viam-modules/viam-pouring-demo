@@ -39,12 +39,18 @@
     error: "System error — check logs",
   };
 
+  let isDevMode = $state(false);
+
   // --- Keyboard controls for debugging ---
   function handleKeydown(event: KeyboardEvent) {
     const keys = Object.keys(statusMessages) as StatusKey[];
-    const keyNum = parseInt(event.key);
+    const key = event.key;
+    const keyNum = parseInt(key);
     if (keyNum >= 1 && keyNum <= keys.length) {
       robotStatus.status = keys[keyNum - 1];
+    }
+    if (key === "d") {
+      isDevMode = !isDevMode;
     }
   }
 

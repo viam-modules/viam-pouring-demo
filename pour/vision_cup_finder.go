@@ -9,6 +9,7 @@ import (
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/vision"
+
 	//"go.viam.com/rdk/spatialmath"
 	viz "go.viam.com/rdk/vision"
 	"go.viam.com/rdk/vision/classification"
