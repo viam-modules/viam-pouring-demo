@@ -205,7 +205,7 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	if cmd["touch"] == true {
-		return nil, vc.TouchCup(ctx)
+		return nil, vc.Touch(ctx)
 	}
 
 	if cmd["pour-prep"] == true {
@@ -322,7 +322,7 @@ func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) FullDemo(ctx context.Context) error {
-	err := vc.TouchCup(ctx)
+	err := vc.Touch(ctx)
 	if err != nil {
 		return err
 	}
@@ -561,13 +561,8 @@ func saveImageToDataset(ctx context.Context, component resource.Name, img image.
 	return nil
 }
 
-func (vc *VinoCart) TouchCup(ctx context.Context) error {
-	if err := vc.checkAprilTagCalibration(ctx); err != nil {
-		vc.setStatusWithMessage("error", err.Error())
-		return err
-	}
-
-	vc.setStatusWithMessage("looking", "Looking for cups")
+func (vc *VinoCart) Touch(ctx context.Context) error {
+	vc.setStatus("looking")
 
 	err := vc.Reset(ctx)
 	if err != nil {
@@ -740,7 +735,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 			return err
 		}
 
-		return vc.TouchCup(ctx)
+		return vc.Touch(ctx)
 	}
 	return fmt.Errorf("no path for handoff")
 }
@@ -1555,4 +1550,3 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 
 	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 15, "FindCups", vc.logger), nil
 }
-

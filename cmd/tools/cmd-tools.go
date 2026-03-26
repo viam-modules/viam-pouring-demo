@@ -96,18 +96,18 @@ func realMain() error {
 	case "reset":
 		return vc.Reset(ctx)
 	case "touch":
-		return vc.TouchCup(ctx)
+		return vc.Touch(ctx)
 	case "pour-prep":
 		return vc.PourPrep(ctx)
 	case "touch-and-prep":
-		err := vc.TouchCup(ctx)
+		err := vc.Touch(ctx)
 		if err != nil {
 			return err
 		}
 		return vc.PourPrep(ctx)
 	case "touch-and-reset":
 		for i := 0; i < n; i++ {
-			err := vc.TouchCup(ctx)
+			err := vc.Touch(ctx)
 			if err != nil {
 				logger.Infof("error touching, continuing: %v", err)
 				continue
