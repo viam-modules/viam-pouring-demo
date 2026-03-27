@@ -97,7 +97,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -75, Z: -35},
+			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -65, Z: -5},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
