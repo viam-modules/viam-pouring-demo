@@ -1,30 +1,18 @@
 <script lang="ts">
-  import { fade, scale } from "svelte/transition";
   import type { Snippet } from "svelte";
-  import DataPane from "./DataPane.svelte";
-  import type { Joint } from "./types.js";
-  import JointTable from "./JointTable.svelte";
+  import PointCloud3D from "./PointCloud3D.svelte";
   import CameraFeed from "./CameraFeed.svelte";
-
-  interface CameraConfig {
-    name: string;
-    partID: string;
-    label: string;
-  }
-
-  interface PaneData {
-    joints: Joint[];
-    tableTitle?: string;
-    camera: CameraConfig;
-  }
+  import type { Joint, SegmentedObject } from "./types.js";
 
   interface Props {
     statusBar: Snippet;
-    panes: PaneData[];
-    status: string; // Add this line
+    segmentedObjects: SegmentedObject[];
+    leftJoints: Joint[];
+    rightJoints: Joint[];
+    status: string;
   }
 
-  let { statusBar, panes, status }: Props = $props(); // Destructure status from props
+  let { statusBar, segmentedObjects, leftJoints, rightJoints, status }: Props = $props();
 </script>
 
 <main class="main-content">
@@ -32,79 +20,142 @@
     {@render statusBar()}
   </header>
 
-  <section class="content-panes">
-    <div class="expand-pane">
-      <DataPane mode={status === "picking" ? "embedded" : "side-by-side"}>
-        {#snippet table()}
-          <JointTable joints={panes[0].joints} />
-        {/snippet}
-        {#snippet camera()}
-          <CameraFeed
-            name={panes[0].camera.name}
-            partID={panes[0].camera.partID}
-            label={panes[0].camera.label}
-            overlay={status === "picking" ? table : undefined}
-          />
-        {/snippet}
-      </DataPane>
-    </div>
-    {#if status !== "picking"}
-      <div class="expand-pane">
-        <DataPane mode="side-by-side">
-          {#snippet table()}
-            <JointTable joints={panes[1].joints} />
-          {/snippet}
-          {#snippet camera()}
-            <CameraFeed
-              name={panes[1].camera.name}
-              partID={panes[1].camera.partID}
-              label={panes[1].camera.label}
-            />
-          {/snippet}
-        </DataPane>
+  <section class="content-area">
+    <div class="left-col">
+      <div class="pcd-area">
+        <PointCloud3D objects={segmentedObjects} />
       </div>
-    {/if}
+      <div class="table-area">
+        <table class="joint-table">
+          <thead>
+            <tr>
+              <th>Joint</th>
+              <th>Left Arm (°)</th>
+              <th>Right Arm (°)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each leftJoints as _, i}
+              <tr>
+                <td class="joint-idx">{i}</td>
+                <td>{leftJoints[i]?.position.toFixed(2) ?? "—"}</td>
+                <td>{rightJoints[i]?.position.toFixed(2) ?? "—"}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <div class="cam-area">
+        <CameraFeed name="left-cam" partID="xxx" label="Left Camera" />
+      </div>
+      <div class="cam-area">
+        <CameraFeed name="right-cam" partID="xxx" label="Right Camera" />
+      </div>
+    </div>
   </section>
 </main>
 
 <style>
   .main-content {
     background-color: white;
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 10px;
-    grid-template-rows: auto 1fr;
     height: 90%;
     width: 95%;
     border-radius: 12px;
     overflow: hidden;
     padding: 20px;
-    margin: auto 0; /* Add vertical margin auto */
+    margin: auto 0;
   }
 
   .status-bar {
     display: flex;
     align-items: center;
+    flex-shrink: 0;
   }
 
-  .content-panes {
-    display: grid;
-    grid-template-rows: 1fr 1fr;
-    gap: 0;
-    background-color: #ddd;
+  .content-area {
+    display: flex;
+    gap: 12px;
+    flex: 1;
     min-height: 0;
-    height: 100%;
-    padding: 15px;
+    background: #ddd;
     border-radius: 16px;
+    padding: 15px;
     overflow: hidden;
   }
 
-  .expand-pane {
-    height: 100%;
+  .left-col {
+    width: 35%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     min-height: 0;
+  }
+
+  .pcd-area {
+    flex: 1;
+    min-height: 0;
+    border-radius: 8px;
     overflow: hidden;
   }
 
-  .expand-pane:only-child {
-    grid-row: 1 / span 2;
+  .table-area {
+    flex-shrink: 0;
+  }
+
+  .joint-table {
+    border-collapse: collapse;
+    width: 100%;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .joint-table th,
+  .joint-table td {
+    padding: 5px 10px;
+    text-align: left;
+  }
+
+  .joint-table th {
+    background: #f5f5f5;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #555;
+  }
+
+  .joint-table tr:not(:last-child) td {
+    border-bottom: 1px solid #eee;
+  }
+
+  .joint-table .joint-idx {
+    font-weight: 600;
+    color: #888;
+  }
+
+  .right-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+  }
+
+  .cam-area {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
 </style>

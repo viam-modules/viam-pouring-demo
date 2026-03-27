@@ -1,10 +1,16 @@
 <script lang="ts">
-  // import { useConnectionStatus } from '@viamrobotics/svelte-sdk';
   import { Tag, InlineLoading } from "carbon-components-svelte";
 
-  let { message = "SENSING...", status = "standby" } = $props();
+  let {
+    message = "SENSING...",
+    status = "standby",
+    objectCount = 0,
+  }: {
+    message?: string;
+    status?: string;
+    objectCount?: number;
+  } = $props();
 
-  // Define status types using valid Carbon tag colors
   const statusTypes: Record<
     string,
     {
@@ -56,11 +62,22 @@
           <span class="status-message">{message}</span>
         </div>
 
-        {#if currentStatusType().loading}
-          <div class="loading-wrapper">
-            <InlineLoading status="active" description="" />
+        <div class="right-content">
+          <div class="detection-indicators">
+            <div class="detection-item">
+              <span class="detection-label">Objects</span>
+              <span class="detection-count" class:valid={objectCount > 0} class:dimmed={objectCount === 0}>
+                {objectCount}
+              </span>
+            </div>
           </div>
-        {/if}
+
+          {#if currentStatusType().loading}
+            <div class="loading-wrapper">
+              <InlineLoading status="active" description="" />
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
   </div>
@@ -77,7 +94,7 @@
 
   .status-terminal {
     width: 100%;
-    background-color: #161616; /* Carbon's g100 theme background */
+    background-color: #161616;
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
@@ -92,7 +109,7 @@
   .status-display {
     display: flex;
     align-items: center;
-    justify-content: space-between; /* Push items to edges */
+    justify-content: space-between;
     gap: 12px;
     margin: 0;
     width: 100%;
@@ -104,13 +121,19 @@
     gap: 12px;
   }
 
+  .right-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-left: auto;
+  }
+
   .status-message {
     font-size: 1.2rem;
     color: #ffffff;
     letter-spacing: 0.05em;
   }
 
-  /* Wrapper classes to style Carbon components */
   .tag-wrapper :global(.bx--tag) {
     padding: 0 12px;
     height: 24px;
@@ -118,9 +141,43 @@
     font-weight: 600;
   }
 
-  /* Make loading indicator take minimal space */
-  .loading-wrapper {
-    margin-left: auto; /* This pushes it to the right */
+  .detection-indicators {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+  }
+
+  .detection-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+  }
+
+  .detection-label {
+    color: #a8a8a8;
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+  }
+
+  .detection-count {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #c6c6c6;
+  }
+
+  .detection-count.valid {
+    color: #42be65;
+  }
+
+  .detection-count.dimmed {
+    color: #6f6f6f;
   }
 
   .loading-wrapper :global(.bx--inline-loading) {

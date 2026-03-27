@@ -24,6 +24,7 @@ import (
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan/armplanning"
+	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/rimage"
@@ -115,6 +116,12 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 		vc.status = "manual mode"
 	}
 
+	// Start continuous detection loop regardless of mode
+	detCtx, detCancel := context.WithCancel(context.Background())
+	vc.detectionCancel = detCancel
+	vc.detectionWG.Add(1)
+	go vc.runDetectionLoop(detCtx)
+
 	realFS, err := fs.Sub(vinowebStaticFS, "vinoweb/dist")
 	if err != nil {
 		return nil, err
@@ -156,7 +163,21 @@ type VinoCart struct {
 	statusLock sync.Mutex
 	status     string
 
+	detectionLock    sync.Mutex
+	detectionStatus  DetectionStatus
+	detectionObjects []*viz.Object
+
+	detectionCancel context.CancelFunc
+	detectionWG     sync.WaitGroup
+
 	server *http.Server
+}
+
+type DetectionStatus struct {
+	TotalCupObjects int `json:"total_cup_objects"`
+	ValidCups       int `json:"valid_cups"`
+	InvalidCups     int `json:"invalid_cups"`
+	Bottles         int `json:"bottles"`
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -164,6 +185,11 @@ func (vc *VinoCart) Name() resource.Name {
 }
 
 func (vc *VinoCart) Close(ctx context.Context) error {
+	if vc.detectionCancel != nil {
+		vc.detectionCancel()
+		vc.detectionWG.Wait()
+	}
+
 	if vc.loopCancel != nil {
 		vc.loopCancel()
 		vc.loopWaitGroup.Wait()
@@ -174,7 +200,20 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	if cmd["status"] == true {
-		return map[string]interface{}{"status": vc.getStatus()}, nil
+		det := vc.getDetectionStatus()
+		return map[string]interface{}{
+			"status": vc.getStatus(),
+			"detection": map[string]interface{}{
+				"total_cup_objects": det.TotalCupObjects,
+				"valid_cups":        det.ValidCups,
+				"invalid_cups":      det.InvalidCups,
+				"bottles":           det.Bottles,
+			},
+		}, nil
+	}
+
+	if cmd["cup_details"] == true {
+		return map[string]interface{}{"cups": vc.getCupDetails()}, nil
 	}
 
 	if cmd["stop"] == true {
@@ -256,6 +295,105 @@ func (vc *VinoCart) setStatus(s string) {
 	vc.statusLock.Lock()
 	defer vc.statusLock.Unlock()
 	vc.status = s
+}
+
+func (vc *VinoCart) getDetectionStatus() DetectionStatus {
+	vc.detectionLock.Lock()
+	defer vc.detectionLock.Unlock()
+	return vc.detectionStatus
+}
+
+func (vc *VinoCart) runDetectionLoop(ctx context.Context) {
+	defer vc.detectionWG.Done()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			vc.updateDetection(ctx)
+		}
+	}
+}
+
+func (vc *VinoCart) updateDetection(ctx context.Context) {
+	if vc.c.CupFinder == nil {
+		return
+	}
+
+	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
+	if err != nil {
+		vc.logger.Debugf("detection loop error: %v", err)
+		return
+	}
+
+	validCups := FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, nil)
+
+	vc.detectionLock.Lock()
+	vc.detectionObjects = objects
+	vc.detectionStatus = DetectionStatus{
+		TotalCupObjects: len(objects),
+		ValidCups:       len(validCups),
+		InvalidCups:     len(objects) - len(validCups),
+		Bottles:         0,
+	}
+	vc.detectionLock.Unlock()
+}
+
+func (vc *VinoCart) getCupDetails() []map[string]interface{} {
+	vc.detectionLock.Lock()
+	objects := vc.detectionObjects
+	vc.detectionLock.Unlock()
+
+	cups := make([]map[string]interface{}, 0, len(objects))
+	for idx, o := range objects {
+		analysis := AnalyzeObject(o, vc.conf.CupHeight, vc.conf.cupWidth(), 25)
+
+		pointsX := make([]interface{}, 0)
+		pointsY := make([]interface{}, 0)
+		pointsZ := make([]interface{}, 0)
+
+		maxPoints := 500
+		total := o.Size()
+		step := 1
+		if total > maxPoints {
+			step = total / maxPoints
+		}
+
+		i := 0
+		count := 0
+		o.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
+			if i%step == 0 {
+				pointsX = append(pointsX, p.X)
+				pointsY = append(pointsY, p.Y)
+				pointsZ = append(pointsZ, p.Z)
+				count++
+			}
+			i++
+			return count < maxPoints
+		})
+
+		cups = append(cups, map[string]interface{}{
+			"index":           idx,
+			"valid":           analysis.Valid,
+			"height":          analysis.Height,
+			"expected_height": analysis.ExpHeight,
+			"height_delta":    analysis.HeightDelta,
+			"height_pass":     analysis.HeightPass,
+			"width":           analysis.Width,
+			"expected_width":  analysis.ExpWidth,
+			"width_delta":     analysis.WidthDelta,
+			"width_pass":      analysis.WidthPass,
+			"good_delta":      analysis.GoodDelta,
+			"total_points":    total,
+			"points_x":        pointsX,
+			"points_y":        pointsY,
+			"points_z":        pointsZ,
+		})
+	}
+	return cups
 }
 
 func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
