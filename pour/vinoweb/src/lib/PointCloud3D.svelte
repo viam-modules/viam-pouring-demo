@@ -1,329 +1,205 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import * as THREE from "three";
   import { CUP_HEIGHT, RINGS, type SegmentedObject } from "./types.js";
 
   let { objects = [] }: { objects: SegmentedObject[] } = $props();
 
-  const ROT_SPEED = 0.3;
-  const PITCH = (Math.PI / 180) * 30;
-  const COS_PITCH = Math.cos(PITCH);
-  const SIN_PITCH = Math.sin(PITCH);
-  const PAD_CSS = 20;
-
-  let canvasRef: HTMLCanvasElement | undefined = $state();
+  let containerRef: HTMLDivElement | undefined = $state();
+  let renderer: THREE.WebGLRenderer | null = null;
+  let scene: THREE.Scene;
+  let camera: THREE.PerspectiveCamera;
   let animId: number | null = null;
+  let pointsMesh: THREE.Points | null = null;
+  let ringLines: THREE.LineLoop[] = [];
+  let profileLines: THREE.Line[] = [];
+  let centerLine: THREE.Line | null = null;
+  let gridHelper: THREE.GridHelper | null = null;
+  let lastObjKey = "";
 
-  interface ScaleInfo {
-    scale: number; minZ: number; maxZ: number; rangeZ: number;
-    cx: number; cy: number; cz: number;
-    projCx: number; projCy: number;
-  }
-  let scaleCache = new Map<string, ScaleInfo>();
+  const BG_COLOR = 0x1a1a2e;
+  const ROT_SPEED = 0.3;
 
-  function syncCanvasSize(canvas: HTMLCanvasElement) {
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const pw = Math.round(rect.width * dpr);
-    const ph = Math.round(rect.height * dpr);
-    if (canvas.width !== pw || canvas.height !== ph) {
-      canvas.width = pw;
-      canvas.height = ph;
-      scaleCache.clear();
-    }
-  }
+  function buildScene() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(BG_COLOR);
 
-  function scaleKey(obj: SegmentedObject, w: number, h: number): string {
-    const px = obj.points_x, py = obj.points_y;
-    return `${obj.index}:${px.length}:${px[0]}:${py[0]}:${px[px.length - 1]}:${w}x${h}`;
+    camera = new THREE.PerspectiveCamera(40, 1, 0.1, 10000);
+    camera.position.set(0, 120, 200);
+    camera.lookAt(0, 40, 0);
+
+    const axes = new THREE.AxesHelper(25);
+    scene.add(axes);
   }
 
-  function scaledRingZ(ring: typeof RINGS[number], minZ: number, pcHeight: number): number {
-    return minZ + (ring.heightFromFloor / CUP_HEIGHT) * pcHeight;
+  function objKey(obj: SegmentedObject): string {
+    const px = obj.points_x;
+    return `${obj.index}:${px.length}:${px[0]}:${px[px.length - 1]}`;
   }
 
-  function computeScale(obj: SegmentedObject, w: number, h: number, pad: number): ScaleInfo {
+  function clearObject() {
+    if (pointsMesh) { scene.remove(pointsMesh); pointsMesh.geometry.dispose(); (pointsMesh.material as THREE.Material).dispose(); pointsMesh = null; }
+    for (const l of ringLines) { scene.remove(l); l.geometry.dispose(); (l.material as THREE.Material).dispose(); }
+    ringLines = [];
+    for (const l of profileLines) { scene.remove(l); l.geometry.dispose(); (l.material as THREE.Material).dispose(); }
+    profileLines = [];
+    if (centerLine) { scene.remove(centerLine); centerLine.geometry.dispose(); (centerLine.material as THREE.Material).dispose(); centerLine = null; }
+    if (gridHelper) { scene.remove(gridHelper); gridHelper = null; }
+  }
+
+  function updateObject(obj: SegmentedObject) {
+    clearObject();
     const px = obj.points_x, py = obj.points_y, pz = obj.points_z;
     const n = px.length;
-    let cx = 0, cy = 0, cz = 0;
+    if (n === 0) return;
+
     let minZ = Infinity, maxZ = -Infinity;
-    for (let j = 0; j < n; j++) {
-      cx += px[j]; cy += py[j]; cz += pz[j];
-      if (pz[j] < minZ) minZ = pz[j];
-      if (pz[j] > maxZ) maxZ = pz[j];
+    let cx = 0, cy = 0;
+    for (let i = 0; i < n; i++) {
+      cx += px[i]; cy += py[i];
+      if (pz[i] < minZ) minZ = pz[i];
+      if (pz[i] > maxZ) maxZ = pz[i];
     }
-    cx /= n; cy /= n; cz /= n;
+    cx /= n; cy /= n;
     const pcHeight = (maxZ - minZ) || 1;
 
-    let projMinX = Infinity, projMaxX = -Infinity;
-    let projMinY = Infinity, projMaxY = -Infinity;
+    // Point cloud: center XY at origin, Z starts at 0
+    const positions = new Float32Array(n * 3);
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      positions[i * 3] = px[i] - cx;
+      positions[i * 3 + 1] = pz[i] - minZ;
+      positions[i * 3 + 2] = py[i] - cy;
+      const t = (pz[i] - minZ) / pcHeight;
+      colors[i * 3] = (60 + t * 100) / 255;
+      colors[i * 3 + 1] = (160 + t * 95) / 255;
+      colors[i * 3 + 2] = (255 - t * 120) / 255;
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    pointsMesh = new THREE.Points(geom, new THREE.PointsMaterial({ size: 4, vertexColors: true, sizeAttenuation: false }));
+    scene.add(pointsMesh);
 
-    for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
-      const ca = Math.cos(a), sa = Math.sin(a);
-
-      for (let j = 0; j < n; j++) {
-        const dx = px[j] - cx, dy = py[j] - cy, dz = pz[j] - cz;
-        const hx = dx * ca - dy * sa;
-        const hy = -dz * COS_PITCH + (dx * sa + dy * ca) * SIN_PITCH;
-        if (hx < projMinX) projMinX = hx;
-        if (hx > projMaxX) projMaxX = hx;
-        if (hy < projMinY) projMinY = hy;
-        if (hy > projMaxY) projMaxY = hy;
+    // Cup rings
+    const segments = 64;
+    for (const ring of RINGS) {
+      const ringY = (ring.heightFromFloor / CUP_HEIGHT) * pcHeight;
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(a) * ring.radius, ringY, Math.sin(a) * ring.radius));
       }
-
-      for (const ring of RINGS) {
-        const ringZv = scaledRingZ(ring, minZ, pcHeight);
-        const dzRing = ringZv - cz;
-        for (let ri = 0; ri < 8; ri++) {
-          const ra = (ri / 8) * Math.PI * 2;
-          const lx = Math.cos(ra) * ring.radius;
-          const ly = Math.sin(ra) * ring.radius;
-          const hx = lx * ca - ly * sa;
-          const hy = -dzRing * COS_PITCH + (lx * sa + ly * ca) * SIN_PITCH;
-          if (hx < projMinX) projMinX = hx;
-          if (hx > projMaxX) projMaxX = hx;
-          if (hy < projMinY) projMinY = hy;
-          if (hy > projMaxY) projMaxY = hy;
-        }
-      }
-
-      const dzBot = minZ - cz;
-      const dzTop = maxZ - cz;
-      const hyBot = -dzBot * COS_PITCH;
-      const hyTop = -dzTop * COS_PITCH;
-      if (hyBot < projMinY) projMinY = hyBot;
-      if (hyBot > projMaxY) projMaxY = hyBot;
-      if (hyTop < projMinY) projMinY = hyTop;
-      if (hyTop > projMaxY) projMaxY = hyTop;
+      const lineGeom = new THREE.BufferGeometry().setFromPoints(pts);
+      const c = new THREE.Color(ring.color);
+      const line = new THREE.LineLoop(lineGeom, new THREE.LineDashedMaterial({ color: c, dashSize: 3, gapSize: 2, transparent: true, opacity: 0.7 }));
+      line.computeLineDistances();
+      scene.add(line);
+      ringLines.push(line);
     }
 
-    const projCxv = (projMinX + projMaxX) / 2;
-    const projCyv = (projMinY + projMaxY) / 2;
-    const halfW = Math.max(projMaxX - projCxv, projCxv - projMinX) || 1;
-    const halfH = Math.max(projMaxY - projCyv, projCyv - projMinY) || 1;
-    const scale = Math.min((w / 2 - pad) / halfW, (h / 2 - pad) / halfH);
-    return { scale, minZ, maxZ, rangeZ: pcHeight, cx, cy, cz, projCx: projCxv, projCy: projCyv };
+    // Profile lines connecting rings
+    const profileCount = 8;
+    for (let ai = 0; ai < profileCount; ai++) {
+      const a = (ai / profileCount) * Math.PI * 2;
+      const pts: THREE.Vector3[] = RINGS.map(ring => {
+        const ringY = (ring.heightFromFloor / CUP_HEIGHT) * pcHeight;
+        return new THREE.Vector3(Math.cos(a) * ring.radius, ringY, Math.sin(a) * ring.radius);
+      });
+      const lineGeom = new THREE.BufferGeometry().setFromPoints(pts);
+      const line = new THREE.Line(lineGeom, new THREE.LineDashedMaterial({ color: 0xe8a0f5, dashSize: 2, gapSize: 3, transparent: true, opacity: 0.25 }));
+      line.computeLineDistances();
+      scene.add(line);
+      profileLines.push(line);
+    }
+
+    // Center line
+    const clGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, pcHeight, 0)]);
+    centerLine = new THREE.Line(clGeom, new THREE.LineDashedMaterial({ color: 0xe8a0f5, dashSize: 2, gapSize: 2, transparent: true, opacity: 0.4 }));
+    centerLine.computeLineDistances();
+    scene.add(centerLine);
+
+    // Grid at floor
+    gridHelper = new THREE.GridHelper(240, 8, 0x505050, 0x505050);
+    (gridHelper.material as THREE.Material).transparent = true;
+    (gridHelper.material as THREE.Material).opacity = 0.35;
+    scene.add(gridHelper);
+
+    // Fit camera to bounding sphere of all content with padding
+    const bbox = new THREE.Box3();
+    if (pointsMesh) bbox.expandByObject(pointsMesh);
+    for (const l of ringLines) bbox.expandByObject(l);
+    if (centerLine) bbox.expandByObject(centerLine);
+    if (gridHelper) bbox.expandByObject(gridHelper);
+
+    const sphere = new THREE.Sphere();
+    bbox.getBoundingSphere(sphere);
+    const fov = camera.fov * (Math.PI / 180);
+    const padding = 1.35;
+    const dist = (sphere.radius * padding) / Math.sin(fov / 2);
+    const center = sphere.center;
+    camera.position.set(center.x, center.y + dist * 0.35, center.z + dist * 0.85);
+    camera.lookAt(center);
   }
 
-  function renderCanvas() {
-    if (!canvasRef) { animId = requestAnimationFrame(renderCanvas); return; }
-    syncCanvasSize(canvasRef);
-    const ctx = canvasRef.getContext("2d");
-    if (!ctx) { animId = requestAnimationFrame(renderCanvas); return; }
-    const w = canvasRef.width, h = canvasRef.height;
+  function animate() {
+    if (!renderer || !containerRef) { animId = requestAnimationFrame(animate); return; }
 
     const obj = objects.length > 0 ? objects[0] : null;
-    if (!obj || obj.points_x.length === 0) {
-      ctx.fillStyle = "#1a1a2e";
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = "#525252";
-      const dpr = window.devicePixelRatio || 1;
-      ctx.font = `${Math.round(13 * dpr)}px IBM Plex Mono, monospace`;
-      ctx.textAlign = "center";
-      ctx.fillText("No objects detected", w / 2, h / 2);
-      animId = requestAnimationFrame(renderCanvas);
-      return;
+    const key = obj ? objKey(obj) : "";
+    if (key !== lastObjKey) {
+      lastObjKey = key;
+      if (obj && obj.points_x.length > 0) updateObject(obj);
+      else clearObject();
     }
 
-    const yaw = (performance.now() / 1000) * ROT_SPEED;
-    const cosYaw = Math.cos(yaw);
-    const sinYaw = Math.sin(yaw);
+    // Rotate the whole scene around Y
+    const t = performance.now() / 1000;
+    scene.rotation.y = t * ROT_SPEED;
 
-    const dpr = window.devicePixelRatio || 1;
-    const pad = PAD_CSS * dpr;
-    const key = scaleKey(obj, w, h);
-    let info = scaleCache.get(key);
-    if (!info) {
-      info = computeScale(obj, w, h, pad);
-      scaleCache.set(key, info);
-      if (scaleCache.size > 20) scaleCache.delete(scaleCache.keys().next().value!);
+    // Handle resize
+    const w = containerRef.clientWidth, h = containerRef.clientHeight;
+    if (renderer.domElement.width !== w * devicePixelRatio || renderer.domElement.height !== h * devicePixelRatio) {
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
     }
 
-    render3DView(ctx, w, h, obj, info, cosYaw, sinYaw);
-    animId = requestAnimationFrame(renderCanvas);
+    renderer.render(scene, camera);
+    animId = requestAnimationFrame(animate);
   }
 
-  function render3DView(
-    ctx: CanvasRenderingContext2D, w: number, h: number,
-    obj: SegmentedObject, info: ScaleInfo,
-    cosYaw: number, sinYaw: number,
-  ) {
-    const { scale, minZ, rangeZ, cx, cy, cz, projCx: pCx, projCy: pCy } = info;
-    const px = obj.points_x, py = obj.points_y, pz = obj.points_z;
+  onMount(() => {
+    if (!containerRef) return;
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(containerRef.clientWidth, containerRef.clientHeight);
+    containerRef.appendChild(renderer.domElement);
 
-    ctx.fillStyle = "#1a1a2e";
-    ctx.fillRect(0, 0, w, h);
+    buildScene();
+    animId = requestAnimationFrame(animate);
+  });
 
-    drawTableGrid(ctx, w, h, info, cosYaw, sinYaw, pCx, pCy);
-    drawCupRings(ctx, w, h, info, cosYaw, sinYaw, pCx, pCy);
-    drawCenterLine(ctx, w, h, info, pCx, pCy);
-
-    const projected = new Array(px.length);
-    for (let i = 0; i < px.length; i++) {
-      const dx = px[i] - cx, dy = py[i] - cy, dz = pz[i] - cz;
-      const rx = dx * cosYaw - dy * sinYaw;
-      const ry = dx * sinYaw + dy * cosYaw;
-      projected[i] = { sx: rx, sy: -dz * COS_PITCH + ry * SIN_PITCH, z: pz[i], depth: ry };
-    }
-    projected.sort((a: any, b: any) => a.depth - b.depth);
-
-    for (const p of projected) {
-      const sx = (p.sx - pCx) * scale + w / 2;
-      const sy = (p.sy - pCy) * scale + h / 2;
-      const tz = (p.z - minZ) / rangeZ;
-      const r = Math.round(60 + tz * 100);
-      const g = Math.round(160 + tz * 95);
-      const b = Math.round(255 - tz * 120);
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    drawAxes(ctx, w, h, cosYaw, sinYaw);
-  }
-
-  function drawTableGrid(
-    ctx: CanvasRenderingContext2D, w: number, h: number,
-    info: ScaleInfo, cosYaw: number, sinYaw: number,
-    fCx: number, fCy: number,
-  ) {
-    const { scale, cz, minZ } = info;
-    const dzGrid = minZ - cz;
-    const syGrid = -dzGrid * COS_PITCH;
-    const gridSize = 30;
-    const gridCount = 4;
-    ctx.strokeStyle = "rgba(80, 80, 80, 0.35)";
-    ctx.lineWidth = 0.5;
-
-    for (let gi = -gridCount; gi <= gridCount; gi++) {
-      const v = gi * gridSize;
-      for (let dir = 0; dir < 2; dir++) {
-        ctx.beginPath();
-        for (let gj = -gridCount; gj <= gridCount; gj++) {
-          const gv = gj * gridSize;
-          const lx = dir === 0 ? gv : v;
-          const ly = dir === 0 ? v : gv;
-          const rx = lx * cosYaw - ly * sinYaw;
-          const ry = lx * sinYaw + ly * cosYaw;
-          const sx = (rx - fCx) * scale + w / 2;
-          const sy2 = (syGrid + ry * SIN_PITCH - fCy) * scale + h / 2;
-          if (gj === -gridCount) ctx.moveTo(sx, sy2); else ctx.lineTo(sx, sy2);
-        }
-        ctx.stroke();
-      }
-    }
-    ctx.lineWidth = 1;
-  }
-
-  function drawCupRings(
-    ctx: CanvasRenderingContext2D, w: number, h: number,
-    info: ScaleInfo, cosYaw: number, sinYaw: number,
-    fCx: number, fCy: number,
-  ) {
-    const { scale, minZ, maxZ, cz } = info;
-    const pcHeight = maxZ - minZ;
-    const segments = 48;
-    const profileAngles = 8;
-
-    ctx.strokeStyle = "rgba(232,160,245,0.25)";
-    ctx.lineWidth = 0.8;
-    ctx.setLineDash([2, 4]);
-    for (let ai = 0; ai < profileAngles; ai++) {
-      const angle = (ai / profileAngles) * Math.PI * 2;
-      ctx.beginPath();
-      for (const ring of RINGS) {
-        const ringZ = scaledRingZ(ring, minZ, pcHeight);
-        const dzRing = ringZ - cz;
-        const lx = Math.cos(angle) * ring.radius;
-        const ly = Math.sin(angle) * ring.radius;
-        const rx = lx * cosYaw - ly * sinYaw;
-        const ry = lx * sinYaw + ly * cosYaw;
-        const sx = (rx - fCx) * scale + w / 2;
-        const sy = (-dzRing * COS_PITCH + ry * SIN_PITCH - fCy) * scale + h / 2;
-        if (ring === RINGS[0]) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-      }
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-
-    for (const ring of RINGS) {
-      const ringZ = scaledRingZ(ring, minZ, pcHeight);
-      const dzRing = ringZ - cz;
-      ctx.strokeStyle = ring.color;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      for (let ci = 0; ci <= segments; ci++) {
-        const angle = (ci / segments) * Math.PI * 2;
-        const lx = Math.cos(angle) * ring.radius;
-        const ly = Math.sin(angle) * ring.radius;
-        const rx = lx * cosYaw - ly * sinYaw;
-        const ry = lx * sinYaw + ly * cosYaw;
-        const sx = (rx - fCx) * scale + w / 2;
-        const sy = (-dzRing * COS_PITCH + ry * SIN_PITCH - fCy) * scale + h / 2;
-        if (ci === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.font = "9px IBM Plex Mono";
-      ctx.fillStyle = ring.color;
-      const labelX = (ring.radius * cosYaw - fCx) * scale + w / 2 + 6;
-      const labelY = (-dzRing * COS_PITCH + ring.radius * sinYaw * SIN_PITCH - fCy) * scale + h / 2;
-      ctx.fillText(`${ring.label} ø${Math.round(ring.radius * 2)}`, labelX, labelY - 3);
-    }
-  }
-
-  function drawCenterLine(
-    ctx: CanvasRenderingContext2D, w: number, h: number,
-    info: ScaleInfo, fCx: number, fCy: number,
-  ) {
-    const { scale, minZ, maxZ, cz } = info;
-    ctx.strokeStyle = "rgba(232,160,245,0.4)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    const dzBot = minZ - cz;
-    const dzTop = maxZ - cz;
-    const syBot = (-dzBot * COS_PITCH - fCy) * scale + h / 2;
-    const syTop = (-dzTop * COS_PITCH - fCy) * scale + h / 2;
-    const sxCenter = (0 - fCx) * scale + w / 2;
-    ctx.beginPath();
-    ctx.moveTo(sxCenter, syBot);
-    ctx.lineTo(sxCenter, syTop);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  function drawAxes(ctx: CanvasRenderingContext2D, w: number, h: number, cosYaw: number, sinYaw: number) {
-    const dpr = window.devicePixelRatio || 1;
-    const pad = PAD_CSS * dpr;
-    const axLen = 20 * dpr, ox = pad, oy = h - pad;
-    ctx.lineWidth = 1 * dpr;
-    ctx.strokeStyle = "#fa4d56";
-    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + axLen * cosYaw, oy + axLen * SIN_PITCH * sinYaw); ctx.stroke();
-    ctx.strokeStyle = "#42be65";
-    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox - axLen * sinYaw, oy + axLen * SIN_PITCH * cosYaw); ctx.stroke();
-    ctx.strokeStyle = "#4589ff";
-    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - axLen * COS_PITCH); ctx.stroke();
-    const fontSize = Math.round(9 * dpr);
-    ctx.font = `${fontSize}px IBM Plex Mono`;
-    ctx.fillStyle = "#fa4d56"; ctx.fillText("X", ox + axLen * cosYaw + 4 * dpr, oy + axLen * SIN_PITCH * sinYaw);
-    ctx.fillStyle = "#42be65"; ctx.fillText("Y", ox - axLen * sinYaw - 8 * dpr, oy + axLen * SIN_PITCH * cosYaw);
-    ctx.fillStyle = "#4589ff"; ctx.fillText("Z", ox + 4 * dpr, oy - axLen * COS_PITCH - 2 * dpr);
-  }
-
-  onMount(() => { animId = requestAnimationFrame(renderCanvas); });
-  onDestroy(() => { if (animId !== null) cancelAnimationFrame(animId); });
+  onDestroy(() => {
+    if (animId !== null) cancelAnimationFrame(animId);
+    if (renderer) { renderer.dispose(); renderer.domElement.remove(); }
+  });
 </script>
 
-<canvas bind:this={canvasRef} class="pcd-canvas"></canvas>
+<div bind:this={containerRef} class="pcd-container"></div>
 
 <style>
-  .pcd-canvas {
+  .pcd-container {
     width: 100%;
     height: 100%;
-    display: block;
     border-radius: 8px;
+    overflow: hidden;
     background: #1a1a2e;
+  }
+
+  .pcd-container :global(canvas) {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
 </style>
