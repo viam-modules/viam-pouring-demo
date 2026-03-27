@@ -45,6 +45,7 @@ var vinowebStaticFS embed.FS
 const bottleName = "bottle-top"
 const cupTopName = "cup-top"
 const gripperToCupCenterHack float64 = -35
+const cupGripHeightOffset float64 = 20
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -97,7 +98,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -65, Z: -5},
+			r3.Vector{X: cupGripHeightOffset, Y: -65, Z: -5},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
@@ -743,7 +744,7 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 	c := md.Center()
 
 	p := touch.GetApproachPoint(c, deltaLinear, o)
-	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+	p.Z = vc.conf.CupHeight - cupGripHeightOffset
 
 	return referenceframe.NewPoseInFrame(
 		"world",
@@ -911,7 +912,7 @@ func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
 		spatialmath.NewPose(r3.Vector{
 			X: cur.Pose().Point().X,
 			Y: cur.Pose().Point().Y,
-			Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
+			Z: vc.conf.CupHeight - cupGripHeightOffset,
 		}, cur.Pose().Orientation()))
 
 	_, err = vc.c.Motion.Move(
