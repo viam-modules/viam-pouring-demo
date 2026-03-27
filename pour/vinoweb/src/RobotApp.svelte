@@ -6,6 +6,7 @@
   import { Struct, type JsonValue } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
+  import CalibrationWarning from "./lib/CalibrationWarning.svelte";
   import type { Joint } from "./lib/types.js";
 
   // --- Pouring status ---
@@ -17,8 +18,14 @@
     | "pouring"
     | "placing"
     | "waiting"
-    | "manual mode";
-  let status: StatusKey = $state("standby") as StatusKey;
+    | "manual mode"
+    | "error";
+
+  interface Status {
+    status: StatusKey;
+    message: string;
+  }
+  let robotStatus: Status = $state({ status: "standby", message: ''});
 
   const statusMessages: Record<StatusKey, string> = {
     standby: "Ready to pour!",
@@ -29,14 +36,21 @@
     placing: "Placing glass down",
     waiting: "Please enjoy!",
     "manual mode": "Manual mode active",
+    error: "System error — check logs",
   };
+
+  let isDevMode = $state(false);
 
   // --- Keyboard controls for debugging ---
   function handleKeydown(event: KeyboardEvent) {
     const keys = Object.keys(statusMessages) as StatusKey[];
-    const keyNum = parseInt(event.key);
+    const key = event.key;
+    const keyNum = parseInt(key);
     if (keyNum >= 1 && keyNum <= keys.length) {
-      status = keys[keyNum - 1];
+      robotStatus.status = keys[keyNum - 1];
+    }
+    if (key === "d") {
+      isDevMode = !isDevMode;
     }
   }
 
@@ -106,16 +120,18 @@
           if (
             result &&
             typeof result === "object" &&
-            "status" in result &&
-            typeof (result as any).status === "string"
+            "status" in result && "message" in result &&
+            typeof (result as any).status === "string" &&
+            typeof (result as any).message === "string"
           ) {
-            const statusStr = (result as any).status;
+            const s = (result as any).status;
+            const message = (result as any).message;
             if (
               (Object.keys(statusMessages) as StatusKey[]).includes(
-                statusStr as StatusKey
+                s as StatusKey
               )
             ) {
-              status = statusStr as StatusKey;
+              robotStatus = { status: s, message };
             }
           }
         } catch (err) {
@@ -158,16 +174,24 @@
 
 <div class="app-container">
   <aside class="sidebar"></aside>
+  <CalibrationWarning
+    show={robotStatus.status === "error"}
+    message={robotStatus.message}
+  />
+  {#if isDevMode}
+    <div id="dev-container">Dev mode</div>
+  {/if}
 
-  <MainContent panes={panesData} {status}>
+  <MainContent panes={panesData} status={robotStatus.status}>
     {#snippet statusBar()}
-      <Status message={statusMessages[status]} />
+      <Status message={statusMessages[robotStatus.status]} />
     {/snippet}
   </MainContent>
 </div>
 
 <style>
   .app-container {
+    position: relative;
     height: calc(100vh - 80px);
     width: 100%;
     max-width: 1920px;

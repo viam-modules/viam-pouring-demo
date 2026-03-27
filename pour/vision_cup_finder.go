@@ -9,6 +9,7 @@ import (
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/vision"
+
 	//"go.viam.com/rdk/spatialmath"
 	viz "go.viam.com/rdk/vision"
 	"go.viam.com/rdk/vision/classification"
@@ -142,7 +143,7 @@ func (vcf *visionCupFinder) DoCommand(ctx context.Context, extra map[string]inte
 	return nil, nil
 }
 
-func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, logger logging.Logger) []*viz.Object {
+func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, objectType string, logger logging.Logger) []*viz.Object {
 	good := []*viz.Object{}
 
 	for idx, o := range objects {
@@ -166,6 +167,8 @@ func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta
 		}
 
 		if heightDelta > goodDelta || widthDelta > goodDelta {
+			logger.Warnf("%s discarded object %d: height=%.2f (correct=%.2f) width=%.2f (correct=%.2f)",
+				objectType, idx, height, correctHeight, width, correctWidth)
 			continue
 		}
 

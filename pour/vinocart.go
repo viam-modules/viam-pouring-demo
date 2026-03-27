@@ -8,8 +8,9 @@ import (
 	"image"
 	"image/png"
 	"io/fs"
-	"net/http"
+"net/http"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -44,6 +45,7 @@ var vinowebStaticFS embed.FS
 const bottleName = "bottle-top"
 const cupTopName = "cup-top"
 const gripperToCupCenterHack float64 = -35
+const cupGripHeightOffset float64 = 20
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -58,7 +60,7 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
-	c, err := Pour1ComponentsFromDependencies(config, deps)
+	c, err := Pour1ComponentsFromDependencies(config, deps, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +98,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -75, Z: -35},
+			r3.Vector{X: cupGripHeightOffset, Y: -65, Z: -5},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
@@ -155,6 +157,7 @@ type VinoCart struct {
 
 	statusLock sync.Mutex
 	status     string
+	message    string
 
 	server *http.Server
 }
@@ -174,7 +177,7 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	if cmd["status"] == true {
-		return map[string]interface{}{"status": vc.getStatus()}, nil
+		return vc.getStatus(), nil
 	}
 
 	if cmd["stop"] == true {
@@ -186,8 +189,15 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	defer func() {
+		if r := recover(); r != nil {
+			vc.logger.Errorf("DoCommand panic: %v\n%s", r, debug.Stack())
+		}
 		vc.setStatus("manual mode")
 	}()
+
+	if cmd["get_tag_position"] == true {
+		return vc.getTagPosition(ctx)
+	}
 
 	if cmd["reset"] == true {
 		return nil, vc.Reset(ctx)
@@ -212,6 +222,7 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	if cmd["demo"] == true {
 		return nil, vc.FullDemo(ctx)
 	}
+
 	if cmd["test_position"] != nil {
 		positionCmd, ok := cmd["test_position"].(map[string]interface{})
 		if !ok {
@@ -237,6 +248,16 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 func (vc *VinoCart) run(ctx context.Context) {
 	defer vc.loopWaitGroup.Done()
 	for ctx.Err() == nil {
+		if err := vc.checkCalibration(ctx); err != nil {
+			vc.setStatusWithMessage("error", err.Error())
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
+			continue
+		}
+
 		vc.setStatus("standby")
 		err := vc.WaitForCupAndGo(ctx)
 		if err != nil {
@@ -245,17 +266,25 @@ func (vc *VinoCart) run(ctx context.Context) {
 	}
 }
 
-func (vc *VinoCart) getStatus() string {
+func (vc *VinoCart) getStatus() map[string]interface{} {
 	vc.statusLock.Lock()
 	defer vc.statusLock.Unlock()
-	return vc.status
+	return map[string]interface{}{
+		"status":  vc.status,
+		"message": vc.message,
+	}
 }
 
 func (vc *VinoCart) setStatus(s string) {
-	vc.logger.Infof("setStatus: %v", s)
+	vc.setStatusWithMessage(s, "")
+}
+
+func (vc *VinoCart) setStatusWithMessage(s string, msg string) {
+	vc.logger.Infof("setStatus: %v (message: %v)", s, msg)
 	vc.statusLock.Lock()
 	defer vc.statusLock.Unlock()
 	vc.status = s
+	vc.message = msg
 }
 
 func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
@@ -715,7 +744,7 @@ func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *sp
 	c := md.Center()
 
 	p := touch.GetApproachPoint(c, deltaLinear, o)
-	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+	p.Z = vc.conf.CupHeight - cupGripHeightOffset
 
 	return referenceframe.NewPoseInFrame(
 		"world",
@@ -883,7 +912,7 @@ func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
 		spatialmath.NewPose(r3.Vector{
 			X: cur.Pose().Point().X,
 			Y: cur.Pose().Point().Y,
-			Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
+			Z: vc.conf.CupHeight - cupGripHeightOffset,
 		}, cur.Pose().Orientation()))
 
 	_, err = vc.c.Motion.Move(
@@ -1049,7 +1078,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 				vc.logger.Warnf("[bottle-to-cup-align][try %d] debug written to %s", try, fn)
 			}
 			lastErr = fmt.Errorf("[bottle-to-cup-align][try %d] pos too far: %v", try, alignL2)
-			// On all but the final try, replan 
+			// On all but the final try, replan
 			if try < maxAlignTries {
 				vc.logger.Warnf("[bottle-to-cup-align][try %d] L2 too high, replanning...", try)
 				alignPlan, _, err = armplanning.PlanMotion(ctx, vc.logger, alignReq)
@@ -1091,6 +1120,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
+	defer cancelPour()
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
@@ -1399,11 +1429,45 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 	return err
 }
 
+// checkAprilTagCalibration checks both configured AprilTag trackers against
+// their expected camera-frame positions. Returns an error if any visible tag
+// getTagPosition delegates to the calibration sensor's Readings.
+func (vc *VinoCart) getTagPosition(ctx context.Context) (map[string]interface{}, error) {
+	if vc.c.CalibrationSensor == nil {
+		return map[string]interface{}{"calibration_ok": true, "reason": "no calibration sensor configured"}, nil
+	}
+	return vc.c.CalibrationSensor.Readings(ctx, nil)
+}
+
+// checkCalibration reads from the calibration-checker sensor and returns
+// an error if calibration_ok is false.
+func (vc *VinoCart) checkCalibration(ctx context.Context) error {
+	if vc.c.CalibrationSensor == nil {
+		return nil
+	}
+	readings, err := vc.c.CalibrationSensor.Readings(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("calibration sensor error: %w", err)
+	}
+	ok, _ := readings["calibration_ok"].(bool)
+	if !ok {
+		errMsg, _ := readings["error"].(string)
+		if errMsg == "" {
+			errMsg = "calibration check failed"
+		}
+		return fmt.Errorf("%s", errMsg)
+	}
+	return nil
+}
+
 func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
+	if vc.c.CupFinder == nil {
+		return nil, fmt.Errorf("cup_finder_service not configured")
+	}
 	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 15, "FindCups", vc.logger), nil
 }
