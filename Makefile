@@ -11,9 +11,6 @@ endif
 $(MODULE_BINARY): bin Makefile go.mod cmd/module/*.go pour/*.go pour/vinoweb/dist/index.html
 	$(GO_BUILD_ENV) go build $(GO_BUILD_FLAGS) -o $(MODULE_BINARY) cmd/module/main.go
 
-pour/models/stemless-wine-glass.stl: pour/models/generate-glass.mjs
-	cd pour/models && node generate-glass.mjs
-
 bin:
 	mkdir -p $@
 

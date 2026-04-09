@@ -177,7 +177,6 @@ type DetectionStatus struct {
 	TotalCupObjects int `json:"total_cup_objects"`
 	ValidCups       int `json:"valid_cups"`
 	InvalidCups     int `json:"invalid_cups"`
-	Bottles         int `json:"bottles"`
 }
 
 func (vc *VinoCart) Name() resource.Name {
@@ -209,7 +208,6 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 				"total_cup_objects": det.TotalCupObjects,
 				"valid_cups":        det.ValidCups,
 				"invalid_cups":      det.InvalidCups,
-				"bottles":           det.Bottles,
 			},
 		}, nil
 	}
@@ -339,7 +337,6 @@ func (vc *VinoCart) updateDetection(ctx context.Context) {
 		TotalCupObjects: len(objects),
 		ValidCups:       len(validCups),
 		InvalidCups:     len(objects) - len(validCups),
-		Bottles:         0,
 	}
 	vc.detectionLock.Unlock()
 }
