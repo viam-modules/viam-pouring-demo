@@ -202,7 +202,9 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	if cmd["status"] == true {
 		det := vc.getDetectionStatus()
 		return map[string]interface{}{
-			"status": vc.getStatus(),
+			"status":     vc.getStatus(),
+			"cup_height": vc.conf.CupHeight,
+			"cup_width":  vc.conf.cupWidth(),
 			"detection": map[string]interface{}{
 				"total_cup_objects": det.TotalCupObjects,
 				"valid_cups":        det.ValidCups,

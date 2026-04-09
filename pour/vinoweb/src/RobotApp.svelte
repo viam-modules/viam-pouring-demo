@@ -1,12 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { useRobotClient } from "@viamrobotics/svelte-sdk";
-  import { GenericServiceClient, VisionClient, ArmClient } from "@viamrobotics/sdk";
+  import { GenericServiceClient, ArmClient } from "@viamrobotics/sdk";
   import { Struct } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
-  import type { SegmentedObject, Joint } from "./lib/types.js";
-  import { parsePCD } from "./lib/parsePCD.js";
+  import type { SegmentedObject, Joint, CupDetectionMetrics } from "./lib/types.js";
 
   type StatusKey =
     | "standby"
@@ -21,6 +20,28 @@
 
   let objectCount = $state(0);
   let segmentedObjects: SegmentedObject[] = $state([]);
+  let cupHeightMm = $state(0);
+  let cupWidthMm = $state(0);
+  let cupDetectionMetrics = $state<CupDetectionMetrics | null>(null);
+
+  function cupMetricsFromApi(c: Record<string, unknown>): CupDetectionMetrics {
+    const num = (k: string) => {
+      const v = Number(c[k]);
+      return Number.isFinite(v) ? v : 0;
+    };
+    return {
+      valid: !!c.valid,
+      expectedHeight: num("expected_height"),
+      observedHeight: num("height"),
+      heightDelta: num("height_delta"),
+      heightPass: !!c.height_pass,
+      expectedWidth: num("expected_width"),
+      observedWidth: num("width"),
+      widthDelta: num("width_delta"),
+      widthPass: !!c.width_pass,
+      toleranceMm: num("good_delta"),
+    };
+  }
 
   const statusMessages: Record<StatusKey, string> = {
     standby: "Ready to pour!",
@@ -53,11 +74,10 @@
 
   const robotClientStore = useRobotClient(() => "xxx");
   let cartClient: GenericServiceClient | null = null;
-  let visionClient: VisionClient | null = null;
   let pollingHandle: ReturnType<typeof setInterval> | null = null;
   let pollingInterval = 250;
-  let visionLastFetch = 0;
-  const visionRefreshMs = 1000;
+  let cupDetailLastFetch = 0;
+  const cupDetailRefreshMs = 1000;
 
   let leftArm: ArmClient | null = null;
   let rightArm: ArmClient | null = null;
@@ -69,7 +89,6 @@
       if (!leftArm) leftArm = new ArmClient(robotClient, "left-arm");
       if (!rightArm) rightArm = new ArmClient(robotClient, "right-arm");
       if (!cartClient) cartClient = new GenericServiceClient(robotClient, "cart");
-      if (!visionClient) visionClient = new VisionClient(robotClient, "cup-finder-segment");
 
       pollingHandle = setInterval(async () => {
         try {
@@ -80,54 +99,36 @@
               const s = r.status;
               if ((Object.keys(statusMessages) as StatusKey[]).includes(s as StatusKey)) status = s as StatusKey;
             }
+            const ch = Number(r.cup_height);
+            const cw = Number(r.cup_width);
+            if (!Number.isNaN(ch) && ch > 0) cupHeightMm = ch;
+            if (!Number.isNaN(cw) && cw > 0) cupWidthMm = cw;
           }
         } catch (_) {}
 
-        if (Date.now() - visionLastFetch >= visionRefreshMs) {
+        if (Date.now() - cupDetailLastFetch >= cupDetailRefreshMs) {
           try {
-            const pcos = await visionClient!.getObjectPointClouds("");
-            objectCount = pcos.length;
-            segmentedObjects = pcos.map((pco, idx) => {
-              const pc = parsePCD(pco.pointCloud);
+            const result = await cartClient!.doCommand(Struct.fromJson({ cup_details: true }));
+            const cups = (result as any)?.cups as any[] ?? [];
+            objectCount = cups.length;
 
-              let maxAbs = 0;
-              for (let k = 0; k < pc.x.length; k++) {
-                const ax = Math.abs(pc.x[k]), ay = Math.abs(pc.y[k]), az = Math.abs(pc.z[k]);
-                if (ax > maxAbs) maxAbs = ax;
-                if (ay > maxAbs) maxAbs = ay;
-                if (az > maxAbs) maxAbs = az;
-              }
-              const unitScale = maxAbs < 10 ? 1000 : 1;
-              if (unitScale !== 1) {
-                for (let k = 0; k < pc.x.length; k++) {
-                  pc.x[k] *= unitScale;
-                  pc.y[k] *= unitScale;
-                  pc.z[k] *= unitScale;
-                }
-              }
-
-              let dims: { x: number; y: number; z: number } | undefined;
-              let position: { x: number; y: number; z: number } | undefined;
-              const geo = pco.geometries?.geometries?.[0];
-              if (geo) {
-                if (geo.center) {
-                  position = { x: geo.center.x, y: geo.center.y, z: geo.center.z };
-                }
-                if (geo.geometryType.case === "box" && geo.geometryType.value.dimsMm) {
-                  const d = geo.geometryType.value.dimsMm;
-                  dims = { x: d.x, y: d.y, z: d.z };
-                }
-              }
-              return {
-                index: idx,
-                totalPoints: pc.x.length,
-                points_x: pc.x, points_y: pc.y, points_z: pc.z,
-                rawPCD: pco.pointCloud,
-                dims,
-                position,
-              };
-            });
-            visionLastFetch = Date.now();
+            // Pick the first valid cup, or first cup if none are valid
+            const bestCup = cups.find((c: any) => c.valid) ?? cups[0];
+            if (bestCup) {
+              cupDetectionMetrics = cupMetricsFromApi(bestCup as Record<string, unknown>);
+              segmentedObjects = [{
+                index: bestCup.index,
+                totalPoints: bestCup.total_points,
+                points_x: bestCup.points_x,
+                points_y: bestCup.points_y,
+                points_z: bestCup.points_z,
+                valid: bestCup.valid,
+              }];
+            } else {
+              cupDetectionMetrics = null;
+              segmentedObjects = [];
+            }
+            cupDetailLastFetch = Date.now();
           } catch (_) {}
         }
 
@@ -148,6 +149,9 @@
     {leftJoints}
     {rightJoints}
     {status}
+    {cupHeightMm}
+    {cupWidthMm}
+    {cupDetectionMetrics}
   >
     {#snippet statusBar()}
       <Status message={statusMessages[status]} {objectCount} />

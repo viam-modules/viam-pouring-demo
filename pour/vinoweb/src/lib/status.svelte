@@ -65,7 +65,7 @@
         <div class="right-content">
           <div class="detection-indicators">
             <div class="detection-item">
-              <span class="detection-label">Objects</span>
+              <span class="detection-label">Cups</span>
               <span class="detection-count" class:valid={objectCount > 0} class:dimmed={objectCount === 0}>
                 {objectCount}
               </span>
