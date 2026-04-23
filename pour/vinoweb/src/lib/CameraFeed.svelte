@@ -16,8 +16,9 @@
   let reconnecting = $state(false);
   let containerRef: HTMLDivElement | undefined = $state();
 
-  const HEALTH_CHECK_MS = 3000;
-  const RECONNECT_DELAY_MS = 2000;
+  const HEALTH_CHECK_MS = 1000;
+  const RECONNECT_DELAY_MS = 1500;
+  const INITIAL_GRACE_MS = 4000;
 
   $effect(() => {
     void streamKey;
@@ -25,20 +26,17 @@
     let healthTimer: ReturnType<typeof setInterval> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let trackListeners: { track: MediaStreamTrack; handler: () => void }[] = [];
-    let settled = false;
+    const mountTime = Date.now();
 
     const mountDelay = setTimeout(() => {
-      settled = true;
       if (!containerRef) return;
       const video = containerRef.querySelector("video");
       if (!video) return;
 
-      function isStreamDead(): boolean {
-        if (!video!.srcObject || !(video!.srcObject instanceof MediaStream)) {
-          return false;
-        }
+      function hasLiveStream(): boolean {
+        if (!video!.srcObject || !(video!.srcObject instanceof MediaStream)) return false;
         const tracks = video!.srcObject.getTracks();
-        return tracks.length > 0 && tracks.every((t) => t.readyState === "ended");
+        return tracks.length > 0 && tracks.some((t) => t.readyState === "live");
       }
 
       function doReconnect() {
@@ -73,13 +71,15 @@
 
       healthTimer = setInterval(() => {
         if (reconnecting) return;
-        if (!video!.srcObject || !(video!.srcObject instanceof MediaStream)) return;
+
+        if (!hasLiveStream()) {
+          if (Date.now() - mountTime > INITIAL_GRACE_MS) {
+            doReconnect();
+          }
+          return;
+        }
 
         attachTrackListeners();
-
-        if (isStreamDead()) {
-          doReconnect();
-        }
       }, HEALTH_CHECK_MS);
     }, 1000);
 

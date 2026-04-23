@@ -30,6 +30,9 @@
 
   /** Stats panel below the viewer; closed by default so the canvas keeps space */
   let statsExpanded = $state(false);
+
+  const detectionStatuses = new Set(["manual mode", "standby", "looking"]);
+  const demoActive = $derived(!detectionStatuses.has(status));
 </script>
 
 <main class="main-content">
@@ -37,60 +40,71 @@
     {@render statusBar()}
   </header>
 
-  <section class="content-area">
-    <div class="pcd-area">
-      <div class="pcd-view-wrap">
-        <PointCloud3D objects={segmentedObjects} {cupHeightMm} {cupWidthMm} />
-        {#if cupDetectionMetrics}
-          <button
-            type="button"
-            class="validity-pill"
-            class:valid={cupDetectionMetrics.valid}
-            class:invalid={!cupDetectionMetrics.valid}
-            style:background={cupDetectionMetrics.valid ? pcValidPillRgba() : pcInvalidPillRgba()}
-            onclick={() => (statsExpanded = !statsExpanded)}
-            aria-expanded={statsExpanded}
-            aria-controls="cup-stats-panel"
-            title={statsExpanded ? "Hide measurement details" : "Show measurement details"}
-          >
-            <span class="pill-caret" aria-hidden="true">{statsExpanded ? "▲" : "▼"}</span>
-            <span class="pill-label">{cupDetectionMetrics.valid ? "Valid" : "Invalid"}</span>
-          </button>
+  {#if demoActive}
+    <section class="content-area cameras-only">
+      <div class="cam-area cam-full-top">
+        <CameraFeed name="left-cam" partID="xxx" label="Left Camera" />
+      </div>
+      <div class="cam-area cam-full-bottom">
+        <CameraFeed name="right-cam" partID="xxx" label="Right Camera" />
+      </div>
+    </section>
+  {:else}
+    <section class="content-area debug-grid">
+      <div class="pcd-area">
+        <div class="pcd-view-wrap">
+          <PointCloud3D objects={segmentedObjects} {cupHeightMm} {cupWidthMm} />
+          {#if cupDetectionMetrics}
+            <button
+              type="button"
+              class="validity-pill"
+              class:valid={cupDetectionMetrics.valid}
+              class:invalid={!cupDetectionMetrics.valid}
+              style:background={cupDetectionMetrics.valid ? pcValidPillRgba() : pcInvalidPillRgba()}
+              onclick={() => (statsExpanded = !statsExpanded)}
+              aria-expanded={statsExpanded}
+              aria-controls="cup-stats-panel"
+              title={statsExpanded ? "Hide measurement details" : "Show measurement details"}
+            >
+              <span class="pill-caret" aria-hidden="true">{statsExpanded ? "▲" : "▼"}</span>
+              <span class="pill-label">{cupDetectionMetrics.valid ? "Valid" : "Invalid"}</span>
+            </button>
+          {/if}
+        </div>
+        {#if cupDetectionMetrics && statsExpanded}
+          <div id="cup-stats-panel" class="cup-stats-panel">
+            <CupMetricsBar detectionMetrics={cupDetectionMetrics} />
+          </div>
         {/if}
       </div>
-      {#if cupDetectionMetrics && statsExpanded}
-        <div id="cup-stats-panel" class="cup-stats-panel">
-          <CupMetricsBar detectionMetrics={cupDetectionMetrics} />
-        </div>
-      {/if}
-    </div>
-    <div class="cam-area cam-top">
-      <CameraFeed name="left-cam" partID="xxx" label="Left Camera" />
-    </div>
-    <div class="table-area">
-      <table class="joint-table">
-        <thead>
-          <tr>
-            <th>Joint</th>
-            <th>Left Arm (°)</th>
-            <th>Right Arm (°)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each leftJoints as _, i}
+      <div class="cam-area cam-top">
+        <CameraFeed name="left-cam" partID="xxx" label="Left Camera" />
+      </div>
+      <div class="table-area">
+        <table class="joint-table">
+          <thead>
             <tr>
-              <td class="joint-idx">{i}</td>
-              <td>{leftJoints[i]?.position.toFixed(2) ?? "—"}</td>
-              <td>{rightJoints[i]?.position.toFixed(2) ?? "—"}</td>
+              <th>Joint</th>
+              <th>Left Arm (°)</th>
+              <th>Right Arm (°)</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-    <div class="cam-area cam-bottom">
-      <CameraFeed name="right-cam" partID="xxx" label="Right Camera" />
-    </div>
-  </section>
+          </thead>
+          <tbody>
+            {#each leftJoints as _, i}
+              <tr>
+                <td class="joint-idx">{i}</td>
+                <td>{leftJoints[i]?.position.toFixed(2) ?? "—"}</td>
+                <td>{rightJoints[i]?.position.toFixed(2) ?? "—"}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <div class="cam-area cam-bottom">
+        <CameraFeed name="right-cam" partID="xxx" label="Right Camera" />
+      </div>
+    </section>
+  {/if}
 </main>
 
 <style>
@@ -114,16 +128,29 @@
   }
 
   .content-area {
-    display: grid;
-    grid-template-columns: minmax(0, 35%) minmax(0, 1fr);
-    grid-template-rows: 1fr 1fr;
-    gap: 12px;
     flex: 1;
     min-height: 0;
     background: #ddd;
     border-radius: 16px;
     padding: 15px;
     overflow: hidden;
+  }
+
+  .content-area.cameras-only {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .cam-full-top { grid-row: 1; }
+  .cam-full-bottom { grid-row: 2; }
+
+  .content-area.debug-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 35%) minmax(0, 1fr);
+    grid-template-rows: 1fr 1fr;
+    gap: 12px;
     align-items: stretch;
   }
 
