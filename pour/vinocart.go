@@ -531,6 +531,39 @@ func saveImageToDataset(ctx context.Context, component resource.Name, img image.
 	return nil
 }
 
+// uploadPlanFile uploads a serialized PlanRequest to Viam data management as a .json file.
+// It is best-effort: errors are logged and do not affect the caller's error flow.
+// tag is added as a data management tag alongside "plan-file" (e.g. "align-plan-bad").
+func (vc *VinoCart) uploadPlanFile(tag, filename string, req *armplanning.PlanRequest) {
+	if vc.dataClient == nil {
+		return
+	}
+	pid := os.Getenv("VIAM_MACHINE_PART_ID")
+	if pid == "" {
+		vc.logger.Warn("VIAM_MACHINE_PART_ID not set, skipping plan file upload")
+		return
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		vc.logger.Errorf("failed to marshal plan for upload (%s): %v", filename, err)
+		return
+	}
+	ext := ".json"
+	opts := &app.FileUploadOptions{
+		FileName:      &filename,
+		FileExtension: &ext,
+		Tags:          []string{"plan-file", tag},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	id, err := vc.dataClient.FileUploadFromBytes(ctx, pid, data, opts)
+	if err != nil {
+		vc.logger.Errorf("failed to upload plan file %s: %v", filename, err)
+		return
+	}
+	vc.logger.Infof("uploaded plan file %s to data management (id: %s)", filename, id)
+}
+
 func (vc *VinoCart) Touch(ctx context.Context) error {
 	vc.setStatus("looking")
 
@@ -1048,6 +1081,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			} else {
 				vc.logger.Warnf("[bottle-to-cup-align][try %d] debug written to %s", try, fn)
 			}
+			vc.uploadPlanFile("align-plan-bad",
+				fmt.Sprintf("align-plan-bad-try-%d-%d.json", try, time.Now().Unix()), alignReq)
 			lastErr = fmt.Errorf("[bottle-to-cup-align][try %d] pos too far: %v", try, alignL2)
 			// On all but the final try, replan 
 			if try < maxAlignTries {
@@ -1364,6 +1399,8 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 				if writeErr := req.WriteToFile(fn); writeErr != nil {
 					vc.logger.Errorf("failed to write pour debug: %v", writeErr)
 				}
+				vc.uploadPlanFile("pour-plan-bad",
+					fmt.Sprintf("pour-plan-bad-%d.json", time.Now().Unix()), req)
 				return nil, fmt.Errorf("pourPlan pos too far %v, written to: %s", d, fn)
 			}
 		}

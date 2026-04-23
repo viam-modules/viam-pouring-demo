@@ -21,6 +21,99 @@ import (
 	"github.com/viam-modules/viam-pouring-demo/pour"
 )
 
+func getPlans(ctx context.Context, logger logging.Logger, partID, startStr, endStr string) error {
+	viamClient, err := app.ConnectFromCLIToken(ctx, logger)
+	if err != nil {
+		return fmt.Errorf("not logged in to Viam CLI (run `viam login`): %w", err)
+	}
+	defer viamClient.Close()
+	dataClient := viamClient.DataClient()
+
+	filter := &app.Filter{
+		PartID: partID,
+		TagsFilter: app.TagsFilter{
+			Type: app.TagsFilterTypeMatchByOr,
+			Tags: []string{"plan-file"},
+		},
+	}
+
+	if startStr != "" || endStr != "" {
+		var interval app.CaptureInterval
+		if startStr != "" {
+			t, err := time.Parse(time.RFC3339, startStr)
+			if err != nil {
+				return fmt.Errorf("invalid --start %q: %w", startStr, err)
+			}
+			interval.Start = t
+		}
+		if endStr != "" {
+			t, err := time.Parse(time.RFC3339, endStr)
+			if err != nil {
+				return fmt.Errorf("invalid --end %q: %w", endStr, err)
+			}
+			interval.End = t
+		}
+		filter.Interval = interval
+	}
+
+	// Phase 1: page through metadata only (includeBinary=false allows Limit>1).
+	var last string
+	var allIDs []string
+	var metaByID = map[string]*app.BinaryMetadata{}
+	for {
+		resp, err := dataClient.BinaryDataByFilter(ctx, false, &app.DataByFilterOptions{
+			Filter: filter,
+			Limit:  50,
+			Last:   last,
+		})
+		if err != nil {
+			return fmt.Errorf("querying data management: %w", err)
+		}
+		for _, d := range resp.BinaryData {
+			allIDs = append(allIDs, d.Metadata.BinaryDataID)
+			metaByID[d.Metadata.BinaryDataID] = d.Metadata
+		}
+		if len(resp.BinaryData) == 0 || resp.Last == "" {
+			break
+		}
+		last = resp.Last
+	}
+
+	// Phase 2: fetch binary content by ID.
+	total := 0
+	const batchSize = 10
+	for i := 0; i < len(allIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(allIDs) {
+			end = len(allIDs)
+		}
+		batch := allIDs[i:end]
+		binaries, err := dataClient.BinaryDataByIDs(ctx, batch)
+		if err != nil {
+			return fmt.Errorf("fetching binary data: %w", err)
+		}
+		for _, d := range binaries {
+			meta := metaByID[d.Metadata.BinaryDataID]
+			fname := meta.FileName
+			if fname == "" {
+				fname = fmt.Sprintf("plan-%s.json", meta.BinaryDataID)
+			}
+			if err := os.WriteFile(fname, d.Binary, 0o600); err != nil {
+				logger.Errorf("failed to write %s: %v", fname, err)
+				continue
+			}
+			logger.Infof("saved %s (captured: %s, tags: %v)",
+				fname,
+				meta.TimeRequested.Format(time.RFC3339),
+				meta.CaptureMetadata.Tags,
+			)
+			total++
+		}
+	}
+	logger.Infof("downloaded %d plan file(s)", total)
+	return nil
+}
+
 func main() {
 	err := realMain()
 	if err != nil {
@@ -39,11 +132,22 @@ func realMain() error {
 	flag.IntVar(&n, "n", n, "number of times to run")
 	host := flag.String("host", "", "host to connect to")
 	configFile := flag.String("config", "", "host to connect to")
+	partID := flag.String("part-id", "", "machine part ID to query plan files from data management")
+	startStr := flag.String("start", "", "start time filter for get-plans (RFC3339, e.g. 2026-04-23T10:00:00Z)")
+	endStr := flag.String("end", "", "end time filter for get-plans (RFC3339)")
 
 	flag.Parse()
 
 	if debug {
 		logger.SetLevel(logging.DEBUG)
+	}
+
+	// get-plans only needs a cloud client, not a robot connection
+	if flag.Arg(0) == "get-plans" {
+		if *partID == "" {
+			return fmt.Errorf("--part-id is required for get-plans")
+		}
+		return getPlans(ctx, logger, *partID, *startStr, *endStr)
 	}
 
 	if *configFile == "" {
