@@ -20,9 +20,11 @@
   "dependencies": {
     "@bufbuild/protobuf": "^1.10.1",
     "@tanstack/svelte-query": "^5.79.0",
+    "@types/three": "^0.183.1",
     "@viamrobotics/sdk": "^0.42.0",
     "@viamrobotics/svelte-sdk": "^0.2.0",
     "carbon-components-svelte": "^0.89.8",
+    "three": "^0.183.2",
     "typescript-cookie": "^1.0.6"
   }
 }
