@@ -82,7 +82,21 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
-	g, err := NewVinoCart(ctx, config, c, robotClient, nil, logger)
+	var viamClient *app.ViamClient
+	viamClient, err = app.CreateViamClientFromEnvVars(ctx, nil, logger)
+	if err != nil {
+		logger.Warnf("can't connect to app: %v", err)
+	}
+
+	// create directory where images for training data will live
+	if err := os.Mkdir(trainingDataDirName, 0755); err != nil {
+		if !os.IsExist(err) {
+			return nil, fmt.Errorf("failed to create directory: %w", err)
+		}
+		// Directory already exists, which is fine
+	}
+
+	g, err := NewVinoCart(ctx, config, c, robotClient, viamClient, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -91,12 +105,12 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 	return g, nil
 }
 
-func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client robot.Robot, dataClient *app.DataClient, logger logging.Logger) (*VinoCart, error) {
+func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client robot.Robot, viamClient *app.ViamClient, logger logging.Logger) (*VinoCart, error) {
 	vc := &VinoCart{
 		conf:        conf,
 		c:           c,
 		robotClient: client,
-		dataClient:  dataClient,
+		viamClient:  viamClient,
 		logger:      logger,
 	}
 
@@ -155,7 +169,7 @@ type VinoCart struct {
 	conf   *Config
 
 	robotClient robot.Robot
-	dataClient  *app.DataClient
+	viamClient  *app.ViamClient
 
 	c *Pour1Components
 
@@ -170,6 +184,8 @@ type VinoCart struct {
 	statusLock sync.Mutex
 	status     string
 
+	latestPour time.Time
+
 	server *http.Server
 }
 
@@ -183,7 +199,12 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 		vc.loopWaitGroup.Wait()
 	}
 
-	return multierr.Combine(vc.robotClient.Close(ctx), vc.server.Close())
+	var viamClientErr error
+	if vc.viamClient != nil {
+		viamClientErr = vc.viamClient.Close()
+	}
+
+	return multierr.Combine(vc.robotClient.Close(ctx), vc.server.Close(), viamClientErr)
 }
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
