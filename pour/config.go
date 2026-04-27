@@ -6,7 +6,7 @@ import (
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/components/gripper"
-	"go.viam.com/rdk/components/switch"
+	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/motion"
@@ -32,7 +32,7 @@ func (csp ConfigStatePostions) setup(deps resource.Dependencies) (StagePositions
 		for _, aa := range s { // parallel set 1
 			b := []toggleswitch.Switch{}
 			for _, bb := range aa { // actual pos
-				sss, err := toggleswitch.FromDependencies(deps, bb)
+				sss, err := toggleswitch.FromProvider(deps, bb)
 				if err != nil {
 					return nil, err
 				}
@@ -73,8 +73,10 @@ type Config struct {
 
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
+	GlassFullnessService string `json:"glass_fullness_service"`
 
-	Loop bool `json:"loop"`
+	Loop                    bool `json:"loop"`
+	UseGlassFullnessMLModel bool `json:"use_glass_fullness_model"`
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
@@ -86,6 +88,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	if cfg.PourGlassFindService != "" {
 		deps = append(deps, cfg.PourGlassFindService)
+	}
+
+	if cfg.GlassFullnessService != "" {
+		deps = append(deps, cfg.GlassFullnessService)
 	}
 
 	if cfg.ArmName == "" {
@@ -176,74 +182,75 @@ type Pour1Components struct {
 
 	PickQualityService   vision.Service
 	PourGlassFindService vision.Service
+	GlassFullnessService vision.Service
 }
 
 func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies) (*Pour1Components, error) {
 	var err error
 	c := &Pour1Components{}
 
-	c.Arm, err = arm.FromDependencies(deps, config.ArmName)
+	c.Arm, err = arm.FromProvider(deps, config.ArmName)
 	if err != nil {
 		return nil, err
 	}
 
-	c.Gripper, err = gripper.FromDependencies(deps, config.GripperName)
+	c.Gripper, err = gripper.FromProvider(deps, config.GripperName)
 	if err != nil {
 		return nil, err
 	}
 
-	c.Cam, err = camera.FromDependencies(deps, config.CameraName)
+	c.Cam, err = camera.FromProvider(deps, config.CameraName)
 	if err != nil {
 		return nil, err
 	}
 
 	if config.GlassPourCam != "" {
-		c.GlassPourCam, err = camera.FromDependencies(deps, config.GlassPourCam)
+		c.GlassPourCam, err = camera.FromProvider(deps, config.GlassPourCam)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	c.Motion, err = motion.FromDependencies(deps, "builtin")
+	c.Motion, err = motion.FromProvider(deps, "builtin")
 	if err != nil {
 		return nil, err
 	}
 
-	c.Rfs, err = framesystem.FromDependencies(deps)
+	c.Rfs, err = framesystem.FromProvider(deps)
 	if err != nil {
 		return nil, err
 	}
 
 	if config.PickQualityService != "" {
-		c.PickQualityService, err = vision.FromDependencies(deps, config.PickQualityService)
+		c.PickQualityService, err = vision.FromProvider(deps, config.PickQualityService)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if config.PourGlassFindService != "" {
-		c.PourGlassFindService, err = vision.FromDependencies(deps, config.PourGlassFindService)
+		c.PourGlassFindService, err = vision.FromProvider(deps, config.PourGlassFindService)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if config.CupFinderService != "" {
-		c.CupFinder, err = vision.FromDependencies(deps, config.CupFinderService)
+		c.CupFinder, err = vision.FromProvider(deps, config.CupFinderService)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if config.BottleGripper != "" {
-		c.BottleGripper, err = gripper.FromDependencies(deps, config.BottleGripper)
+		c.BottleGripper, err = gripper.FromProvider(deps, config.BottleGripper)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if config.BottleArm != "" {
-		c.BottleArm, err = arm.FromDependencies(deps, config.BottleArm)
+		c.BottleArm, err = arm.FromProvider(deps, config.BottleArm)
 		if err != nil {
 			return nil, err
 		}
