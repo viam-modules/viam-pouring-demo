@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"flag"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/erh/vmodutils"
@@ -27,21 +30,25 @@ func realMain() error {
 
 	debug := false
 	flag.BoolVar(&debug, "debug", false, "")
-	host := flag.String("host", "", "host to connect to")
+	host := flag.String("host", "", "host to connect to (also drives sessions-<host>.csv path)")
 	cartName := flag.String("cart", "cart", "name of the vinocart generic service")
 
-	since := flag.Duration("since", 24*time.Hour, "export: how far back to fetch data")
+	since := flag.Duration("since", 24*time.Hour, "export: only include sessions started within this window (0 = all)")
 	outDir := flag.String("out", "openvla-export", "export: output directory")
-	tagPrefix := flag.String("tag-prefix", "touch-capture-", "export: session capture tag prefix")
 	armName := flag.String("arm", "left-arm", "export: arm component name (JointPositions → observation.state)")
 	camName := flag.String("cam", "right-cam", "export: camera component name (GetImages → observation.image)")
-	instruction := flag.String("instruction", "touch the wine bottle", "export: language instruction")
+	instruction := flag.String("instruction", "grab the cup", "export: language instruction")
 
 	flag.Parse()
 
 	if debug {
 		logger.SetLevel(logging.DEBUG)
 	}
+
+	if *host == "" {
+		return fmt.Errorf("-host is required")
+	}
+	sessionsPath := sessionsPathFor(*host)
 
 	cmd := flag.Arg(0)
 
@@ -75,7 +82,9 @@ func realMain() error {
 
 		time.Sleep(5 * time.Second)
 
+		startTS := time.Now()
 		_, touchErr := vc.DoCommand(ctx, map[string]any{"touch": true})
+		endTS := time.Now()
 
 		if _, err := capture.DoCommand(ctx, map[string]any{"stop": true}); err != nil {
 			if touchErr != nil {
@@ -88,10 +97,27 @@ func realMain() error {
 			return touchErr
 		}
 
+		if err := appendSession(sessionsPath, startTS, endTS); err != nil {
+			return fmt.Errorf("recording session: %w", err)
+		}
+		logger.Infof("recorded session [%s, %s] to %s", startTS.Format(time.RFC3339Nano), endTS.Format(time.RFC3339Nano), sessionsPath)
+
 		_, err = vc.DoCommand(ctx, map[string]any{"reset": true})
 		return err
 
 	case "export":
+		machine, err := vmodutils.ConnectToHostFromCLIToken(ctx, *host, logger)
+		if err != nil {
+			return err
+		}
+		md, err := machine.CloudMetadata(ctx)
+		if err != nil {
+			machine.Close(ctx)
+			return fmt.Errorf("CloudMetadata: %w", err)
+		}
+		machine.Close(ctx)
+		logger.Infof("cloud metadata for %s: location=%s part=%s", *host, md.LocationID, md.MachinePartID)
+
 		appClient, err := app.ConnectFromCLIToken(ctx, logger)
 		if err != nil {
 			return fmt.Errorf("export needs viam cli credentials (run `viam login` first): %w", err)
@@ -99,15 +125,58 @@ func realMain() error {
 		defer appClient.Close()
 
 		return runExport(ctx, appClient.DataClient(), exportOptions{
-			since:       *since,
-			outDir:      *outDir,
-			tagPrefix:   *tagPrefix,
-			armName:     *armName,
-			camName:     *camName,
-			instruction: *instruction,
+			sessionsPath: sessionsPath,
+			since:        *since,
+			outDir:       *outDir,
+			armName:      *armName,
+			camName:      *camName,
+			instruction:  *instruction,
+			locationID:   md.LocationID,
+			partID:       md.MachinePartID,
 		}, logger)
 
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
 	}
+}
+
+func sessionsPathFor(host string) string {
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '-', r == '.', r == '_':
+			return r
+		}
+		return '_'
+	}, host)
+	return fmt.Sprintf("sessions-%s.csv", safe)
+}
+
+func appendSession(path string, start, end time.Time) error {
+	_, statErr := os.Stat(path)
+	isNew := os.IsNotExist(statErr)
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	w := csv.NewWriter(f)
+	defer w.Flush()
+
+	if isNew {
+		if err := w.Write([]string{"session_id", "start", "end"}); err != nil {
+			return err
+		}
+	}
+
+	id := start.UTC().Format("20060102T150405.000Z")
+	return w.Write([]string{
+		id,
+		start.UTC().Format(time.RFC3339Nano),
+		end.UTC().Format(time.RFC3339Nano),
+	})
 }
