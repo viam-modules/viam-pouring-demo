@@ -50,22 +50,37 @@ pour/vinoweb/dist/index.html: pour/vinoweb/*.json pour/vinoweb/*.html pour/vinow
 bin/tool: cmd/tools/*.go pour/*.go
 	go build -o bin/tool cmd/tools/*.go
 
-VLA_VENV := cmd/vla/.venv
-VLA_PY := $(VLA_VENV)/bin/python3
-# OpenVLA's pinned stack (transformers 4.40, torch ~2.2) does not run on
-# Python >=3.13. Override with VLA_PYTHON=python3.x if needed.
-VLA_PYTHON ?= python3.11
-
-$(VLA_VENV):
-	$(VLA_PYTHON) -m venv $@
-
-$(VLA_VENV)/.installed: cmd/vla/requirements.txt | $(VLA_VENV)
-	$(VLA_VENV)/bin/pip install --upgrade pip
-	$(VLA_VENV)/bin/pip install -r cmd/vla/requirements.txt
-	touch $@
-
-# Add --load-4bit (Linux/CUDA only) via: make vlagen VLA_ARGS=--load-4bit
+# vlagen runs training on a remote CUDA box reachable via ssh.
+#   VLA_HOST       required, e.g. VLA_HOST=user@gpu-box
+#   VLA_REMOTE_DIR remote workspace, default ~/viam-pouring-demo-vla
+#   VLA_ARGS       extra args to pass to train_openvla.py (e.g. --load-4bit)
+#
+# Workflow: rsync script + dataset → run on remote in a venv → rsync model back.
+VLA_REMOTE_DIR ?= ~/viam-pouring-demo-vla
 VLA_ARGS ?=
 
-vlagen: $(VLA_VENV)/.installed
-	$(VLA_PY) cmd/vla/train_openvla.py --data-root openvla-export --output-dir openvla-finetuned --epochs 5 --batch-size 4 $(VLA_ARGS)
+vlagen:
+	@if [ -z "$(VLA_HOST)" ]; then \
+		echo "VLA_HOST is required (e.g. make vlagen VLA_HOST=user@gpu-box)"; \
+		exit 1; \
+	fi
+	@if [ ! -d openvla-export ]; then \
+		echo "no openvla-export/ here — capture some data first"; \
+		exit 1; \
+	fi
+	ssh $(VLA_HOST) 'mkdir -p $(VLA_REMOTE_DIR)'
+	rsync -avz \
+		cmd/vla/train_openvla.py \
+		cmd/vla/requirements.txt \
+		openvla-export \
+		$(VLA_HOST):$(VLA_REMOTE_DIR)/
+	ssh $(VLA_HOST) 'set -e; \
+		cd $(VLA_REMOTE_DIR); \
+		[ -d .venv ] || python3 -m venv .venv; \
+		.venv/bin/pip install --upgrade pip; \
+		.venv/bin/pip install -r requirements.txt; \
+		.venv/bin/python3 -u train_openvla.py \
+			--data-root openvla-export \
+			--output-dir openvla-finetuned \
+			--epochs 5 --batch-size 4 $(VLA_ARGS)'
+	rsync -avz $(VLA_HOST):$(VLA_REMOTE_DIR)/openvla-finetuned ./

@@ -41,11 +41,20 @@ Usage:
 
 import argparse
 import json
+import logging
 import math
+import time
 from pathlib import Path
 
 import numpy as np
 import torch
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("vla-train")
 from PIL import Image
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from torch.utils.data import DataLoader, Dataset
@@ -250,27 +259,30 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--lora-rank", type=int, default=32)
     ap.add_argument("--load-4bit", action="store_true")
-    ap.add_argument("--num-workers", type=int, default=2)
+    # Default 0: trust_remote_code processors don't pickle to subprocess workers.
+    ap.add_argument("--num-workers", type=int, default=0)
     args = ap.parse_args()
 
     data_root = Path(args.data_root)
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"loading episodes from {data_root}")
+    log.info("loading episodes from %s", data_root)
     episodes = load_episodes(data_root)
     steps = build_steps(episodes)
-    print(f"  episodes={len(episodes)} steps={len(steps)}")
+    log.info("episodes=%d steps=%d", len(episodes), len(steps))
     if not steps:
         raise SystemExit("no steps to train on")
 
     q01, q99 = compute_action_stats(steps)
-    print(f"action q01: {q01}")
-    print(f"action q99: {q99}")
+    log.info("action q01: %s", q01)
+    log.info("action q99: %s", q99)
     np.savez(out_dir / "action_stats.npz", q01=q01, q99=q99)
 
-    print("loading processor + model")
+    log.info("loading processor")
+    t0 = time.time()
     processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
+    log.info("processor loaded in %.1fs", time.time() - t0)
 
     model_kwargs = dict(
         trust_remote_code=True,
@@ -286,10 +298,15 @@ def main():
             bnb_4bit_use_double_quant=True,
         )
 
+    log.info("loading model %s (this can take minutes — ~14GB shards)", args.model_id)
+    t0 = time.time()
     model = AutoModelForVision2Seq.from_pretrained(args.model_id, **model_kwargs)
+    log.info("model loaded in %.1fs", time.time() - t0)
     if args.load_4bit:
+        log.info("preparing model for k-bit training")
         model = prepare_model_for_kbit_training(model)
 
+    log.info("wrapping with LoRA (rank=%d)", args.lora_rank)
     lora = LoraConfig(
         r=args.lora_rank,
         lora_alpha=args.lora_rank * 2,
@@ -299,7 +316,9 @@ def main():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora)
-    model.print_trainable_parameters()
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in model.parameters())
+    log.info("trainable params: %d / %d (%.4f%%)", trainable, total, 100 * trainable / total)
 
     dataset = OpenVLADataset(steps, q01, q99, processor)
     loader = DataLoader(
@@ -309,10 +328,24 @@ def main():
         collate_fn=collate,
         num_workers=args.num_workers,
     )
+    log.info("dataset: %d examples, %d batches/epoch (batch_size=%d)",
+             len(dataset), len(loader), args.batch_size)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+    log.info("device: %s, model dtype: %s", device, next(model.parameters()).dtype)
+    if device == "cpu":
+        log.warning("running on CPU — fine-tuning a 7B model this way is impractically slow "
+                    "(minutes per step). Use a CUDA box for real training.")
     if not args.load_4bit:
+        log.info("moving model to %s", device)
+        t0 = time.time()
         model.to(device)
+        log.info("model on %s in %.1fs", device, time.time() - t0)
 
     optim = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr
@@ -323,25 +356,49 @@ def main():
         num_warmup_steps=max(1, total_steps // 20),
         num_training_steps=total_steps,
     )
+    log.info("optimizer: AdamW lr=%g, total_steps=%d, warmup=%d",
+             args.lr, total_steps, max(1, total_steps // 20))
 
     model.train()
+    global_step = 0
     for epoch in range(args.epochs):
+        log.info("=== epoch %d/%d ===", epoch + 1, args.epochs)
         bar = tqdm(loader, desc=f"epoch {epoch+1}/{args.epochs}")
-        for batch in bar:
+        for i, batch in enumerate(bar):
+            t_step = time.time()
+            t = time.time()
             batch = {k: v.to(device) for k, v in batch.items()}
             batch["pixel_values"] = batch["pixel_values"].to(torch.bfloat16)
+            log.debug("step %d: batch on device in %.2fs (input_ids=%s)",
+                      global_step, time.time() - t, list(batch["input_ids"].shape))
+
+            t = time.time()
             out = model(**batch)
             loss = out.loss
+            log.debug("step %d: forward in %.2fs (loss=%.4f)",
+                      global_step, time.time() - t, float(loss))
+
+            t = time.time()
             optim.zero_grad()
             loss.backward()
+            log.debug("step %d: backward in %.2fs", global_step, time.time() - t)
+
+            t = time.time()
             optim.step()
             sched.step()
-            bar.set_postfix(loss=float(loss))
+            log.debug("step %d: optim step in %.2fs", global_step, time.time() - t)
+
+            step_dt = time.time() - t_step
+            log.info("step %d/%d (epoch %d): loss=%.4f dt=%.2fs",
+                     global_step + 1, total_steps, epoch + 1, float(loss), step_dt)
+            bar.set_postfix(loss=float(loss), dt=f"{step_dt:.1f}s")
+            global_step += 1
 
         ckpt = out_dir / f"epoch_{epoch+1}"
+        log.info("saving checkpoint to %s", ckpt)
         model.save_pretrained(ckpt)
         processor.save_pretrained(ckpt)
-        print(f"saved {ckpt}")
+        log.info("checkpoint saved")
 
 
 if __name__ == "__main__":
