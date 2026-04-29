@@ -1,0 +1,10 @@
+torch>=2.2,<2.6
+transformers==4.40.1
+tokenizers==0.19.1
+timm==0.9.10
+huggingface_hub<0.24
+peft>=0.10
+accelerate>=0.30
+pillow
+tqdm
+bitsandbytes; sys_platform != "darwin"

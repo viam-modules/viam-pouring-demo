@@ -107,7 +107,7 @@ func realMain() error {
 		_, err = vc.DoCommand(ctx, map[string]any{"reset": true})
 		return err
 
-	case "capture-direct":
+	case "capture-direct": // this is temporary until sequences and related are finished 
 		client, err := vmodutils.ConnectToHostFromCLIToken(ctx, *host, logger)
 		if err != nil {
 			return err

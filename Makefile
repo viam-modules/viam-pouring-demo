@@ -49,3 +49,23 @@ pour/vinoweb/dist/index.html: pour/vinoweb/*.json pour/vinoweb/*.html pour/vinow
 
 bin/tool: cmd/tools/*.go pour/*.go
 	go build -o bin/tool cmd/tools/*.go
+
+VLA_VENV := cmd/vla/.venv
+VLA_PY := $(VLA_VENV)/bin/python3
+# OpenVLA's pinned stack (transformers 4.40, torch ~2.2) does not run on
+# Python >=3.13. Override with VLA_PYTHON=python3.x if needed.
+VLA_PYTHON ?= python3.11
+
+$(VLA_VENV):
+	$(VLA_PYTHON) -m venv $@
+
+$(VLA_VENV)/.installed: cmd/vla/requirements.txt | $(VLA_VENV)
+	$(VLA_VENV)/bin/pip install --upgrade pip
+	$(VLA_VENV)/bin/pip install -r cmd/vla/requirements.txt
+	touch $@
+
+# Add --load-4bit (Linux/CUDA only) via: make vlagen VLA_ARGS=--load-4bit
+VLA_ARGS ?=
+
+vlagen: $(VLA_VENV)/.installed
+	$(VLA_PY) cmd/vla/train_openvla.py --data-root openvla-export --output-dir openvla-finetuned --epochs 5 --batch-size 4 $(VLA_ARGS)
