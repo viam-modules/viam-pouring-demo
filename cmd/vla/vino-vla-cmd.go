@@ -34,10 +34,12 @@ func realMain() error {
 	cartName := flag.String("cart", "cart", "name of the vinocart generic service")
 
 	since := flag.Duration("since", 24*time.Hour, "export: only include sessions started within this window (0 = all)")
-	outDir := flag.String("out", "openvla-export", "export: output directory")
-	armName := flag.String("arm", "left-arm", "export: arm component name (JointPositions → observation.state)")
-	camName := flag.String("cam", "right-cam", "export: camera component name (GetImages → observation.image)")
-	instruction := flag.String("instruction", "grab the cup", "export: language instruction")
+	outDir := flag.String("out", "openvla-export", "output directory (export and capture-direct)")
+	armName := flag.String("arm", "left-arm", "arm component name (export only, for JointPositions data)")
+	gripperName := flag.String("gripper", "left-gripper", "gripper component name (capture-direct: frame system → world pose)")
+	camName := flag.String("cam", "right-cam", "camera component name")
+	instruction := flag.String("instruction", "grab the cup", "language instruction")
+	hz := flag.Int("hz", 10, "capture-direct: sample rate (Hz) for arm and camera")
 
 	flag.Parse()
 
@@ -104,6 +106,26 @@ func realMain() error {
 
 		_, err = vc.DoCommand(ctx, map[string]any{"reset": true})
 		return err
+
+	case "capture-direct":
+		client, err := vmodutils.ConnectToHostFromCLIToken(ctx, *host, logger)
+		if err != nil {
+			return err
+		}
+		defer client.Close(ctx)
+
+		vc, err := generic.FromRobot(client, *cartName)
+		if err != nil {
+			return err
+		}
+
+		return runCaptureDirect(ctx, client, vc, captureDirectOptions{
+			outDir:      *outDir,
+			gripperName: *gripperName,
+			camName:     *camName,
+			instruction: *instruction,
+			hz:          *hz,
+		}, logger)
 
 	case "export":
 		machine, err := vmodutils.ConnectToHostFromCLIToken(ctx, *host, logger)
