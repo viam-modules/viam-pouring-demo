@@ -29,3 +29,7 @@ go.work.sum
 # Binaries
 bin/
 reload-*
+
+*.DS_Store
+
+openvla-export
