@@ -43,8 +43,12 @@ import argparse
 import json
 import logging
 import math
+import os
 import time
 from pathlib import Path
+
+# Reduce CUDA fragmentation; helps tight-VRAM cards squeeze a bit more.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import numpy as np
 import torch
@@ -255,7 +259,7 @@ def main():
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--model-id", default="openvla/openvla-7b")
     ap.add_argument("--epochs", type=int, default=5)
-    ap.add_argument("--batch-size", type=int, default=4)
+    ap.add_argument("--batch-size", type=int, default=1)
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--lora-rank", type=int, default=32)
     ap.add_argument("--load-4bit", action="store_true")
@@ -297,6 +301,9 @@ def main():
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
         )
+        # bitsandbytes models can't be .to()'d after load — accelerate must place
+        # weights directly via device_map.
+        model_kwargs["device_map"] = "auto"
 
     log.info("loading model %s (this can take minutes — ~14GB shards)", args.model_id)
     t0 = time.time()
@@ -305,6 +312,14 @@ def main():
     if args.load_4bit:
         log.info("preparing model for k-bit training")
         model = prepare_model_for_kbit_training(model)
+        # peft upcasts non-bnb params to fp32 for stability. The vision tower
+        # alone is ~600MB at fp32; on tight VRAM cast it back down to bf16.
+        try:
+            for p in model.vision_backbone.parameters():
+                p.data = p.data.to(torch.bfloat16)
+            log.info("vision_backbone re-cast to bfloat16 to save ~300MB")
+        except AttributeError:
+            log.debug("no vision_backbone attribute on model; skipping bf16 recast")
 
     log.info("wrapping with LoRA (rank=%d)", args.lora_rank)
     lora = LoraConfig(
@@ -364,11 +379,22 @@ def main():
     for epoch in range(args.epochs):
         log.info("=== epoch %d/%d ===", epoch + 1, args.epochs)
         bar = tqdm(loader, desc=f"epoch {epoch+1}/{args.epochs}")
+        # Match the vision backbone's dtype. With --load-4bit + prepare_model_for_kbit_training
+        # the vision tower stays in fp32; without quantization it's bf16. Picking dynamically
+        # avoids "Input type (c10::BFloat16) and bias type (float) should be the same".
+        try:
+            vision_dtype = next(
+                model.base_model.model.vision_backbone.parameters()
+            ).dtype
+        except (AttributeError, StopIteration):
+            vision_dtype = torch.float32 if args.load_4bit else torch.bfloat16
+        log.info("pixel_values dtype: %s", vision_dtype)
+
         for i, batch in enumerate(bar):
             t_step = time.time()
             t = time.time()
             batch = {k: v.to(device) for k, v in batch.items()}
-            batch["pixel_values"] = batch["pixel_values"].to(torch.bfloat16)
+            batch["pixel_values"] = batch["pixel_values"].to(vision_dtype)
             log.debug("step %d: batch on device in %.2fs (input_ids=%s)",
                       global_step, time.time() - t, list(batch["input_ids"].shape))
 

@@ -82,5 +82,5 @@ vlagen:
 		.venv/bin/python3 -u train_openvla.py \
 			--data-root openvla-export \
 			--output-dir openvla-finetuned \
-			--epochs 5 --batch-size 4 $(VLA_ARGS)'
+			--epochs 5 $(VLA_ARGS)'
 	rsync -avz $(VLA_HOST):$(VLA_REMOTE_DIR)/openvla-finetuned ./
