@@ -1,5 +1,6 @@
 torch>=2.2,<2.6
 transformers==4.40.1
+viam-sdk
 tokenizers==0.19.1
 timm==0.9.10
 huggingface_hub<0.24
