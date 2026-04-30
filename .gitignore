@@ -10,6 +10,8 @@
 *~
 module.tar.gz
 
+cmd/vla/__pycache__
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -25,7 +27,13 @@ go.work.sum
 
 # env file
 .env
+cmd/vla/.venv/
 
 # Binaries
 bin/
 reload-*
+
+*.DS_Store
+
+openvla-export
+openvla-finetuned
