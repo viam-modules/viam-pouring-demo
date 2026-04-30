@@ -40,7 +40,6 @@ from PIL import Image
 from transformers import AutoModelForVision2Seq, AutoProcessor
 
 from viam.components.camera import Camera
-from viam.components.gripper import Gripper
 from viam.proto.common import Pose, PoseInFrame
 from viam.robot.client import RobotClient
 from viam.rpc.dial import Credentials, DialOptions
@@ -189,13 +188,9 @@ async def run(args):
     try:
         cam = Camera.from_robot(robot, args.camera)
         motion = MotionClient.from_robot(robot, args.motion)
-        # motion.get_pose looks up the frame by name in the frame system.
-        # Frames are keyed by bare component name, not the canonical
-        # "rdk:component:gripper/..." form. Use the bare name here, but pass
-        # the full resource-name proto string to motion.move (which uses it
-        # as a resource lookup, not a frame lookup).
+        # motion.get_pose and motion.move both look up the component by frame
+        # name in the frame system. Frames are keyed by bare component name.
         gripper_frame = args.gripper
-        gripper_resource = str(Gripper.get_resource_name(args.gripper))
 
         steps = 1 if args.dry_run else args.max_steps
         if args.dry_run:
@@ -259,7 +254,7 @@ async def run(args):
             else:
                 t = time.time()
                 await motion.move(
-                    component_name=gripper_resource,
+                    component_name=gripper_frame,
                     destination=PoseInFrame(reference_frame="world", pose=target),
                 )
                 log.info("step %d: moved in %.2fs (total step %.2fs)",
