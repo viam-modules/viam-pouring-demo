@@ -33,7 +33,7 @@ func realMain() error {
 
 	since := flag.Duration("since", 24*time.Hour, "export: only include sessions started within this window (0 = all)")
 	outDir := flag.String("out", "openvla-export", "output directory (export and capture-direct)")
-	armName := flag.String("arm", "left-arm", "arm component name (export only, for JointPositions data)")
+	armName := flag.String("arm", "left-arm", "arm component name (for JointPositions data)")
 	gripperName := flag.String("gripper", "left-gripper", "gripper component name (capture-direct: frame system → world pose)")
 	camName := flag.String("cam", "right-cam", "primary camera component name")
 	cam2Name := flag.String("cam2", "", "second camera component name (optional)")
@@ -127,6 +127,7 @@ func realMain() error {
 
 		return runCaptureDirect(ctx, client, captureDirectOptions{
 			outDir:      *outDir,
+			armName:     *armName,
 			gripperName: *gripperName,
 			camNames:    camNames,
 			instruction: *instruction,

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
@@ -17,6 +18,7 @@ import (
 
 type captureDirectOptions struct {
 	outDir      string
+	armName     string
 	gripperName string
 	camNames    []string
 	instruction string
@@ -24,8 +26,9 @@ type captureDirectOptions struct {
 }
 
 type poseSample struct {
-	t  time.Time
-	ee []float64
+	t      time.Time
+	ee     []float64
+	joints []float64
 }
 
 type camSample struct {
@@ -37,6 +40,15 @@ type camSample struct {
 func runCaptureDirect(ctx context.Context, client robot.Robot, opts captureDirectOptions, logger logging.Logger) error {
 	if opts.hz <= 0 {
 		return fmt.Errorf("-hz must be positive, got %d", opts.hz)
+	}
+
+	var armComp arm.Arm
+	if opts.armName != "" {
+		a, err := arm.FromRobot(client, opts.armName)
+		if err != nil {
+			return fmt.Errorf("arm %q: %w", opts.armName, err)
+		}
+		armComp = a
 	}
 
 	var camComps []camera.Camera
@@ -89,8 +101,19 @@ func runCaptureDirect(ctx context.Context, client robot.Robot, opts captureDirec
 					worldPose.Point().X, worldPose.Point().Y, worldPose.Point().Z,
 					ovd.OX, ovd.OY, ovd.OZ, ovd.Theta,
 				}
+
+				var joints []float64
+				if armComp != nil {
+					jp, jerr := armComp.JointPositions(ctx, nil)
+					if jerr != nil {
+						logger.Warnf("arm JointPositions err: %v", jerr)
+					} else {
+						joints = jp
+					}
+				}
+
 				muPose.Lock()
-				poseSamples = append(poseSamples, poseSample{t: t, ee: ee})
+				poseSamples = append(poseSamples, poseSample{t: t, ee: ee, joints: joints})
 				muPose.Unlock()
 			}
 		}
@@ -167,8 +190,10 @@ func writeOpenVLAEpisode(epDir string, cam []camSample, numCams int, poses []pos
 
 	for i, c := range primary {
 		var ee []float64
+		var joints []float64
 		if p := closestPose(poses, c.t); p != nil {
 			ee = p.ee
+			joints = p.joints
 		}
 
 		step := map[string]any{
@@ -179,6 +204,7 @@ func writeOpenVLAEpisode(epDir string, cam []camSample, numCams int, poses []pos
 			"is_terminal":          i == len(primary)-1,
 			"image":                c.rel,
 			"ee_pose":              ee,
+			"joint_positions":      joints,
 			"language_instruction": instruction,
 		}
 
