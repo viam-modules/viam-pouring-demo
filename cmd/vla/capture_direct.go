@@ -11,6 +11,7 @@ import (
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
+	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/robot"
@@ -26,9 +27,11 @@ type captureDirectOptions struct {
 }
 
 type poseSample struct {
-	t      time.Time
-	ee     []float64
-	joints []float64
+	t          time.Time
+	ee         []float64
+	joints     []float64
+	gripperPos int
+	isHolding  bool
 }
 
 type camSample struct {
@@ -49,6 +52,11 @@ func runCaptureDirect(ctx context.Context, client robot.Robot, opts captureDirec
 			return fmt.Errorf("arm %q: %w", opts.armName, err)
 		}
 		armComp = a
+	}
+
+	gripComp, err := gripper.FromRobot(client, opts.gripperName)
+	if err != nil {
+		return fmt.Errorf("gripper %q: %w", opts.gripperName, err)
 	}
 
 	var camComps []camera.Camera
@@ -112,8 +120,35 @@ func runCaptureDirect(ctx context.Context, client robot.Robot, opts captureDirec
 					}
 				}
 
+				var gripperPos int
+				var isHolding bool
+				holding, gerr := gripComp.IsHoldingSomething(ctx, nil)
+				if gerr != nil {
+					logger.Warnf("gripper IsHoldingSomething err: %v", gerr)
+				} else {
+					isHolding = holding.IsHoldingSomething
+					if posRaw, ok := holding.Meta["position"]; ok {
+						switch v := posRaw.(type) {
+						case float64:
+							gripperPos = int(v)
+						case int:
+							gripperPos = v
+						default:
+							logger.Warnf("gripper position has unexpected type %T: %v", posRaw, posRaw)
+						}
+					} else {
+						logger.Warnf("gripper IsHoldingSomething returned no position in Meta: %v", holding.Meta)
+					}
+				}
+
 				muPose.Lock()
-				poseSamples = append(poseSamples, poseSample{t: t, ee: ee, joints: joints})
+				poseSamples = append(poseSamples, poseSample{
+					t:          t,
+					ee:         ee,
+					joints:     joints,
+					gripperPos: gripperPos,
+					isHolding:  isHolding,
+				})
 				muPose.Unlock()
 			}
 		}
@@ -191,9 +226,13 @@ func writeOpenVLAEpisode(epDir string, cam []camSample, numCams int, poses []pos
 	for i, c := range primary {
 		var ee []float64
 		var joints []float64
+		var gripperPos int
+		var isHolding bool
 		if p := closestPose(poses, c.t); p != nil {
 			ee = p.ee
 			joints = p.joints
+			gripperPos = p.gripperPos
+			isHolding = p.isHolding
 		}
 
 		step := map[string]any{
@@ -205,6 +244,8 @@ func writeOpenVLAEpisode(epDir string, cam []camSample, numCams int, poses []pos
 			"image":                c.rel,
 			"ee_pose":              ee,
 			"joint_positions":      joints,
+			"gripper_position":     gripperPos,
+			"is_holding":           isHolding,
 			"language_instruction": instruction,
 		}
 
