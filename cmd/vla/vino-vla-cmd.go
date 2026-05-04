@@ -14,7 +14,6 @@ import (
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
-	"go.viam.com/rdk/services/generic"
 )
 
 func main() {
@@ -31,13 +30,14 @@ func realMain() error {
 	debug := false
 	flag.BoolVar(&debug, "debug", false, "")
 	host := flag.String("host", "", "host to connect to (also drives sessions-<host>.csv path)")
-	cartName := flag.String("cart", "cart", "name of the vinocart generic service")
 
 	since := flag.Duration("since", 24*time.Hour, "export: only include sessions started within this window (0 = all)")
 	outDir := flag.String("out", "openvla-export", "output directory (export and capture-direct)")
-	armName := flag.String("arm", "left-arm", "arm component name (export only, for JointPositions data)")
+	armName := flag.String("arm", "left-arm", "arm component name (for JointPositions data)")
 	gripperName := flag.String("gripper", "left-gripper", "gripper component name (capture-direct: frame system → world pose)")
-	camName := flag.String("cam", "right-cam", "camera component name")
+	camName := flag.String("cam", "right-cam", "primary camera component name")
+	cam2Name := flag.String("cam2", "", "second camera component name (optional)")
+	cam3Name := flag.String("cam3", "", "third camera component name (optional)")
 	instruction := flag.String("instruction", "grab the cup", "language instruction")
 	hz := flag.Int("hz", 10, "capture-direct: sample rate (Hz) for arm and camera")
 
@@ -62,10 +62,10 @@ func realMain() error {
 		}
 		defer client.Close(ctx)
 
-		vc, err := generic.FromRobot(client, *cartName)
-		if err != nil {
-			return err
-		}
+		// vc, err := generic.FromRobot(client, *cartName)
+		// if err != nil {
+		// 	return err
+		// }
 
 		capture, err := sensor.FromRobot(client, "touch-session-capture")
 		if err != nil {
@@ -85,44 +85,51 @@ func realMain() error {
 		time.Sleep(5 * time.Second)
 
 		startTS := time.Now()
-		_, touchErr := vc.DoCommand(ctx, map[string]any{"touch": true})
+		// _, touchErr := vc.DoCommand(ctx, map[string]any{"touch": true})
 		endTS := time.Now()
 
-		if _, err := capture.DoCommand(ctx, map[string]any{"stop": true}); err != nil {
-			if touchErr != nil {
-				return fmt.Errorf("touch failed: %v; also failed to stop capture: %w", touchErr, err)
-			}
-			return err
-		}
+		// if _, err := capture.DoCommand(ctx, map[string]any{"stop": true}); err != nil {
+		// 	if touchErr != nil {
+		// 		return fmt.Errorf("touch failed: %v; also failed to stop capture: %w", touchErr, err)
+		// 	}
+		// 	return err
+		// }
 
-		if touchErr != nil {
-			return touchErr
-		}
+		// if touchErr != nil {
+		// 	return touchErr
+		// }
 
 		if err := appendSession(sessionsPath, startTS, endTS); err != nil {
 			return fmt.Errorf("recording session: %w", err)
 		}
 		logger.Infof("recorded session [%s, %s] to %s", startTS.Format(time.RFC3339Nano), endTS.Format(time.RFC3339Nano), sessionsPath)
 
-		_, err = vc.DoCommand(ctx, map[string]any{"reset": true})
+		// _, err = vc.DoCommand(ctx, map[string]any{"reset": true})
 		return err
 
-	case "capture-direct": // this is temporary until sequences and related are finished 
-		client, err := vmodutils.ConnectToHostFromCLIToken(ctx, *host, logger)
+	case "capture-direct":
+		connectCtx, connectCancel := context.WithTimeout(ctx, 15*time.Second)
+		defer connectCancel()
+		logger.Infof("connecting to %s...", *host)
+		client, err := vmodutils.ConnectToHostFromCLIToken(connectCtx, *host, logger)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to connect to %s: %w", *host, err)
 		}
 		defer client.Close(ctx)
 
-		vc, err := generic.FromRobot(client, *cartName)
-		if err != nil {
-			return err
+		camNames := []string{*camName}
+		if *cam2Name != "" {
+			camNames = append(camNames, *cam2Name)
+		}
+		if *cam3Name != "" {
+			camNames = append(camNames, *cam3Name)
 		}
 
-		return runCaptureDirect(ctx, client, vc, captureDirectOptions{
+		return runCaptureDirect(ctx, client, captureDirectOptions{
 			outDir:      *outDir,
+			armName:     *armName,
 			gripperName: *gripperName,
-			camName:     *camName,
+			camNames:    camNames,
 			instruction: *instruction,
 			hz:          *hz,
 		}, logger)
