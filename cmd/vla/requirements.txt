@@ -5,6 +5,11 @@ tokenizers==0.19.1
 timm==0.9.10
 huggingface_hub<0.24
 peft==0.11.1
+# convert_to_lerobot.py + train_smolvla.py
+pandas
+pyarrow
+# lerobot installs separately to pick up SmolVLA extras:
+#   pip install "lerobot[smolvla] @ git+https://github.com/huggingface/lerobot.git"
 # OpenVLA's pin. Newer accelerate (>=0.31) regressed the bnb 4-bit path:
 # dispatch_model() calls .to() unconditionally on single-device bnb models,
 # which bnb refuses with "ValueError: .to is not supported for 4-bit ...".
