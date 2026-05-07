@@ -47,6 +47,7 @@ const gripperToCupCenterHack float64 = -35
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
+var noBottleObjects = fmt.Errorf("no bottle objects")
 
 func init() {
 	resource.RegisterService(generic.API, VinoCartModel, resource.Registration[resource.Resource, *Config]{Constructor: newVinoCart})
@@ -1405,5 +1406,59 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 		return nil, err
 	}
 
-	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, "FindCups", vc.logger), nil
+}
+
+func (vc *VinoCart) FindBottles(ctx context.Context) ([]*viz.Object, error) {
+	if vc.c.BottleFinder == nil {
+		return nil, nil
+	}
+	objects, err := vc.c.BottleFinder.GetObjectPointClouds(ctx, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	return FilterObjects(objects, vc.conf.BottleFindHeight, vc.conf.BottleWidth, 25, "FindBottles", vc.logger), nil
+}
+
+// GetBottles finds bottles and returns them along with obstacle geometries (with bottle-height applied).
+// requireBottleToBePresent=true returns noBottleObjects if none are found.
+// allowMultiple=false errors if more than one bottle is found.
+func (vc *VinoCart) GetBottles(ctx context.Context, requireBottleToBePresent bool, allowMultiple bool) ([]*viz.Object, []*referenceframe.GeometriesInFrame, error) {
+	start := time.Now()
+	objects, err := vc.FindBottles(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	vc.logger.Infof("num bottles: %v in %v", len(objects), time.Since(start))
+	for _, o := range objects {
+		vc.logger.Infof("\t bottles: %v", o)
+	}
+
+	if len(objects) == 0 && requireBottleToBePresent {
+		return nil, nil, noBottleObjects
+	}
+
+	if len(objects) > 1 && !allowMultiple {
+		return nil, nil, fmt.Errorf("too many bottles %d", len(objects))
+	}
+
+	obstacles := []*referenceframe.GeometriesInFrame{}
+	for i, o := range objects {
+		geomConfig, err := spatialmath.NewGeometryConfig(o.Geometry)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get geometry config for bottle %d: %w", i, err)
+		}
+
+		geomConfig.Z = vc.conf.BottleFindHeight
+		geomConfig.Label = fmt.Sprintf("bottle-%d", i)
+
+		modifiedGeom, err := geomConfig.ParseConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create modified geometry for bottle %d: %w", i, err)
+		}
+
+		obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{modifiedGeom}))
+	}
+	return objects, obstacles, nil
 }
