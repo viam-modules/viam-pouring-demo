@@ -8,13 +8,18 @@
     partID: string;
     label: string;
     overlay?: Snippet;
+    stillImageUrl?: string | null;
   }
 
-  let { name, partID, label, overlay }: Props = $props();
+  let { name, partID, label, overlay, stillImageUrl }: Props = $props();
 </script>
 
 <div class="camera-feed">
-  <CameraStream {name} {partID} />
+  {#if stillImageUrl}
+    <img class="still-image" src={stillImageUrl} alt={label} />
+  {:else}
+    <CameraStream {name} {partID} />
+  {/if}
   {#if overlay}
     <div class="overlay left">
       {@render overlay()}
@@ -44,6 +49,13 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+
+  .still-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   .camera-label {

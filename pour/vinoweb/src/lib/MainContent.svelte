@@ -16,6 +16,7 @@
     joints: Joint[];
     tableTitle?: string;
     camera: CameraConfig;
+    stillImageUrl?: string | null;
   }
 
   interface Props {
@@ -43,6 +44,7 @@
             name={panes[0].camera.name}
             partID={panes[0].camera.partID}
             label={panes[0].camera.label}
+            stillImageUrl={panes[0].stillImageUrl}
             overlay={status === "picking" ? table : undefined}
           />
         {/snippet}
@@ -59,6 +61,7 @@
               name={panes[1].camera.name}
               partID={panes[1].camera.partID}
               label={panes[1].camera.label}
+              stillImageUrl={panes[1].stillImageUrl}
             />
           {/snippet}
         </DataPane>
