@@ -198,6 +198,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.Touch(ctx)
 	}
 
+	if cmd["touch-bottle"] == true {
+		return nil, vc.TouchBottle(ctx)
+	}
+
 	if cmd["pour-prep"] == true {
 		return nil, vc.PourPrep(ctx)
 	}
@@ -591,7 +595,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	approaches := []*referenceframe.PoseInFrame{}
 
 	for _, tryO := range choices {
-		goToPose := vc.getApproachPoint(obj, 100, tryO)
+		goToPose := vc.getApproachPoint(obj, 100, vc.conf.CupHeight-vc.conf.cupGripHeightOffset(), tryO)
 		approaches = append(approaches, goToPose)
 		vc.logger.Infof("trying to move to %v", goToPose.Pose())
 
@@ -639,7 +643,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
+	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, vc.conf.CupHeight-vc.conf.cupGripHeightOffset(), o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose, "touch-pickup")
@@ -648,6 +652,91 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	}
 
 	return vc.GrabCup(ctx)
+}
+
+func (vc *VinoCart) TouchBottle(ctx context.Context) error {
+	vc.setStatus("looking for the bottle")
+
+	bottles, bottleObstacles, err := vc.GetBottles(ctx, true, false)
+	if err != nil {
+		return err
+	}
+
+	obj := bottles[0]
+
+	obstacles := []*referenceframe.GeometriesInFrame{}
+	obstacles = append(obstacles, bottleObstacles...)
+	vc.logger.Infof("add bottle as obstacle %v", obj.Geometry)
+
+	worldState, err := referenceframe.NewWorldState(obstacles, nil)
+	if err != nil {
+		return err
+	}
+
+	vc.setStatus("picking bottle")
+
+	var o *spatialmath.OrientationVectorDegrees
+
+	choices := []*spatialmath.OrientationVectorDegrees{
+		{OX: -1, Theta: 180},
+		{OX: -.86, OY: .5, Theta: 180},
+		{OX: -.86, OY: -.5, Theta: 180},
+	}
+
+	for _, tryO := range choices {
+		goToPose := vc.getApproachPoint(obj, 100, vc.conf.BottleGripHeight, tryO)
+		vc.logger.Infof("trying to move to %v", goToPose.Pose())
+
+		_, err2 := vc.c.Motion.Move(
+			ctx,
+			motion.MoveReq{
+				ComponentName: vc.c.BottleGripper.Name().ShortName(),
+				Destination:   goToPose,
+				WorldState:    worldState,
+				Extra:         planTagExtra("touch-bottle-approach"),
+			},
+		)
+
+		if err2 != nil {
+			vc.logger.Debugf("error: %v", err2)
+		}
+
+		if err2 == nil {
+			err = nil
+			o = tryO
+			break
+		} else if err == nil {
+			err = err2
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+
+	err = SetXarmSpeed(ctx, vc.c.BottleArm, 25, 25)
+	if err != nil {
+		return err
+	}
+
+	goToPose := vc.getApproachPoint(obj, vc.conf.GripperToBottleCenterHack, vc.conf.BottleGripHeight, o)
+	vc.logger.Infof("going to move to %v", goToPose)
+
+	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "touch-bottle-pickup")
+	if err != nil {
+		return err
+	}
+
+	got, err := vc.c.BottleGripper.Grab(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	if !got {
+		return fmt.Errorf("didn't get bottle")
+	}
+
+	return nil
 }
 
 func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *referenceframe.WorldState, approaches []*referenceframe.PoseInFrame, choices []*spatialmath.OrientationVectorDegrees, obj *viz.Object) error {
@@ -670,7 +759,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// we found a path!
 
-		goToPose = vc.getApproachPoint(obj, gripperToCupCenterHack, choices[idx])
+		goToPose = vc.getApproachPoint(obj, gripperToCupCenterHack, vc.conf.CupHeight-vc.conf.cupGripHeightOffset(), choices[idx])
 		vc.logger.Infof("going to move (2) to %v", goToPose)
 
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-pickup")
@@ -687,7 +776,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 		}
 
 		// move to known spot
-		goToPose = vc.getApproachPoint(obj, 150, choices[idx])
+		goToPose = vc.getApproachPoint(obj, 150, vc.conf.CupHeight-vc.conf.cupGripHeightOffset(), choices[idx])
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-lift")
 		if err != nil {
 			return err
@@ -700,7 +789,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 		}
 
 		// backup
-		goToPose = vc.getApproachPoint(obj, 250, choices[idx])
+		goToPose = vc.getApproachPoint(obj, 250, vc.conf.CupHeight-vc.conf.cupGripHeightOffset(), choices[idx])
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-backup")
 		if err != nil {
 			return err
@@ -711,12 +800,12 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 	return fmt.Errorf("no path for handoff")
 }
 
-func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
+func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, zLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
 	md := obj.MetaData()
 	c := md.Center()
 
 	p := touch.GetApproachPoint(c, deltaLinear, o)
-	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+	p.Z = zLinear
 
 	return referenceframe.NewPoseInFrame(
 		"world",
