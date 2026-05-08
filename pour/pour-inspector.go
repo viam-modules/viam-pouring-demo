@@ -118,14 +118,14 @@ func (pi *pourInsepctor) uploadTaggedImages(ctx context.Context, folderPath stri
 		DatasetIDs:    []string{pourQualityDatasetID},
 	}
 
-	files, err := findFiles(ctx, folderPath)
+	files, err := findFiles(folderPath)
 	if err != nil {
 		return err
 	}
 
-	pi.logger.Infof("found %d files in folder %s", len(files), folderPath)
-
 	numFiles := len(files)
+
+	pi.logger.Infof("found %d files in folder %s", numFiles, folderPath)
 
 	// Our logic uploads a max of 2 not-full images per pour
 	// This is due to how during a pour, the vast majority of images are

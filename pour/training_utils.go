@@ -1,7 +1,6 @@
 package pour
 
 import (
-	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,7 +16,7 @@ func dirnameForPour(pour time.Time) string {
 	return filepath.Join(trainingDataDirName, pour.Format("20060102_150405.000"))
 }
 
-func findFiles(ctx context.Context, root string) ([]string, error) {
+func findFiles(root string) ([]string, error) {
 	var files []string
 	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

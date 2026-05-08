@@ -116,7 +116,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -75, Z: -35},
+			r3.Vector{X: vc.conf.cupGripHeightOffset() + 10, Y: -65, Z: -15},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
@@ -260,16 +260,16 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.doAll(ctx, stage, step, 50)
 	}
 
-	if cmd["over-pour"] == true {
-		return nil, vc.pourInspector.labelPour(ctx, vc.latestPour, overPour)
-	}
-
 	if cmd["under-pour"] == true {
 		return nil, vc.pourInspector.labelPour(ctx, vc.latestPour, underPour)
 	}
 
 	if cmd["good-pour"] == true {
 		return nil, vc.pourInspector.labelPour(ctx, vc.latestPour, goodPour)
+	}
+
+	if cmd["over-pour"] == true {
+		return nil, vc.pourInspector.labelPour(ctx, vc.latestPour, overPour)
 	}
 
 	if cmd["stop-pour"] == true {
@@ -852,7 +852,7 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	vc.setStatus("prepping")
-
+	time.Sleep(100 * time.Millisecond)
 	holdingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
