@@ -3,60 +3,59 @@ package pour
 import (
 	"context"
 	"fmt"
-	"image"
 	"math"
 
+	"github.com/golang/geo/r3"
+	"go.viam.com/rdk/pointcloud"
+	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/vision"
-	//"go.viam.com/rdk/spatialmath"
 	viz "go.viam.com/rdk/vision"
-	"go.viam.com/rdk/vision/classification"
-	"go.viam.com/rdk/vision/objectdetection"
-	"go.viam.com/rdk/vision/viscapture"
 )
 
-var VisionCupFinderModel = NamespaceFamily.WithModel("vision-cup-finder")
+var CupDetectionSensorModel = NamespaceFamily.WithModel("cup-detection-sensor")
 
 func init() {
-	resource.RegisterService(
-		vision.API,
-		VisionCupFinderModel,
-		resource.Registration[vision.Service, *VisionCupFinderConfig]{
-			Constructor: newVisionCupFinder,
+	resource.RegisterComponent(
+		sensor.API,
+		CupDetectionSensorModel,
+		resource.Registration[sensor.Sensor, *CupDetectionSensorConfig]{
+			Constructor: newCupDetectionSensor,
 		})
 }
 
-type VisionCupFinderConfig struct {
-	Input       string
-	HeightMM    float64 `json:"height_mm"`
-	RadiusMM    float64 `json:"radius_mm"`
-	ErrorMargin float64 `json:"error_margin"`
+type CupDetectionSensorConfig struct {
+	Input      string  `json:"input"`
+	HeightMM   float64 `json:"height_mm"`
+	WidthMM    float64 `json:"width_mm"`
+	GoodDelta  float64 `json:"good_delta"`
+	MaxPoints  int     `json:"max_points"`
 }
 
-func (c *VisionCupFinderConfig) Validate(_ string) ([]string, []string, error) {
+func (c *CupDetectionSensorConfig) Validate(_ string) ([]string, []string, error) {
 	if c.Input == "" {
 		return nil, nil, fmt.Errorf("need input")
 	}
 	if c.HeightMM <= 0 {
 		return nil, nil, fmt.Errorf("need height_mm")
 	}
-	if c.RadiusMM <= 0 {
-		return nil, nil, fmt.Errorf("need radius_mm")
+	if c.WidthMM <= 0 {
+		return nil, nil, fmt.Errorf("need width_mm")
 	}
-	if c.ErrorMargin <= 0 {
-		return nil, nil, fmt.Errorf("need error_margin")
+	if c.GoodDelta <= 0 {
+		return nil, nil, fmt.Errorf("need good_delta")
 	}
 	return []string{c.Input}, nil, nil
 }
 
-func newVisionCupFinder(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (vision.Service, error) {
-	config, err := resource.NativeConfig[*VisionCupFinderConfig](conf)
+func newCupDetectionSensor(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (sensor.Sensor, error) {
+	config, err := resource.NativeConfig[*CupDetectionSensorConfig](conf)
 	if err != nil {
 		return nil, err
 	}
 
-	cf := &visionCupFinder{
+	cf := &cupDetectionSensor{
 		name:   conf.ResourceName(),
 		cfg:    config,
 		logger: logger,
@@ -70,75 +69,54 @@ func newVisionCupFinder(ctx context.Context, deps resource.Dependencies, conf re
 	return cf, nil
 }
 
-type visionCupFinder struct {
+type cupDetectionSensor struct {
 	resource.AlwaysRebuild
 	resource.TriviallyCloseable
 
 	name   resource.Name
-	cfg    *VisionCupFinderConfig
+	cfg    *CupDetectionSensorConfig
 	logger logging.Logger
 
 	input vision.Service
 }
 
-func (vcf *visionCupFinder) Name() resource.Name {
+func (vcf *cupDetectionSensor) Name() resource.Name {
 	return vcf.name
 }
 
-func (vcf *visionCupFinder) DetectionsFromCamera(ctx context.Context, cameraName string, extra map[string]interface{}) ([]objectdetection.Detection, error) {
-	return nil, fmt.Errorf("no detection support")
-}
-
-func (vcf *visionCupFinder) Detections(ctx context.Context, img image.Image, extra map[string]interface{}) ([]objectdetection.Detection, error) {
-	return nil, fmt.Errorf("no detection support")
-}
-
-func (vcf *visionCupFinder) ClassificationsFromCamera(
-	ctx context.Context,
-	cameraName string,
-	n int,
-	extra map[string]interface{},
-) (classification.Classifications, error) {
-	return nil, fmt.Errorf("no classification support")
-}
-
-func (vcf *visionCupFinder) Classifications(
-	ctx context.Context,
-	img image.Image,
-	n int,
-	extra map[string]interface{},
-) (classification.Classifications, error) {
-	return nil, fmt.Errorf("no classification support")
-}
-
-func (vcf *visionCupFinder) GetObjectPointClouds(ctx context.Context, cameraName string, extra map[string]interface{}) ([]*viz.Object, error) {
-	os, err := vcf.input.GetObjectPointClouds(ctx, cameraName, extra)
+func (vcf *cupDetectionSensor) Readings(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
+	objects, err := vcf.input.GetObjectPointClouds(ctx, "", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return os, nil
-}
+	goodDelta := vcf.cfg.GoodDelta
+	if goodDelta <= 0 {
+		goodDelta = 25
+	}
+	validCups := FilterObjects(objects, vcf.cfg.HeightMM, vcf.cfg.WidthMM, goodDelta, nil)
+	cupDetails := BuildCupDetails(objects, vcf.cfg.HeightMM, vcf.cfg.WidthMM, goodDelta, vcf.maxPoints())
 
-func (vcf *visionCupFinder) GetProperties(ctx context.Context, extra map[string]interface{}) (*vision.Properties, error) {
-	return &vision.Properties{
-		ObjectPCDsSupported: true,
+	return map[string]interface{}{
+		"cup_height": vcf.cfg.HeightMM,
+		"cup_width":  vcf.cfg.WidthMM,
+		"detection": map[string]interface{}{
+			"total_cup_objects": len(objects),
+			"valid_cups":        len(validCups),
+			"invalid_cups":      len(objects) - len(validCups),
+		},
+		"cups": cupDetails,
 	}, nil
 }
 
-func (vcf *visionCupFinder) CaptureAllFromCamera(ctx context.Context, cameraName string, opts viscapture.CaptureOptions, extra map[string]interface{}) (viscapture.VisCapture, error) {
-	res := viscapture.VisCapture{}
-	if opts.ReturnObject {
-		os, err := vcf.GetObjectPointClouds(ctx, cameraName, extra)
-		if err != nil {
-			return res, err
-		}
-		res.Objects = os
+func (vcf *cupDetectionSensor) maxPoints() int {
+	if vcf.cfg.MaxPoints > 0 {
+		return vcf.cfg.MaxPoints
 	}
-	return res, nil
+	return 500
 }
 
-func (vcf *visionCupFinder) DoCommand(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
+func (vcf *cupDetectionSensor) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	return nil, nil
 }
 
@@ -184,9 +162,6 @@ func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta
 		height := md.MaxZ
 		width := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
 
-		//box, ok := o.Geometry.(*spatialmath.Box)
-		//logger.Infof("foooo %v %v", box, ok)
-
 		heightDelta := math.Abs(height - correctHeight)
 		widthDelta := math.Abs(correctWidth - width)
 
@@ -206,4 +181,53 @@ func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta
 	}
 
 	return good
+}
+
+func BuildCupDetails(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, maxPoints int) []interface{} {
+	cups := make([]interface{}, 0, len(objects))
+	for idx, o := range objects {
+		analysis := AnalyzeObject(o, correctHeight, correctWidth, goodDelta)
+
+		pointsX := make([]interface{}, 0)
+		pointsY := make([]interface{}, 0)
+		pointsZ := make([]interface{}, 0)
+
+		total := o.Size()
+		step := 1
+		if maxPoints > 0 && total > maxPoints {
+			step = total / maxPoints
+		}
+
+		i := 0
+		count := 0
+		o.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
+			if i%step == 0 {
+				pointsX = append(pointsX, p.X)
+				pointsY = append(pointsY, p.Y)
+				pointsZ = append(pointsZ, p.Z)
+				count++
+			}
+			i++
+			return maxPoints <= 0 || count < maxPoints
+		})
+
+		cups = append(cups, map[string]interface{}{
+			"index":           idx,
+			"valid":           analysis.Valid,
+			"height":          analysis.Height,
+			"expected_height": analysis.ExpHeight,
+			"height_delta":    analysis.HeightDelta,
+			"height_pass":     analysis.HeightPass,
+			"width":           analysis.Width,
+			"expected_width":  analysis.ExpWidth,
+			"width_delta":     analysis.WidthDelta,
+			"width_pass":      analysis.WidthPass,
+			"good_delta":      analysis.GoodDelta,
+			"total_points":    total,
+			"points_x":        pointsX,
+			"points_y":        pointsY,
+			"points_z":        pointsZ,
+		})
+	}
+	return cups
 }

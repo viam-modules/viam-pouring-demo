@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { useRobotClient } from "@viamrobotics/svelte-sdk";
-  import { GenericServiceClient, ArmClient } from "@viamrobotics/sdk";
+  import { GenericServiceClient, ArmClient, SensorClient } from "@viamrobotics/sdk";
   import { Struct } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
@@ -74,6 +74,7 @@
 
   const robotClientStore = useRobotClient(() => "xxx");
   let cartClient: GenericServiceClient | null = null;
+  let cupDetectionSensor: SensorClient | null = null;
   let pollingHandle: ReturnType<typeof setInterval> | null = null;
   let pollingInterval = 250;
   let cupDetailLastFetch = 0;
@@ -89,6 +90,7 @@
       if (!leftArm) leftArm = new ArmClient(robotClient, "left-arm");
       if (!rightArm) rightArm = new ArmClient(robotClient, "right-arm");
       if (!cartClient) cartClient = new GenericServiceClient(robotClient, "cart");
+      if (!cupDetectionSensor) cupDetectionSensor = new SensorClient(robotClient, "cup-detection");
 
       pollingHandle = setInterval(async () => {
         try {
@@ -99,17 +101,19 @@
               const s = r.status;
               if ((Object.keys(statusMessages) as StatusKey[]).includes(s as StatusKey)) status = s as StatusKey;
             }
-            const ch = Number(r.cup_height);
-            const cw = Number(r.cup_width);
-            if (!Number.isNaN(ch) && ch > 0) cupHeightMm = ch;
-            if (!Number.isNaN(cw) && cw > 0) cupWidthMm = cw;
           }
         } catch (_) {}
 
         if (Date.now() - cupDetailLastFetch >= cupDetailRefreshMs) {
           try {
-            const result = await cartClient!.doCommand(Struct.fromJson({ cup_details: true }));
-            const cups = (result as any)?.cups as any[] ?? [];
+            const readings = await cupDetectionSensor!.getReadings();
+            const r = (readings ?? {}) as Record<string, unknown>;
+            const ch = Number(r.cup_height);
+            const cw = Number(r.cup_width);
+            if (!Number.isNaN(ch) && ch > 0) cupHeightMm = ch;
+            if (!Number.isNaN(cw) && cw > 0) cupWidthMm = cw;
+
+            const cups = (r.cups as any[] | undefined) ?? [];
             objectCount = cups.length;
 
             // Pick the first valid cup, or first cup if none are valid
