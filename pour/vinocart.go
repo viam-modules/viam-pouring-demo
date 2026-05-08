@@ -45,6 +45,11 @@ const bottleName = "bottle-top"
 const cupTopName = "cup-top"
 const gripperToCupCenterHack float64 = -35
 
+// planDir is where bad plan debug files are written. The data manager service
+// is configured with this path in additional_sync_paths so files are uploaded
+// to Viam cloud and then deleted from disk.
+const planDir = "/plans"
+
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
 
@@ -1041,7 +1046,10 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		alignL2 := referenceframe.InputsL2Distance(alignJoints, alignGoalJoints)
 		vc.logger.Infof("[bottle-to-cup-align][try %d] InputsL2Distance: %v", try, alignL2)
 		if alignL2 > 1.3 {
-			fn := fmt.Sprintf("/tmp/align-plan-bad-try-%d.json", try)
+			if mkErr := os.MkdirAll(planDir, 0o755); mkErr != nil {
+				vc.logger.Errorf("[bottle-to-cup-align][try %d] failed to create %s: %v", try, planDir, mkErr)
+			}
+			fn := fmt.Sprintf("%s/align-plan-bad-try-%d-%d.json", planDir, try, time.Now().Unix())
 			debugErr := alignReq.WriteToFile(fn)
 			if debugErr != nil {
 				vc.logger.Errorf("[bottle-to-cup-align][try %d] failed to write debug: %v", try, debugErr)
@@ -1360,7 +1368,10 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 			d := referenceframe.InputsL2Distance(startJoints, myJoints)
 			vc.logger.Infof("\t InputsL2Distance: %v", d)
 			if d > 0.2 {
-				fn := "/tmp/pour-plan-bad.json"
+				if mkErr := os.MkdirAll(planDir, 0o755); mkErr != nil {
+					vc.logger.Errorf("failed to create %s: %v", planDir, mkErr)
+				}
+				fn := fmt.Sprintf("%s/pour-plan-bad-%d.json", planDir, time.Now().Unix())
 				if writeErr := req.WriteToFile(fn); writeErr != nil {
 					vc.logger.Errorf("failed to write pour debug: %v", writeErr)
 				}
