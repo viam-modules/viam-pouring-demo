@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -45,10 +46,18 @@ const bottleName = "bottle-top"
 const cupTopName = "cup-top"
 const gripperToCupCenterHack float64 = -35
 
-// planDir is where bad plan debug files are written. The data manager service
-// is configured with this path in additional_sync_paths so files are uploaded
-// to Viam cloud and then deleted from disk.
-const planDir = "/plans"
+// planDir is where bad plan debug files are written.
+//
+// Data manager can be configured with this path in additional_sync_paths so
+// files are uploaded to Viam cloud and then deleted from disk.
+var planDir = func() string {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "/tmp/viam-plans"
+	}
+
+	return filepath.Join(cacheDir, "viam-plans")
+}()
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -1057,7 +1066,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 				vc.logger.Warnf("[bottle-to-cup-align][try %d] debug written to %s", try, fn)
 			}
 			lastErr = fmt.Errorf("[bottle-to-cup-align][try %d] pos too far: %v", try, alignL2)
-			// On all but the final try, replan 
+			// On all but the final try, replan
 			if try < maxAlignTries {
 				vc.logger.Warnf("[bottle-to-cup-align][try %d] L2 too high, replanning...", try)
 				alignPlan, _, err = armplanning.PlanMotion(ctx, vc.logger, alignReq)
