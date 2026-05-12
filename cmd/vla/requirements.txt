@@ -1,0 +1,15 @@
+torch>=2.2,<2.6
+transformers==4.40.1
+viam-sdk
+tokenizers==0.19.1
+timm==0.9.10
+huggingface_hub<0.24
+peft==0.11.1
+# OpenVLA's pin. Newer accelerate (>=0.31) regressed the bnb 4-bit path:
+# dispatch_model() calls .to() unconditionally on single-device bnb models,
+# which bnb refuses with "ValueError: .to is not supported for 4-bit ...".
+# 0.27.2 still has the `is_bnb_quantized` branch that forces hooks instead.
+accelerate==0.27.2
+pillow
+tqdm
+bitsandbytes; sys_platform != "darwin"
