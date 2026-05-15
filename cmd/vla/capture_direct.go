@@ -9,46 +9,72 @@ import (
 	"sync"
 	"time"
 
+	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/camera"
+	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
-	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot"
 )
 
 type captureDirectOptions struct {
 	outDir      string
+	armName     string
 	gripperName string
-	camName     string
+	camNames    []string
 	instruction string
 	hz          int
 }
 
 type poseSample struct {
-	t  time.Time
-	ee []float64
+	t          time.Time
+	ee         []float64
+	joints     []float64
+	gripperPos int
+	isHolding  bool
 }
 
 type camSample struct {
-	t   time.Time
-	rel string
+	t      time.Time
+	rel    string
+	camIdx int
 }
 
-func runCaptureDirect(ctx context.Context, client robot.Robot, vc resource.Resource, opts captureDirectOptions, logger logging.Logger) error {
+func runCaptureDirect(ctx context.Context, client robot.Robot, opts captureDirectOptions, logger logging.Logger) error {
 	if opts.hz <= 0 {
 		return fmt.Errorf("-hz must be positive, got %d", opts.hz)
 	}
 
-	camComp, err := camera.FromRobot(client, opts.camName)
+	var armComp arm.Arm
+	if opts.armName != "" {
+		a, err := arm.FromRobot(client, opts.armName)
+		if err != nil {
+			return fmt.Errorf("arm %q: %w", opts.armName, err)
+		}
+		armComp = a
+	}
+
+	gripComp, err := gripper.FromRobot(client, opts.gripperName)
 	if err != nil {
-		return err
+		return fmt.Errorf("gripper %q: %w", opts.gripperName, err)
+	}
+
+	var camComps []camera.Camera
+	for _, name := range opts.camNames {
+		c, err := camera.FromRobot(client, name)
+		if err != nil {
+			return fmt.Errorf("camera %q: %w", name, err)
+		}
+		camComps = append(camComps, c)
 	}
 
 	sessionID := time.Now().UTC().Format("20060102T150405.000Z")
 	epDir := filepath.Join(opts.outDir, sessionID)
-	imgDir := filepath.Join(epDir, "images")
-	if err := os.MkdirAll(imgDir, 0o755); err != nil {
-		return err
+	for i := range camComps {
+		imgDir := filepath.Join(epDir, fmt.Sprintf("images_%d", i))
+		if err := os.MkdirAll(imgDir, 0o755); err != nil {
+			return err
+		}
 	}
 
 	period := time.Second / time.Duration(opts.hz)
@@ -83,74 +109,111 @@ func runCaptureDirect(ctx context.Context, client robot.Robot, vc resource.Resou
 					worldPose.Point().X, worldPose.Point().Y, worldPose.Point().Z,
 					ovd.OX, ovd.OY, ovd.OZ, ovd.Theta,
 				}
+
+				var joints []float64
+				if armComp != nil {
+					jp, jerr := armComp.JointPositions(ctx, nil)
+					if jerr != nil {
+						logger.Warnf("arm JointPositions err: %v", jerr)
+					} else {
+						joints = jp
+					}
+				}
+
+				var gripperPos int
+				var isHolding bool
+				holding, gerr := gripComp.IsHoldingSomething(ctx, nil)
+				if gerr != nil {
+					logger.Warnf("gripper IsHoldingSomething err: %v", gerr)
+				} else {
+					isHolding = holding.IsHoldingSomething
+					if posRaw, ok := holding.Meta["position"]; ok {
+						switch v := posRaw.(type) {
+						case float64:
+							gripperPos = int(v)
+						case int:
+							gripperPos = v
+						default:
+							logger.Warnf("gripper position has unexpected type %T: %v", posRaw, posRaw)
+						}
+					} else {
+						logger.Warnf("gripper IsHoldingSomething returned no position in Meta: %v", holding.Meta)
+					}
+				}
+
 				muPose.Lock()
-				poseSamples = append(poseSamples, poseSample{t: t, ee: ee})
+				poseSamples = append(poseSamples, poseSample{
+					t:          t,
+					ee:         ee,
+					joints:     joints,
+					gripperPos: gripperPos,
+					isHolding:  isHolding,
+				})
 				muPose.Unlock()
 			}
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		ticker := time.NewTicker(period)
-		defer ticker.Stop()
-		idx := 0
-		for {
-			select {
-			case <-captureCtx.Done():
-				return
-			case <-ticker.C:
-				t := time.Now()
-				imgs, _, err := camComp.Images(ctx, nil, nil)
-				if err != nil || len(imgs) == 0 {
-					logger.Debugf("cam read err: %v (n=%d)", err, len(imgs))
-					continue
+	for camIdx, camComp := range camComps {
+		wg.Add(1)
+		go func(camIdx int, camComp camera.Camera) {
+			defer wg.Done()
+			ticker := time.NewTicker(period)
+			defer ticker.Stop()
+			idx := 0
+			for {
+				select {
+				case <-captureCtx.Done():
+					return
+				case <-ticker.C:
+					t := time.Now()
+					imgs, _, err := camComp.Images(ctx, nil, nil)
+					if err != nil || len(imgs) == 0 {
+						logger.Debugf("cam[%d] read err: %v (n=%d)", camIdx, err, len(imgs))
+						continue
+					}
+					bs, err := imgs[0].Bytes(ctx)
+					if err != nil {
+						logger.Warnf("cam[%d] bytes err: %v", camIdx, err)
+						continue
+					}
+					ext := mimeExt(imgs[0].MimeType())
+					rel := filepath.Join(fmt.Sprintf("images_%d", camIdx), fmt.Sprintf("step_%06d%s", idx, ext))
+					if err := os.WriteFile(filepath.Join(epDir, rel), bs, 0o644); err != nil {
+						logger.Debugf("write img: %v", err)
+						continue
+					}
+					idx++
+					muCam.Lock()
+					camSamples = append(camSamples, camSample{t: t, rel: rel, camIdx: camIdx})
+					muCam.Unlock()
 				}
-				bs, err := imgs[0].Bytes(ctx)
-				if err != nil {
-					logger.Warnf("cam bytes err: %v", err)
-					continue
-				}
-				ext := mimeExt(imgs[0].MimeType())
-				rel := filepath.Join("images", fmt.Sprintf("step_%06d%s", idx, ext))
-				if err := os.WriteFile(filepath.Join(epDir, rel), bs, 0o644); err != nil {
-					logger.Debugf("write img: %v", err)
-					continue
-				}
-				idx++
-				muCam.Lock()
-				camSamples = append(camSamples, camSample{t: t, rel: rel})
-				muCam.Unlock()
 			}
-		}
-	}()
+		}(camIdx, camComp)
+	}
 
 	logger.Infof("capture-direct: started gripper-pose + cam goroutines @ %dHz, episode dir %s", opts.hz, epDir)
-	_, touchErr := vc.DoCommand(ctx, map[string]any{"touch": true})
+	fmt.Println("Recording... press Enter to stop.")
+	fmt.Scanln()
 	stopCapture()
 	wg.Wait()
 
-	if touchErr != nil {
-		logger.Warnf("touch failed (%v); removing %s", touchErr, epDir)
-		_ = os.RemoveAll(epDir)
-		return touchErr
-	}
-
 	logger.Infof("captured %d pose samples, %d cam samples", len(poseSamples), len(camSamples))
-	if err := writeOpenVLAEpisode(epDir, camSamples, poseSamples, opts.instruction); err != nil {
+	if err := writeOpenVLAEpisode(epDir, camSamples, len(camComps), poseSamples, opts.instruction); err != nil {
 		return fmt.Errorf("writing episode: %w", err)
-	}
-
-	if _, err := vc.DoCommand(ctx, map[string]any{"reset": true}); err != nil {
-		return err
 	}
 	return nil
 }
 
-func writeOpenVLAEpisode(epDir string, cam []camSample, poses []poseSample, instruction string) error {
-	if len(cam) == 0 {
-		return fmt.Errorf("no camera samples")
+func writeOpenVLAEpisode(epDir string, cam []camSample, numCams int, poses []poseSample, instruction string) error {
+	// Split samples by camera index. Camera 0 is the primary timeline.
+	perCam := make([][]camSample, numCams)
+	for _, c := range cam {
+		perCam[c.camIdx] = append(perCam[c.camIdx], c)
+	}
+	primary := perCam[0]
+	if len(primary) == 0 {
+		return fmt.Errorf("no camera samples from primary camera")
 	}
 
 	f, err := os.Create(filepath.Join(epDir, "steps.jsonl"))
@@ -160,27 +223,60 @@ func writeOpenVLAEpisode(epDir string, cam []camSample, poses []poseSample, inst
 	defer f.Close()
 	enc := json.NewEncoder(f)
 
-	for i, c := range cam {
+	for i, c := range primary {
 		var ee []float64
+		var joints []float64
+		var gripperPos int
+		var isHolding bool
 		if p := closestPose(poses, c.t); p != nil {
 			ee = p.ee
+			joints = p.joints
+			gripperPos = p.gripperPos
+			isHolding = p.isHolding
 		}
 
 		step := map[string]any{
 			"step_index":           i,
 			"timestamp":            c.t.UTC().Format(time.RFC3339Nano),
 			"is_first":             i == 0,
-			"is_last":              i == len(cam)-1,
-			"is_terminal":          i == len(cam)-1,
+			"is_last":              i == len(primary)-1,
+			"is_terminal":          i == len(primary)-1,
 			"image":                c.rel,
 			"ee_pose":              ee,
+			"joint_positions":      joints,
+			"gripper_position":     gripperPos,
+			"is_holding":           isHolding,
 			"language_instruction": instruction,
 		}
+
+		for camIdx := 1; camIdx < numCams; camIdx++ {
+			key := fmt.Sprintf("image_%d", camIdx)
+			if closest := closestCam(perCam[camIdx], c.t); closest != nil {
+				step[key] = closest.rel
+			}
+		}
+
 		if err := enc.Encode(step); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func closestCam(rows []camSample, t time.Time) *camSample {
+	if len(rows) == 0 {
+		return nil
+	}
+	best := &rows[0]
+	bestD := absDur(rows[0].t.Sub(t))
+	for i := 1; i < len(rows); i++ {
+		d := absDur(rows[i].t.Sub(t))
+		if d < bestD {
+			best = &rows[i]
+			bestD = d
+		}
+	}
+	return best
 }
 
 func closestPose(rows []poseSample, t time.Time) *poseSample {
