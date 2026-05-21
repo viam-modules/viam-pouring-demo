@@ -88,11 +88,8 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 	}
 
 	// create directory where images for training data will live
-	if err := os.Mkdir(trainingDataDirName, 0755); err != nil {
-		if !os.IsExist(err) {
-			return nil, fmt.Errorf("failed to create directory: %w", err)
-		}
-		// Directory already exists, which is fine
+	if err := os.MkdirAll(trainingDataDirName, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	g, err := NewVinoCart(ctx, config, c, robotClient, viamClient, logger)
@@ -865,7 +862,6 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	vc.setStatus("prepping")
-	time.Sleep(100 * time.Millisecond)
 	holdingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
