@@ -1,11 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { useRobotClient } from "@viamrobotics/svelte-sdk";
-  import { GenericServiceClient, ArmClient, SensorClient } from "@viamrobotics/sdk";
+  import { GenericServiceClient, ArmClient, VisionClient } from "@viamrobotics/sdk";
   import { Struct } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
   import type { SegmentedObject, Joint, CupDetectionMetrics } from "./lib/types.js";
+  import { parseVisionCupObjects } from "./lib/parseVisionCups.js";
+
+  const CUP_VISION_SERVICE = "cup-detection";
 
   type StatusKey =
     | "standby"
@@ -23,25 +26,6 @@
   let cupHeightMm = $state(0);
   let cupWidthMm = $state(0);
   let cupDetectionMetrics = $state<CupDetectionMetrics | null>(null);
-
-  function cupMetricsFromApi(c: Record<string, unknown>): CupDetectionMetrics {
-    const num = (k: string) => {
-      const v = Number(c[k]);
-      return Number.isFinite(v) ? v : 0;
-    };
-    return {
-      valid: !!c.valid,
-      expectedHeight: num("expected_height"),
-      observedHeight: num("height"),
-      heightDelta: num("height_delta"),
-      heightPass: !!c.height_pass,
-      expectedWidth: num("expected_width"),
-      observedWidth: num("width"),
-      widthDelta: num("width_delta"),
-      widthPass: !!c.width_pass,
-      toleranceMm: num("good_delta"),
-    };
-  }
 
   const statusMessages: Record<StatusKey, string> = {
     standby: "Ready to pour!",
@@ -74,7 +58,7 @@
 
   const robotClientStore = useRobotClient(() => "xxx");
   let cartClient: GenericServiceClient | null = null;
-  let cupDetectionSensor: SensorClient | null = null;
+  let cupVisionClient: VisionClient | null = null;
   let pollingHandle: ReturnType<typeof setInterval> | null = null;
   let pollingInterval = 250;
   let cupDetailLastFetch = 0;
@@ -84,13 +68,13 @@
   let rightArm: ArmClient | null = null;
 
   $effect(() => {
+    if (!robotClientStore) return;
     const robotClient = robotClientStore.current;
-    $inspect(robotClient, "robotClient");
     if (robotClient && !pollingHandle) {
       if (!leftArm) leftArm = new ArmClient(robotClient, "left-arm");
       if (!rightArm) rightArm = new ArmClient(robotClient, "right-arm");
       if (!cartClient) cartClient = new GenericServiceClient(robotClient, "cart");
-      if (!cupDetectionSensor) cupDetectionSensor = new SensorClient(robotClient, "cup-detection");
+      if (!cupVisionClient) cupVisionClient = new VisionClient(robotClient, CUP_VISION_SERVICE);
 
       pollingHandle = setInterval(async () => {
         try {
@@ -106,31 +90,18 @@
 
         if (Date.now() - cupDetailLastFetch >= cupDetailRefreshMs) {
           try {
-            const readings = await cupDetectionSensor!.getReadings();
-            const r = (readings ?? {}) as Record<string, unknown>;
-            const ch = Number(r.cup_height);
-            const cw = Number(r.cup_width);
-            if (!Number.isNaN(ch) && ch > 0) cupHeightMm = ch;
-            if (!Number.isNaN(cw) && cw > 0) cupWidthMm = cw;
+            const objects = await cupVisionClient!.getObjectPointClouds("");
+            const parsed = parseVisionCupObjects(objects);
+            cupHeightMm = parsed.summary.cupHeightMm;
+            cupWidthMm = parsed.summary.cupWidthMm;
+            objectCount = parsed.summary.objectCount;
 
-            const cups = (r.cups as any[] | undefined) ?? [];
-            objectCount = cups.length;
-
-            // Pick the first valid cup, or first cup if none are valid
-            const bestCup = cups.find((c: any) => c.valid) ?? cups[0];
-            if (bestCup) {
-              cupDetectionMetrics = cupMetricsFromApi(bestCup as Record<string, unknown>);
-              segmentedObjects = [{
-                index: bestCup.index,
-                totalPoints: bestCup.total_points,
-                points_x: bestCup.points_x,
-                points_y: bestCup.points_y,
-                points_z: bestCup.points_z,
-                valid: bestCup.valid,
-              }];
-            } else {
-              cupDetectionMetrics = null;
+            cupDetectionMetrics = parsed.metrics;
+            if (parsed.cups.length === 0) {
               segmentedObjects = [];
+            } else {
+              const best = parsed.cups.find((c) => c.valid) ?? parsed.cups[0];
+              segmentedObjects = [best];
             }
             cupDetailLastFetch = Date.now();
           } catch (_) {}
