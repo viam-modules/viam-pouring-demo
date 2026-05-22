@@ -77,16 +77,14 @@ func realMain() error {
 		return err
 	}
 
-	var dataClient *app.DataClient
-	appClient, err := app.CreateViamClientFromEnvVars(ctx, nil, logger)
+	viamClient, err := app.CreateViamClientFromEnvVars(ctx, nil, logger)
 	if err != nil {
 		logger.Warnf("can't connect to app: %v", err)
 	} else {
-		defer appClient.Close()
-		dataClient = appClient.DataClient()
+		defer viamClient.Close()
 	}
 
-	vc, err := pour.NewVinoCart(ctx, cfg, p1c, client, dataClient, logger)
+	vc, err := pour.NewVinoCart(ctx, cfg, p1c, client, viamClient, logger)
 	if err != nil {
 		return err
 	}
