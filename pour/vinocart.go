@@ -622,11 +622,32 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	// -- setup world frame
 
-	obstacles := []*referenceframe.GeometriesInFrame{}
-	// Set a label on the cup geometry to avoid "unnamedWorldStateGeometry" collisions
-	obj.Geometry.SetLabel("cup")
-	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
-	vc.logger.Infof("add cup as obstacle %v", obj.Geometry)
+	// Build a synthetic cup obstacle that uses the *detected* center but the
+	// *configured* cup_width x cup_width x cup_height for dimensions. The
+	// point-cloud detector returns a noisy bounding box (e.g. 96x105x124mm
+	// on one frame, 61x91x120mm on the next for the same physical cup), and
+	// feeding that raw geometry into the planner caused it to disagree with
+	// itself between approach orientations (claws "fit" one frame, collide
+	// the next). Anchoring on config dims stabilises planning and lines the
+	// live service up with what cup-heatmap simulates. The validator in
+	// FindCups / FilterObjects still gates on detected vs config +/- 25mm,
+	// so wildly wrong objects are still rejected upstream.
+	//
+	// Temporary until SAM2 productionizes a tight, repeatable bounding box.
+	md := obj.MetaData()
+	cupCenter := md.Center()
+	cupObs, err := spatialmath.NewBox(
+		spatialmath.NewPoseFromPoint(cupCenter),
+		r3.Vector{X: vc.conf.cupWidth(), Y: vc.conf.cupWidth(), Z: vc.conf.CupHeight},
+		"cup",
+	)
+	if err != nil {
+		return err
+	}
+	obstacles := []*referenceframe.GeometriesInFrame{
+		referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{cupObs}),
+	}
+	vc.logger.Infof("add cup as obstacle (configured dims, detected center %v): %v", cupCenter, cupObs)
 
 	worldState, err := referenceframe.NewWorldState(obstacles, nil)
 	if err != nil {
