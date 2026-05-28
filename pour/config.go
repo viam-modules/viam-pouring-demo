@@ -71,6 +71,12 @@ type Config struct {
 	// optional offset for gripper height when grabbing/placing cup
 	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
 
+	// optional offsets (mm) applied to the cup-top frame relative to the gripper.
+	// Defaults: X = cupGripHeightOffset(), Y = -75, Z = -25.
+	CupTopOffsetX float64 `json:"cup_top_offset_x"`
+	CupTopOffsetY float64 `json:"cup_top_offset_y"`
+	CupTopOffsetZ float64 `json:"cup_top_offset_z"`
+
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 	GlassFullnessService string `json:"glass_fullness_service"`
@@ -159,6 +165,27 @@ func (c *Config) cupGripHeightOffset() float64 {
 		return c.CupGripHeightOffset
 	}
 	return 25
+}
+
+func (c *Config) cupTopOffsetX() float64 {
+	if c.CupTopOffsetX != 0 {
+		return c.CupTopOffsetX
+	}
+	return c.cupGripHeightOffset()
+}
+
+func (c *Config) cupTopOffsetY() float64 {
+	if c.CupTopOffsetY != 0 {
+		return c.CupTopOffsetY
+	}
+	return -75
+}
+
+func (c *Config) cupTopOffsetZ() float64 {
+	if c.CupTopOffsetZ != 0 {
+		return c.CupTopOffsetZ
+	}
+	return -25
 }
 
 type StagePositions map[string][][]toggleswitch.Switch

@@ -126,7 +126,11 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -75, Z: -15},
+			r3.Vector{
+				X: vc.conf.cupTopOffsetX(),
+				Y: vc.conf.cupTopOffsetY(),
+				Z: vc.conf.cupTopOffsetZ(),
+			},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
@@ -862,6 +866,7 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	vc.setStatus("prepping")
+	time.Sleep(100 * time.Millisecond)
 	holdingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
