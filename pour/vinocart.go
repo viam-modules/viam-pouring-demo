@@ -248,6 +248,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		return nil, vc.Pour(ctx)
 	}
 
+	if cmd["pour-max"] == true {
+		return nil, vc.PourMax(ctx)
+	}
+
 	if cmd["put-back"] == true {
 		return nil, vc.PutBack(ctx)
 	}
@@ -1035,6 +1039,19 @@ func (vc *VinoCart) GetGlassPourCamImage(ctx context.Context, box *image.Rectang
 }
 
 func (vc *VinoCart) Pour(ctx context.Context) error {
+	return vc.pour(ctx, false)
+}
+
+// PourMax runs the pour motion with vision detection bypassed entirely. The
+// bottle will run the full totalTime budget and physically reach the planned
+// end of the (capped) tilt trajectory. Useful for verifying that the
+// pour_max_tilt_oz cap is the sole safety in the worst case where vision
+// fails completely.
+func (vc *VinoCart) PourMax(ctx context.Context) error {
+	return vc.pour(ctx, true)
+}
+
+func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 	vc.setStatus("pouring")
 
 	isHoldingCup, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
@@ -1172,7 +1189,9 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		return err
 	}
 
-	if vc.conf.UseGlassFullnessMLModel {
+	if simulateNoVision {
+		vc.logger.Warn("*** pour-max: vision detection BYPASSED — relying on tilt cap as sole safety ***")
+	} else if vc.conf.UseGlassFullnessMLModel {
 		vc.logger.Info("*** using glass fullness ml model ***")
 	} else {
 		vc.logger.Info("*** using image delta logic ***")
@@ -1234,7 +1253,9 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			return err
 		}
 
-		if vc.conf.UseGlassFullnessMLModel {
+		if simulateNoVision {
+			// Bypass detection entirely; bottle will run to the (capped) end of trajectory.
+		} else if vc.conf.UseGlassFullnessMLModel {
 			isGoodPour, err := vc.pourInspector.checkGoodPour(ctx, img)
 			if err != nil {
 				return err
@@ -1419,11 +1440,17 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 
 	o := bottleStart.Orientation().OrientationVectorDegrees()
 
+	maxTilt := vc.conf.pourMaxTiltOZ()
+	if o.OZ <= maxTilt {
+		return nil, fmt.Errorf("bottle prep orientation OZ=%v already at/past tilt cap %v; check pour_prep stage", o.OZ, maxTilt)
+	}
+	vc.logger.Infof("pour tilt cap OZ=%v (start OZ=%v)", maxTilt, o.OZ)
+
 	joints := [][]referenceframe.Input{}
 	poses := []*referenceframe.PoseInFrame{}
 
 	pDelta := r3.Vector{}
-	for o.OZ > -.5 {
+	for o.OZ > maxTilt {
 		goalPose := referenceframe.NewPoseInFrame("world",
 			spatialmath.NewPose(
 				bottleStart.Point().Add(pDelta),
@@ -1488,6 +1515,8 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 	if len(joints) != len(poses) {
 		panic("Wtf")
 	}
+
+	vc.logger.Infof("pour tilt cap OZ=%v, planned %d steps", maxTilt, len(joints))
 
 	return &PourPositions{joints: joints, poses: poses}, nil
 }
