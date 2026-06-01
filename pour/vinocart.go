@@ -1044,9 +1044,8 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 // PourMax runs the pour motion with vision detection bypassed entirely. The
 // bottle will run the full totalTime budget and physically reach the planned
-// end of the (capped) tilt trajectory. Useful for verifying that the
-// pour_max_tilt_oz cap is the sole safety in the worst case where vision
-// fails completely.
+// end of the tilt trajectory. Useful for verifying worst-case behavior when
+// vision fails completely.
 func (vc *VinoCart) PourMax(ctx context.Context) error {
 	return vc.pour(ctx, true)
 }
@@ -1190,7 +1189,7 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 	}
 
 	if simulateNoVision {
-		vc.logger.Warn("*** pour-max: vision detection BYPASSED — relying on tilt cap as sole safety ***")
+		vc.logger.Warn("*** pour-max: vision detection BYPASSED ***")
 	} else if vc.conf.UseGlassFullnessMLModel {
 		vc.logger.Info("*** using glass fullness ml model ***")
 	} else {
@@ -1200,6 +1199,7 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 
 	totalTime := 15 * time.Second
 	markedDifferent := false
+	tiltDone := make(chan struct{}, 1)
 
 	pourContext, cancelPour := context.WithCancel(ctx)
 	vc.cancelPour = cancelPour
@@ -1218,16 +1218,9 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 		}()
 	}
 
-	box, err := vc.PourGlassFindCroppedRect(ctx)
-	if err != nil {
-		return err
-	}
-
-	vc.logger.Infof("got box for crop %v", box)
-
 	go func() {
 		defer wg.Done()
-		err := vc.doPourMotion(ctx, pourContext, pp)
+		err := vc.doPourMotion(ctx, pourContext, pp, tiltDone)
 		if err != nil {
 			vc.logger.Infof("error pouring: %v", err)
 		}
@@ -1245,6 +1238,21 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 		}
 	}()
 
+	// pour-max: no vision loop; block until forward tilt finishes then pull back.
+	if simulateNoVision {
+		<-tiltDone
+		vc.logger.Infof("pour-max: tilt complete, stopping pour immediately")
+		return nil
+	}
+
+	box, err := vc.PourGlassFindCroppedRect(ctx)
+	if err != nil {
+		return err
+	}
+
+	vc.logger.Infof("got box for crop %v", box)
+
+pourMonitor:
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
@@ -1253,15 +1261,15 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 			return err
 		}
 
-		if simulateNoVision {
-			// Bypass detection entirely; bottle will run to the (capped) end of trajectory.
-		} else if vc.conf.UseGlassFullnessMLModel {
+		if vc.conf.UseGlassFullnessMLModel {
 			isGoodPour, err := vc.pourInspector.checkGoodPour(ctx, img)
 			if err != nil {
 				return err
 			}
-			if isGoodPour {
-				break
+			if isGoodPour && !markedDifferent {
+				vc.logger.Infof(" **** good pour detected *** ")
+				markedDifferent = true
+				totalTime = time.Since(start) + time.Second
 			}
 		} else {
 			if pd == nil {
@@ -1279,8 +1287,18 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 		}
 
 		sleepTime := (100 * time.Millisecond) - time.Since(loopStart)
-		vc.logger.Debugf("going to sleep for %v", sleepTime)
-		time.Sleep(sleepTime)
+		if !markedDifferent {
+			// No motion yet: wake immediately when forward tilt finishes.
+			select {
+			case <-tiltDone:
+				vc.logger.Infof("tilt complete without motion detected, stopping pour immediately")
+				break pourMonitor
+			case <-time.After(sleepTime):
+			}
+		} else {
+			vc.logger.Debugf("going to sleep for %v", sleepTime)
+			time.Sleep(sleepTime)
+		}
 		loopNumber++
 	}
 
@@ -1354,7 +1372,7 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context, pp *PourPositions) error
 
 	go func() {
 		defer wg.Done()
-		err := vc.doPourMotion(ctx, pourContext, pp)
+		err := vc.doPourMotion(ctx, pourContext, pp, nil)
 		if err != nil {
 			vc.logger.Infof("eliot: %v", err)
 		}
@@ -1371,7 +1389,7 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context, pp *PourPositions) error
 	return nil
 }
 
-func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPositions) error {
+func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPositions, tiltDone chan struct{}) error {
 	err := SetXarmSpeed(ctx, vc.c.BottleArm, 20, 50)
 	if err != nil {
 		return err
@@ -1382,6 +1400,11 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPosit
 
 	if err != nil && err != context.Canceled && pourContext.Err() != context.Canceled {
 		return err
+	}
+
+	// Forward tilt trajectory finished; tell the monitor loop.
+	if tiltDone != nil && err == nil {
+		tiltDone <- struct{}{}
 	}
 
 	// After moving through all joint positions, we wait for the caller to signal that the pour has been completed
@@ -1440,17 +1463,11 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 
 	o := bottleStart.Orientation().OrientationVectorDegrees()
 
-	maxTilt := vc.conf.pourMaxTiltOZ()
-	if o.OZ <= maxTilt {
-		return nil, fmt.Errorf("bottle prep orientation OZ=%v already at/past tilt cap %v; check pour_prep stage", o.OZ, maxTilt)
-	}
-	vc.logger.Infof("pour tilt cap OZ=%v (start OZ=%v)", maxTilt, o.OZ)
-
 	joints := [][]referenceframe.Input{}
 	poses := []*referenceframe.PoseInFrame{}
 
 	pDelta := r3.Vector{}
-	for o.OZ > maxTilt {
+	for o.OZ > -.5 {
 		goalPose := referenceframe.NewPoseInFrame("world",
 			spatialmath.NewPose(
 				bottleStart.Point().Add(pDelta),
@@ -1515,8 +1532,6 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 	if len(joints) != len(poses) {
 		panic("Wtf")
 	}
-
-	vc.logger.Infof("pour tilt cap OZ=%v, planned %d steps", maxTilt, len(joints))
 
 	return &PourPositions{joints: joints, poses: poses}, nil
 }

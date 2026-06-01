@@ -77,14 +77,6 @@ type Config struct {
 	CupTopOffsetY float64 `json:"cup_top_offset_y"`
 	CupTopOffsetZ float64 `json:"cup_top_offset_z"`
 
-	// Hard cap on bottle tilt during pour, expressed as the floor for the
-	// bottle-top OrientationVector OZ component. The pour trajectory in
-	// SetupPourPositions tilts the bottle from its starting OZ down to this
-	// value (exclusive). Must be in (-1.0, 0.0]. Default -0.15 is just past
-	// horizontal — enough for water to flow, well shy of dump territory.
-	// Acts as a physical safety net when vision detection misses or fires late.
-	PourMaxTiltOZ float64 `json:"pour_max_tilt_oz"`
-
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
 	GlassFullnessService string `json:"glass_fullness_service"`
@@ -128,10 +120,6 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if cfg.CupHeight == 0 {
 		return nil, nil, fmt.Errorf("cup_height cannot be unset")
-	}
-
-	if cfg.PourMaxTiltOZ != 0 && (cfg.PourMaxTiltOZ <= -1.0 || cfg.PourMaxTiltOZ > 0) {
-		return nil, nil, fmt.Errorf("pour_max_tilt_oz must be in (-1.0, 0.0], got %v", cfg.PourMaxTiltOZ)
 	}
 
 	optionals := []string{}
@@ -198,13 +186,6 @@ func (c *Config) cupTopOffsetZ() float64 {
 		return c.CupTopOffsetZ
 	}
 	return -25
-}
-
-func (c *Config) pourMaxTiltOZ() float64 {
-	if c.PourMaxTiltOZ != 0 {
-		return c.PourMaxTiltOZ
-	}
-	return -0.15
 }
 
 type StagePositions map[string][][]toggleswitch.Switch
