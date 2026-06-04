@@ -135,13 +135,11 @@ func realMain() error {
 	case "full-demo-wait":
 		return vc.WaitForCupAndGo(ctx)
 	case "find-cups":
-		cups, err := vc.FindCups(ctx)
+		cup, err := vc.FindCup(ctx)
 		if err != nil {
 			return err
 		}
-		for idx, c := range cups {
-			logger.Infof("cup %d : %v", idx, c)
-		}
+		logger.Infof("cup: %v", cup)
 		return nil
 	case "pour-motion-demo":
 		pp, err := vc.SetupPourPositions(ctx)

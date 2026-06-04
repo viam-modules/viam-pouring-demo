@@ -54,7 +54,10 @@ type Config struct {
 	GlassPourCam             string  `json:"glass_pour_cam"`
 	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
-	CupFinderService string `json:"cup_finder_service"` // find the cups on the table
+	// CupCloudCam is a camera that returns a single point cloud of just the cup
+	// (it does the segmentation under the hood). Replaces the old multi-object
+	// cup_finder_service.
+	CupCloudCam string `json:"cup_cloud_cam"`
 
 	Positions map[string]ConfigStatePostions
 
@@ -63,10 +66,12 @@ type Config struct {
 
 	Handoff bool
 
-	// cup and bottle params, required
+	// bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
-	CupHeight    float64 `json:"cup_height"`
-	CupWidth     float64 `json:"cup_width"`
+
+	// Cup is the "standardized cup" spec a detected cup is validated against.
+	// All fields are optional with sensible defaults (see cup_geometry.go).
+	Cup CupSpec `json:"cup"`
 
 	// optional offset for gripper height when grabbing/placing cup
 	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
@@ -118,14 +123,11 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	if cfg.BottleHeight == 0 {
 		return nil, nil, fmt.Errorf("bottle_height cannot be unset")
 	}
-	if cfg.CupHeight == 0 {
-		return nil, nil, fmt.Errorf("cup_height cannot be unset")
-	}
 
 	optionals := []string{}
 
-	if cfg.CupFinderService != "" {
-		optionals = append(optionals, cfg.CupFinderService)
+	if cfg.CupCloudCam != "" {
+		deps = append(deps, cfg.CupCloudCam)
 	}
 
 	if cfg.BottleGripper != "" {
@@ -144,13 +146,6 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 
 	return deps, optionals, nil
-}
-
-func (c *Config) cupWidth() float64 {
-	if c.CupWidth > 0 {
-		return c.CupWidth
-	}
-	return c.CupHeight * .6
 }
 
 func (c *Config) glassPourMotionThreshold() float64 {
@@ -200,7 +195,7 @@ type Pour1Components struct {
 	Motion motion.Service
 	Rfs    framesystem.Service
 
-	CupFinder vision.Service
+	CupCloudCam camera.Camera
 
 	Positions map[string]StagePositions
 
@@ -262,8 +257,8 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	if config.CupFinderService != "" {
-		c.CupFinder, err = vision.FromProvider(deps, config.CupFinderService)
+	if config.CupCloudCam != "" {
+		c.CupCloudCam, err = camera.FromProvider(deps, config.CupCloudCam)
 		if err != nil {
 			return nil, err
 		}
