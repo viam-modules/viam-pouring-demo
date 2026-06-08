@@ -32,7 +32,6 @@ import (
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/rdk/utils"
-	viz "go.viam.com/rdk/vision"
 
 	"github.com/erh/vmodutils"
 	"github.com/erh/vmodutils/touch"
@@ -190,6 +189,10 @@ type VinoCart struct {
 	statusLock sync.Mutex
 	status     string
 
+	// lastGraspZ is the world Z used to grab the most recent cup. Reused as the
+	// release height when putting a cup back, since no live cloud exists then.
+	lastGraspZ float64
+
 	latestPour    time.Time
 	pourInspector *pourInsepctor
 	cancelPour    context.CancelFunc
@@ -339,18 +342,16 @@ func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
 	vc.logger.Infof("waiting for area to be clear")
 
 	for {
-		objects, err := vc.FindCups(ctx)
+		cup, err := vc.FindCup(ctx)
+		if err == noObjects {
+			// no valid cup present -> area is clear
+			return nil
+		}
 		if err != nil {
 			return err
 		}
 
-		vc.logger.Infof("num objects while waiting: %v", len(objects))
-		for _, o := range objects {
-			vc.logger.Infof("\t objects: %v", o)
-		}
-		if len(objects) == 0 {
-			return nil
-		}
+		vc.logger.Infof("cup still present while waiting: %v", cup)
 	}
 }
 
@@ -602,47 +603,31 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	}
 
 	start := time.Now()
-	objects, err := vc.FindCups(ctx)
+	cup, err := vc.FindCup(ctx)
 	if err != nil {
 		return err
 	}
 
-	vc.logger.Infof("num objects: %v in %v", len(objects), time.Since(start))
-	for _, o := range objects {
-		vc.logger.Infof("\t objects: %v", o)
-	}
-
-	if len(objects) == 0 {
-		return noObjects
-	}
-
-	if len(objects) > 1 {
-		return fmt.Errorf("too many objects %d", len(objects))
-	}
+	vc.logger.Infof("found cup in %v: %v", time.Since(start), cup)
 
 	vc.setStatus("picking")
 
-	obj := objects[0]
+	// Stash the grasp height so PutBack/Reset can release the cup at the same
+	// height later, when no live cloud is available.
+	vc.lastGraspZ = cup.RimZ - vc.conf.cupGripHeightOffset()
 
 	// -- setup world frame
-
-	// Build a synthetic cup obstacle that uses the *detected* center but the
-	// *configured* cup_width x cup_width x cup_height for dimensions. The
-	// point-cloud detector returns a noisy bounding box (e.g. 96x105x124mm
-	// on one frame, 61x91x120mm on the next for the same physical cup), and
-	// feeding that raw geometry into the planner caused it to disagree with
-	// itself between approach orientations (claws "fit" one frame, collide
-	// the next). Anchoring on config dims stabilises planning and lines the
-	// live service up with what cup-heatmap simulates. The validator in
-	// FindCups / FilterObjects still gates on detected vs config +/- 25mm,
-	// so wildly wrong objects are still rejected upstream.
 	//
-	// Temporary until SAM2 productionizes a tight, repeatable bounding box.
-	md := obj.MetaData()
-	cupCenter := md.Center()
+	// Build the cup collision obstacle straight from the measured cloud. The new
+	// cup-only camera gives a clean, repeatable bounding box, so (unlike the old
+	// noisy multi-object segmenter) we can trust the measured dimensions instead
+	// of substituting configured ones. The box is centered on the bbox center
+	// (same point we grasp) and inflated by grip clearance so a single-view
+	// cloud that slightly under-measures the cup still over-covers as an obstacle.
+	margin := vc.conf.Cup.gripClearance()
 	cupObs, err := spatialmath.NewBox(
-		spatialmath.NewPoseFromPoint(cupCenter),
-		r3.Vector{X: vc.conf.cupWidth(), Y: vc.conf.cupWidth(), Z: vc.conf.CupHeight},
+		spatialmath.NewPoseFromPoint(cup.Center),
+		r3.Vector{X: cup.Width + margin, Y: cup.Width + margin, Z: cup.Height},
 		"cup",
 	)
 	if err != nil {
@@ -651,7 +636,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	obstacles := []*referenceframe.GeometriesInFrame{
 		referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{cupObs}),
 	}
-	vc.logger.Infof("add cup as obstacle (configured dims, detected center %v): %v", cupCenter, cupObs)
+	vc.logger.Infof("add cup as obstacle (measured, center %v): %v", cup.Center, cupObs)
 
 	worldState, err := referenceframe.NewWorldState(obstacles, nil)
 	if err != nil {
@@ -675,7 +660,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	approaches := []*referenceframe.PoseInFrame{}
 
 	for _, tryO := range choices {
-		goToPose := vc.getApproachPoint(obj, 100, tryO)
+		goToPose := vc.getApproachPoint(cup, 100, tryO)
 		approaches = append(approaches, goToPose)
 		vc.logger.Infof("trying to move to %v", goToPose.Pose())
 
@@ -704,7 +689,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	if vc.conf.Handoff && err != nil {
 
-		err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, obj)
+		err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, cup)
 		if err2 == nil {
 			return nil
 		}
@@ -722,7 +707,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
+	goToPose := vc.getApproachPoint(cup, gripperToCupCenterHack, o)
 	vc.logger.Infof("going to move to %v", goToPose)
 
 	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose, "touch-pickup")
@@ -733,7 +718,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	return vc.GrabCup(ctx)
 }
 
-func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *referenceframe.WorldState, approaches []*referenceframe.PoseInFrame, choices []*spatialmath.OrientationVectorDegrees, obj *viz.Object) error {
+func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *referenceframe.WorldState, approaches []*referenceframe.PoseInFrame, choices []*spatialmath.OrientationVectorDegrees, cup *CupGeometry) error {
 	for idx, goToPose := range approaches {
 		vc.logger.Infof("trying to move (2) to %v", goToPose.Pose())
 
@@ -753,7 +738,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 
 		// we found a path!
 
-		goToPose = vc.getApproachPoint(obj, gripperToCupCenterHack, choices[idx])
+		goToPose = vc.getApproachPoint(cup, gripperToCupCenterHack, choices[idx])
 		vc.logger.Infof("going to move (2) to %v", goToPose)
 
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-pickup")
@@ -770,7 +755,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 		}
 
 		// move to known spot
-		goToPose = vc.getApproachPoint(obj, 150, choices[idx])
+		goToPose = vc.getApproachPoint(cup, 150, choices[idx])
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-lift")
 		if err != nil {
 			return err
@@ -783,7 +768,7 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 		}
 
 		// backup
-		goToPose = vc.getApproachPoint(obj, 250, choices[idx])
+		goToPose = vc.getApproachPoint(cup, 250, choices[idx])
 		err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.BottleGripper.Name(), goToPose, "handoff-backup")
 		if err != nil {
 			return err
@@ -794,12 +779,9 @@ func (vc *VinoCart) handoffCupBottleToCupArm(ctx context.Context, worldState *re
 	return fmt.Errorf("no path for handoff")
 }
 
-func (vc *VinoCart) getApproachPoint(obj *viz.Object, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
-	md := obj.MetaData()
-	c := md.Center()
-
-	p := touch.GetApproachPoint(c, deltaLinear, o)
-	p.Z = vc.conf.CupHeight - vc.conf.cupGripHeightOffset()
+func (vc *VinoCart) getApproachPoint(cup *CupGeometry, deltaLinear float64, o *spatialmath.OrientationVectorDegrees) *referenceframe.PoseInFrame {
+	p := touch.GetApproachPoint(cup.Center, deltaLinear, o)
+	p.Z = cup.RimZ - vc.conf.cupGripHeightOffset()
 
 	return referenceframe.NewPoseInFrame(
 		"world",
@@ -956,6 +938,16 @@ func (vc *VinoCart) goTo(ctx context.Context, poss ...toggleswitch.Switch) error
 	return multierr.Combine(errors...)
 }
 
+// releaseZ is the world Z to lower a held cup to before opening the gripper.
+// It reuses the height the cup was grabbed at this run; before any pick has
+// happened it falls back to the configured nominal cup height.
+func (vc *VinoCart) releaseZ() float64 {
+	if vc.lastGraspZ > 0 {
+		return vc.lastGraspZ
+	}
+	return vc.conf.Cup.nominalHeight() - vc.conf.cupGripHeightOffset()
+}
+
 func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
 	cur, err := vc.c.Motion.GetPose(ctx, vc.conf.GripperName, "world", vc.pourExtraFrames, nil)
 	if err != nil {
@@ -967,7 +959,7 @@ func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
 		spatialmath.NewPose(r3.Vector{
 			X: cur.Pose().Point().X,
 			Y: cur.Pose().Point().Y,
-			Z: vc.conf.CupHeight - vc.conf.cupGripHeightOffset(),
+			Z: vc.releaseZ(),
 		}, cur.Pose().Orientation()))
 
 	_, err = vc.c.Motion.Move(
@@ -1549,11 +1541,31 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 	return err
 }
 
-func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
-	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
+// FindCup pulls a single cup-only point cloud from the cup-cloud camera,
+// measures it, and validates it against the configured CupSpec. It returns
+// noObjects when there is nothing on the table or when the detected object is
+// not a valid cup, so loop mode keeps waiting instead of erroring out.
+func (vc *VinoCart) FindCup(ctx context.Context) (*CupGeometry, error) {
+	if vc.c.CupCloudCam == nil {
+		return nil, fmt.Errorf("no cup_cloud_cam configured")
+	}
+
+	pc, err := vc.c.CupCloudCam.NextPointCloud(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+	if pc.Size() == 0 {
+		return nil, noObjects
+	}
+
+	g := cupGeometryFromPointCloud(pc)
+	vc.logger.Infof("FindCup: %v", g)
+
+	if res := vc.conf.Cup.validate(g); !res.Valid {
+		vc.logger.Infof("rejecting cup: %v", res.Reasons)
+		return nil, noObjects
+	}
+
+	return &g, nil
 }
