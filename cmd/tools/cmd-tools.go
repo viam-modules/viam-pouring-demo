@@ -30,7 +30,13 @@ func main() {
 
 func realMain() error {
 	ctx := context.Background()
-	logger := logging.NewLogger("cup")
+	logger, reg := logging.NewLoggerWithRegistry("cup")
+	reg.Update([]logging.LoggerPatternConfig{
+		{
+			Pattern: "cup.networking*",
+			Level:   "WARN",
+		},
+	}, logger)
 
 	debug := false
 	n := 1
@@ -110,7 +116,7 @@ func realMain() error {
 				logger.Infof("error touching, continuing: %v", err)
 				continue
 			}
-			time.Sleep(5 * time.Second)
+
 			err = p1c.Gripper.Open(ctx, nil)
 			if err != nil {
 				return err
