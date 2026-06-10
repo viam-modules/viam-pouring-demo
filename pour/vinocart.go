@@ -624,89 +624,101 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	vc.setStatus("picking")
 
+	// We are going to make two movements, an "approach" that puts the gripper 100mm behind the
+	// cup. Followed by a forward linear movement that puts the grippers around the cup ready to be
+	// closed.
+
+	// Set up the world state for the first movement:
 	obj := objects[0]
-
-	// -- setup world frame
-
-	obstacles := []*referenceframe.GeometriesInFrame{}
 	// Set a label on the cup geometry to avoid "unnamedWorldStateGeometry" collisions
 	obj.Geometry.SetLabel("cup")
-	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
 	vc.logger.Infof("add cup as obstacle %v", obj.Geometry)
+	cupFrame := referenceframe.NewLinkInFrame(
+		"world", // parent
+		obj.Geometry.Pose(),
+		"cup",
+		obj.Geometry,
+	)
 
-	worldState, err := referenceframe.NewWorldState(obstacles, nil)
+	// Create a synthetic point 100mm "in front" of the gripper. We're going to move this point to
+	// the cup. The gripper's +Z orientation vector is assumed to be in the direction the claws are
+	// facing.
+	target := referenceframe.NewLinkInFrame(
+		vc.c.Gripper.Name().ShortName(), // parent
+		spatialmath.NewPoseFromPoint(r3.Vector{Z: 100}),
+		"target", // frame name
+		nil,      // geometry
+	)
+
+	worldStateWithCup, err := referenceframe.NewWorldState(
+		nil, []*referenceframe.LinkInFrame{cupFrame, target})
 	if err != nil {
 		return err
 	}
 
-	// -- approach
-
-	var o *spatialmath.OrientationVectorDegrees
-
-	choices := []*spatialmath.OrientationVectorDegrees{
-		{OX: 1, Theta: 180},
-		{OY: 1, Theta: 180},
-		{OX: .5, OY: 1, Theta: 180},
-		{OX: 1, OY: 1, Theta: 180},
-		{OX: 1, OY: -1, Theta: 180},
-		{OY: -1, Theta: 180},
-		{OX: -.5, OY: -1, Theta: 180},
-	}
-
-	approaches := []*referenceframe.PoseInFrame{}
-
-	for _, tryO := range choices {
-		goToPose := vc.getApproachPoint(obj, 100, tryO)
-		approaches = append(approaches, goToPose)
-		vc.logger.Infof("trying to move to %v", goToPose.Pose())
-
-		_, err2 := vc.c.Motion.Move(
-			ctx,
-			motion.MoveReq{
-				ComponentName: vc.c.Gripper.Name().ShortName(),
-				Destination:   goToPose,
-				WorldState:    worldState,
-				Extra:         planTagExtra("touch-approach"),
-			},
-		)
-
-		if err2 != nil {
-			vc.logger.Debugf("error: %v", err2)
-		}
-
-		if err2 == nil {
-			err = nil
-			o = tryO
-			break
-		} else if err == nil {
-			err = err2
-		}
-	}
-
-	if vc.conf.Handoff && err != nil {
-
-		err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, obj)
-		if err2 == nil {
-			return nil
-		}
-
-		return multierr.Combine(err, err2)
-	}
-
+	_, err = vc.c.Motion.Move(
+		ctx,
+		motion.MoveReq{
+			ComponentName: "target",
+			Destination: referenceframe.NewPoseInFrameWithGoalCloud(
+				"cup",
+				spatialmath.NewPoseFromOrientation(
+					// We desire OZ to be 0. Due to the PoseCloud, OX/OY can be any value here. We
+					// set a non-zero value so normalizing the vector does the right thing.  Theta
+					// is set to 180 as that keeps the camera facing up/minimizes the movement from
+					// the start position. Ideally we'd say 0 or 180 here (both acceptable positions
+					// to grab the cup). Such that motion planning could find both solutions and do
+					// the math on which is less movement.
+					&spatialmath.OrientationVectorDegrees{OX: 1, OZ: 0, Theta: 180},
+				),
+				&referenceframe.PoseCloud{
+					OX: 1, OY: 1, OZ: 0.1, Theta: 10,
+				},
+			),
+			WorldState: worldStateWithCup,
+			Extra:      planTagExtra("touch-approach"),
+		},
+	)
 	if err != nil {
 		return err
 	}
 
-	// ---- go to pick up
+	// DO NOT MERGE.
+	//
+	// Dan: Not sure what this is doing.
+	//
+	// if vc.conf.Handoff && err != nil {
+	//  	err2 := vc.handoffCupBottleToCupArm(ctx, worldState, approaches, choices, obj)
+	//  	if err2 == nil {
+	//  		return nil
+	//  	}
+	//
+	//  	return multierr.Combine(err, err2)
+	// }
+
+	// The second movement will move now move the gripper to where the target currently is. This
+	// movement also removes the cup frame as we want to disable collision detection against it. The
+	// gripper claw is represented as a box -- its modeling has no concept of being "open".
 	err = SetXarmSpeed(ctx, vc.c.Arm, 25, 25)
 	if err != nil {
 		return err
 	}
 
-	goToPose := vc.getApproachPoint(obj, gripperToCupCenterHack, o)
-	vc.logger.Infof("going to move to %v", goToPose)
+	worldStateNoCup, err := referenceframe.NewWorldState(nil, []*referenceframe.LinkInFrame{target})
+	if err != nil {
+		return err
+	}
 
-	err = moveWithLinearConstraint(ctx, vc.c.Motion, vc.c.Gripper.Name(), goToPose, "touch-pickup")
+	_, err = vc.c.Motion.Move(
+		ctx,
+		motion.MoveReq{
+			ComponentName: vc.c.Gripper.Name().ShortName(),
+			Destination:   referenceframe.NewPoseInFrame("target", spatialmath.NewZeroPose()),
+			WorldState:    worldStateNoCup,
+			Constraints:   &LinearConstraint,
+			Extra:         planTagExtra("touch-pickup"),
+		},
+	)
 	if err != nil {
 		return err
 	}
