@@ -74,6 +74,10 @@ func (ws *WeightSmoother) Name() resource.Name {
 	return ws.name
 }
 
+func (ws *WeightSmoother) Status(ctx context.Context) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+
 func (ws *WeightSmoother) Readings(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
 	if extra == nil {
 		extra = map[string]interface{}{}
