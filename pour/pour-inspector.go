@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"go.viam.com/rdk/app"
+	"go.viam.com/rdk/components/camera"
+	"go.viam.com/rdk/data"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/vision"
@@ -50,7 +52,13 @@ func (pi *pourInsepctor) checkGoodPour(ctx context.Context, img image.Image) (bo
 	if pi.visionService == nil {
 		return false, errors.New("no vision service provided")
 	}
-	classifications, err := pi.visionService.Classifications(ctx, img, 1, nil)
+
+	imgNi, err := camera.NamedImageFromImage(img, "", "", data.Annotations{})
+	if err != nil {
+		return false, err
+	}
+
+	classifications, err := pi.visionService.Classifications(ctx, &imgNi, 1, nil)
 	if err != nil {
 		return false, err
 	}

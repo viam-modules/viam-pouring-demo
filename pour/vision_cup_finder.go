@@ -3,11 +3,11 @@ package pour
 import (
 	"context"
 	"fmt"
-	"image"
 	"math"
 
 	"github.com/golang/geo/r3"
 	commonpb "go.viam.com/api/common/v1"
+	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/resource"
@@ -96,6 +96,10 @@ type visionCupFinder struct {
 
 func (vcf *visionCupFinder) Name() resource.Name {
 	return vcf.name
+}
+
+func (vcf *visionCupFinder) Status(ctx context.Context) (map[string]any, error) {
+	return map[string]any{}, nil
 }
 
 func (vcf *visionCupFinder) goodDelta() float64 {
@@ -210,7 +214,7 @@ func (vcf *visionCupFinder) DetectionsFromCamera(ctx context.Context, cameraName
 	return nil, fmt.Errorf("no detection support")
 }
 
-func (vcf *visionCupFinder) Detections(ctx context.Context, img image.Image, extra map[string]interface{}) ([]objectdetection.Detection, error) {
+func (vcf *visionCupFinder) Detections(ctx context.Context, img *camera.NamedImage, extra map[string]interface{}) ([]objectdetection.Detection, error) {
 	return nil, fmt.Errorf("no detection support")
 }
 
@@ -225,7 +229,7 @@ func (vcf *visionCupFinder) ClassificationsFromCamera(
 
 func (vcf *visionCupFinder) Classifications(
 	ctx context.Context,
-	img image.Image,
+	img *camera.NamedImage,
 	n int,
 	extra map[string]interface{},
 ) (classification.Classifications, error) {
