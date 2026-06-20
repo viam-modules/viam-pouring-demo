@@ -633,15 +633,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	var o *spatialmath.OrientationVectorDegrees
 
-	choices := []*spatialmath.OrientationVectorDegrees{
-		{OX: 1, Theta: 180},
-		{OY: 1, Theta: 180},
-		{OX: .5, OY: 1, Theta: 180},
-		{OX: 1, OY: 1, Theta: 180},
-		{OX: 1, OY: -1, Theta: 180},
-		{OY: -1, Theta: 180},
-		{OX: -.5, OY: -1, Theta: 180},
-	}
+	choices := CupApproachChoices
 
 	approaches := []*referenceframe.PoseInFrame{}
 
