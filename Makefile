@@ -32,7 +32,7 @@ ifeq ($(VIAM_TARGET_OS), windows)
 else
 	strip $(MODULE_BINARY)
 endif
-	tar czf $@ meta.json $(MODULE_BINARY) pour/vinoweb/dist
+	tar czf $@ meta.json first_run.sh $(MODULE_BINARY) pour/vinoweb/dist
 ifeq ($(VIAM_TARGET_OS), windows)
 	git checkout meta.json
 endif
