@@ -52,6 +52,8 @@ viam ALL=(ALL) NOPASSWD: ALL
 
 Without passwordless sudo, first run fails and the module will not load.
 
+If `apt-get update` fails due to an unrelated broken repository (for example InfluxData missing a GPG key), the script logs a warning and continues with kiosk setup. Fix or disable the broken repo separately if `libnlopt0` fails to install.
+
 ### Verify
 
 ```bash
