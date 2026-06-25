@@ -17,9 +17,24 @@ write_if_changed() {
 }
 
 install_deps() {
-	if command -v apt-get >/dev/null 2>&1; then
-		sudo apt-get update
-		sudo apt-get install -y libnlopt0
+	if ! command -v apt-get >/dev/null 2>&1; then
+		return 0
+	fi
+
+	if dpkg -s libnlopt0 >/dev/null 2>&1; then
+		echo "libnlopt0 already installed"
+		return 0
+	fi
+
+	# A broken third-party apt repo (e.g. missing GPG key) must not block kiosk setup.
+	if ! sudo apt-get update; then
+		echo "WARNING: apt-get update failed; trying to install libnlopt0 anyway" >&2
+	fi
+
+	if sudo apt-get install -y libnlopt0; then
+		echo "installed libnlopt0"
+	else
+		echo "WARNING: failed to install libnlopt0 — fix apt repos or install manually" >&2
 	fi
 }
 
@@ -107,5 +122,5 @@ EOF
 	echo "kiosk setup complete"
 }
 
-install_deps
 configure_kiosk
+install_deps
