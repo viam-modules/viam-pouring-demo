@@ -33,6 +33,51 @@ The following attributes must be specified:
 | `delta_y_neg`              | float64 | **Required** | A skew parameter used to adjust the postions of cups when translating from pixel space into the world. |
 | `cpu_threads`              | int     | Optional     | Number of threads to use for motion planning. Half the availible threads will be used if unsupplied.
 
+## Wine cart kiosk setup
+
+When this module is first installed or updated on a machine, Viam runs `first_run.sh` once per module version. On Linux the script:
+
+- Installs `libnlopt0` (required dependency)
+- Configures the display to stay on: disables screen blanking, idle suspend, and sleep targets
+
+This is intended for the dedicated wine cart with a touch screen. On macOS or machines without GNOME/GDM the kiosk steps are skipped.
+
+### Prerequisites
+
+The `viam` user must have passwordless sudo on the cart. For dedicated kiosk hardware, add to `/etc/sudoers.d/viam-kiosk`:
+
+```
+viam ALL=(ALL) NOPASSWD: ALL
+```
+
+Without passwordless sudo, first run fails and the module will not load.
+
+If `apt-get update` fails due to an unrelated broken repository (for example InfluxData missing a GPG key), the script logs a warning and continues with kiosk setup. Fix or disable the broken repo separately if `libnlopt0` fails to install.
+
+### Verify
+
+```bash
+gsettings get org.gnome.desktop.session idle-delay
+# expected: uint32 0
+
+systemctl is-enabled sleep.target
+# expected: masked
+```
+
+### If the screen still goes black
+
+Distinguish timeout from a GDM crash:
+
+```bash
+journalctl -u gdm -b --no-pager | tail -50
+```
+
+If logs show segfaults, OOM, or GPU errors, that is a driver/hardware issue — idle-delay settings will not fix it.
+
+### Re-run first run
+
+Delete the success marker for the current module version (path varies by install), then bump or reinstall the module version. The marker file ends in `.first_run_succeeded` next to the unpacked module directory.
+
 ## What to do if something goes wrong
 
 Use a pen or pencil to draw a circle around where your cup(s) were placed.
