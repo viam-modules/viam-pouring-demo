@@ -128,13 +128,15 @@ func realMain() error {
 					startTS,
 					endTS,
 				)
-				if sequenceDatasetID != nil && *sequenceDatasetID != "" {
-					dc.AddSequencesToDataset(ctx, *sequenceDatasetID, []string{seqID})
-				}
 				if err != nil {
-					logger.Errorf("CreateSequence: %w", err)
-				} else {
-					logger.Infof("created sequence %s", seqID)
+					return fmt.Errorf("failed CreateSequence: %w", err)
+				}
+				logger.Infof("created sequence %s", seqID)
+				if sequenceDatasetID != nil && *sequenceDatasetID != "" {
+					if err := dc.AddSequencesToDataset(ctx, *sequenceDatasetID, []string{seqID}); err != nil {
+						return fmt.Errorf("failed AddSequencesToDataset: %w", err)
+					}
+					logger.Infof("added sequence: %s to dataset: %s", seqID, *sequenceDatasetID)
 				}
 			}
 		}
