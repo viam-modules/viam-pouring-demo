@@ -194,6 +194,7 @@ func realMain() error {
 			instruction:  *instruction,
 			locationID:   md.LocationID,
 			partID:       md.MachinePartID,
+			datasetID:    *sequenceDatasetID,
 		}, logger)
 
 	default:
