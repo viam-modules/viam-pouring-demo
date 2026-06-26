@@ -41,6 +41,10 @@ func realMain() error {
 	instruction := flag.String("instruction", "grab the cup", "language instruction")
 	hz := flag.Int("hz", 10, "capture-direct: sample rate (Hz) for arm and camera")
 
+	useSequences := false
+	flag.BoolVar(&useSequences, "use-sequences", false, "store data in viam sequences")
+	sequenceDatasetID := flag.String("dataset-id", "", "dataset ID to automatically add sequence to. if not provided, sequence will not be added to a dataset. requires `use-sequences`")
+
 	flag.Parse()
 
 	if debug {
@@ -62,12 +66,12 @@ func realMain() error {
 		}
 		defer client.Close(ctx)
 
-		vc, err := generic.FromRobot(client, *cartName)
+		vc, err := generic.FromProvider(client, *cartName)
 		if err != nil {
 			return err
 		}
 
-		capture, err := sensor.FromRobot(client, "touch-session-capture")
+		capture, err := sensor.FromProvider(client, "touch-session-capture")
 		if err != nil {
 			return err
 		}
@@ -102,19 +106,52 @@ func realMain() error {
 		if err := appendSession(sessionsPath, startTS, endTS); err != nil {
 			return fmt.Errorf("recording session: %w", err)
 		}
+		if useSequences {
+			md, err := client.CloudMetadata(ctx)
+			if err != nil {
+				logger.Errorf("CloudMetadata: %w", err)
+			}
+			if ac, err := app.ConnectFromCLIToken(ctx, logger); err != nil {
+				logger.Errorf("saving to sequences needs viam cli credentials (run `viam login` first): %w", err)
+			} else {
+				defer ac.Close()
+				dc := ac.DataClient()
+
+				seqID, err := dc.CreateSequence(
+					ctx,
+					md.MachinePartID,
+					[]app.SequenceResourceFilter{
+						{ResourceName: *camName, MethodName: "GetImages"},
+						{ResourceName: *armName, MethodName: "JointPositions"},
+					},
+					[]string{"touch"},
+					startTS,
+					endTS,
+				)
+				if sequenceDatasetID != nil && *sequenceDatasetID != "" {
+					dc.AddSequencesToDataset(ctx, *sequenceDatasetID, []string{seqID})
+				}
+				if err != nil {
+					logger.Errorf("CreateSequence: %w", err)
+				} else {
+					logger.Infof("created sequence %s", seqID)
+				}
+			}
+		}
+
 		logger.Infof("recorded session [%s, %s] to %s", startTS.Format(time.RFC3339Nano), endTS.Format(time.RFC3339Nano), sessionsPath)
 
 		_, err = vc.DoCommand(ctx, map[string]any{"reset": true})
 		return err
 
-	case "capture-direct": // this is temporary until sequences and related are finished 
+	case "capture-direct": // this is temporary until sequences and related are finished
 		client, err := vmodutils.ConnectToHostFromCLIToken(ctx, *host, logger)
 		if err != nil {
 			return err
 		}
 		defer client.Close(ctx)
 
-		vc, err := generic.FromRobot(client, *cartName)
+		vc, err := generic.FromProvider(client, *cartName)
 		if err != nil {
 			return err
 		}
