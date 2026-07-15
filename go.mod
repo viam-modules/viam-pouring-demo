@@ -3,17 +3,15 @@ module github.com/viam-modules/viam-pouring-demo
 go 1.25.9
 
 require (
-	github.com/erh/vmodutils v0.3.11
+	github.com/erh/vmodutils v0.4.0
 	github.com/golang/geo v0.0.0-20260625163123-7c0e84413537
 	go.uber.org/multierr v1.11.0
-	go.viam.com/api v0.1.564
-	go.viam.com/rdk v0.132.0
+	go.viam.com/api v0.1.571
+	go.viam.com/rdk v1.0.0
 	go.viam.com/test v1.2.5
 	golang.org/x/sync v0.21.0
 	gonum.org/v1/gonum v0.17.0
 )
-
-replace go.viam.com/rdk => github.com/viamrobotics/rdk v0.132.1-0.20260626212515-93dc1a4c1ece
 
 require (
 	cel.dev/expr v0.25.2 // indirect
