@@ -322,6 +322,8 @@ func (vc *VinoCart) run(ctx context.Context) {
 		err := vc.WaitForCupAndGo(ctx)
 		if ctx.Err() == nil {
 			vc.noteError(err)
+		} else if err != nil {
+			vc.logger.Infof("go error in run: %v", err)
 		}
 	}
 }
