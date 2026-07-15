@@ -22,6 +22,7 @@ import (
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/camera"
 	toggleswitch "go.viam.com/rdk/components/switch"
+	"go.viam.com/rdk/data"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan/armplanning"
 	"go.viam.com/rdk/referenceframe"
@@ -202,6 +203,10 @@ type VinoCart struct {
 
 func (vc *VinoCart) Name() resource.Name {
 	return vc.name
+}
+
+func (vc *VinoCart) Status(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{}, nil
 }
 
 func (vc *VinoCart) Close(ctx context.Context) error {
@@ -512,7 +517,11 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 		}
 	}
 
-	cs, err := vc.c.PickQualityService.Classifications(ctx, prepped, 1, nil)
+	namedImg, err := camera.NamedImageFromImage(prepped, "", "", data.Annotations{})
+	if err != nil {
+		return err
+	}
+	cs, err := vc.c.PickQualityService.Classifications(ctx, &namedImg, 1, nil)
 	if err != nil {
 		return err
 	}

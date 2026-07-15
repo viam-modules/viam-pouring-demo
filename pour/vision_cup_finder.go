@@ -3,11 +3,12 @@ package pour
 import (
 	"context"
 	"fmt"
-	"image"
 	"math"
 
 	"github.com/golang/geo/r3"
+
 	commonpb "go.viam.com/api/common/v1"
+	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/resource"
@@ -210,7 +211,7 @@ func (vcf *visionCupFinder) DetectionsFromCamera(ctx context.Context, cameraName
 	return nil, fmt.Errorf("no detection support")
 }
 
-func (vcf *visionCupFinder) Detections(ctx context.Context, img image.Image, extra map[string]interface{}) ([]objectdetection.Detection, error) {
+func (vcf *visionCupFinder) Detections(ctx context.Context, img *camera.NamedImage, extra map[string]interface{}) ([]objectdetection.Detection, error) {
 	return nil, fmt.Errorf("no detection support")
 }
 
@@ -225,11 +226,15 @@ func (vcf *visionCupFinder) ClassificationsFromCamera(
 
 func (vcf *visionCupFinder) Classifications(
 	ctx context.Context,
-	img image.Image,
+	img *camera.NamedImage,
 	n int,
 	extra map[string]interface{},
 ) (classification.Classifications, error) {
 	return nil, fmt.Errorf("no classification support")
+}
+
+func (vcf *visionCupFinder) Status(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{}, nil
 }
 
 func (vcf *visionCupFinder) GetProperties(ctx context.Context, extra map[string]interface{}) (*vision.Properties, error) {

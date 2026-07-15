@@ -153,3 +153,7 @@ func getBestNumberForWeight(raw []float64) float64 {
 
 	return stat.Mean(good, nil)
 }
+
+func (ws *WeightSmoother) Status(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{}, nil
+}
