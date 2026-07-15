@@ -21,6 +21,7 @@
     | "manual mode";
   let status: StatusKey = $state("standby") as StatusKey;
   let lastError = $state("");
+  let logsUrl = $state("");
 
   let objectCount = $state(0);
   let segmentedObjects: SegmentedObject[] = $state([]);
@@ -87,6 +88,7 @@
               if ((Object.keys(statusMessages) as StatusKey[]).includes(s as StatusKey)) status = s as StatusKey;
             }
             lastError = "error" in r && typeof r.error === "string" ? r.error : "";
+            logsUrl = "logsUrl" in r && typeof r.logsUrl === "string" ? r.logsUrl : "";
           }
         } catch (_) {}
 
@@ -134,6 +136,7 @@
       <Status
         message={lastError || statusMessages[status]}
         status={lastError ? "error" : status}
+        logsUrl={lastError ? logsUrl : ""}
         {objectCount}
       />
     {/snippet}

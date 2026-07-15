@@ -116,6 +116,12 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 		},
 	}
 
+	if md, err := client.CloudMetadata(ctx); err != nil {
+		logger.Warnf("can't get cloud metadata for logs link: %v", err)
+	} else {
+		vc.logsURL = fmt.Sprintf("https://app.viam.com/machine/%s/logs?org=%s", md.MachineID, md.PrimaryOrgID)
+	}
+
 	vc.bottleTop = referenceframe.NewLinkInFrame(
 		vc.conf.BottleGripper,
 		spatialmath.NewPose(r3.Vector{X: vc.conf.BottleHeight - 70, Y: -7, Z: 0}, &spatialmath.OrientationVectorDegrees{OX: 1}),
@@ -191,6 +197,8 @@ type VinoCart struct {
 	status     string
 	lastError  string
 
+	logsURL string
+
 	// lastGraspZ is the world Z used to grab the most recent cup. Reused as the
 	// release height when putting a cup back, since no live cloud exists then.
 	lastGraspZ float64
@@ -207,7 +215,7 @@ func (vc *VinoCart) Name() resource.Name {
 }
 
 func (vc *VinoCart) Status(ctx context.Context) (map[string]interface{}, error) {
-	return map[string]interface{}{"status": vc.getStatus(), "error": vc.getLastError()}, nil
+	return map[string]interface{}{"status": vc.getStatus(), "error": vc.getLastError(), "logsUrl": vc.logsURL}, nil
 }
 
 func (vc *VinoCart) Close(ctx context.Context) error {
@@ -226,7 +234,7 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (result map[string]interface{}, err error) {
 	if cmd["status"] == true {
-		return map[string]interface{}{"status": vc.getStatus(), "error": vc.getLastError()}, nil
+		return map[string]interface{}{"status": vc.getStatus(), "error": vc.getLastError(), "logsUrl": vc.logsURL}, nil
 	}
 
 	if cmd["stop"] == true {

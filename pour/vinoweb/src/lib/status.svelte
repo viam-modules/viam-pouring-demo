@@ -5,10 +5,12 @@
     message = "SENSING...",
     status = "standby",
     objectCount = 0,
+    logsUrl = "",
   }: {
     message?: string;
     status?: string;
     objectCount?: number;
+    logsUrl?: string;
   } = $props();
 
   const statusTypes: Record<
@@ -61,6 +63,12 @@
           </div>
 
           <span class="status-message">{message}</span>
+
+          {#if logsUrl}
+            <a class="logs-link" href={logsUrl} target="_blank" rel="noopener">
+              View logs
+            </a>
+          {/if}
         </div>
 
         <div class="right-content">
@@ -134,6 +142,13 @@
     color: #ffffff;
     letter-spacing: 0.05em;
     overflow-wrap: anywhere;
+  }
+
+  .logs-link {
+    font-size: 0.85rem;
+    color: #78a9ff;
+    white-space: nowrap;
+    text-decoration: underline;
   }
 
   .tag-wrapper :global(.bx--tag) {
