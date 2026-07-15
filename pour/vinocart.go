@@ -189,6 +189,7 @@ type VinoCart struct {
 
 	statusLock sync.Mutex
 	status     string
+	lastError  string
 
 	// lastGraspZ is the world Z used to grab the most recent cup. Reused as the
 	// release height when putting a cup back, since no live cloud exists then.
@@ -206,7 +207,7 @@ func (vc *VinoCart) Name() resource.Name {
 }
 
 func (vc *VinoCart) Status(ctx context.Context) (map[string]interface{}, error) {
-	return map[string]interface{}{}, nil
+	return map[string]interface{}{"status": vc.getStatus(), "error": vc.getLastError()}, nil
 }
 
 func (vc *VinoCart) Close(ctx context.Context) error {
@@ -223,9 +224,9 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 	return multierr.Combine(vc.robotClient.Close(ctx), vc.server.Close(), viamClientErr)
 }
 
-func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (result map[string]interface{}, err error) {
 	if cmd["status"] == true {
-		return map[string]interface{}{"status": vc.getStatus()}, nil
+		return map[string]interface{}{"status": vc.getStatus(), "error": vc.getLastError()}, nil
 	}
 
 	if cmd["stop"] == true {
@@ -237,6 +238,7 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 	}
 
 	defer func() {
+		vc.noteError(err)
 		vc.setStatus("manual mode")
 	}()
 
@@ -313,6 +315,9 @@ func (vc *VinoCart) run(ctx context.Context) {
 		if err != nil {
 			vc.logger.Errorf("go error in run: %v", err)
 		}
+		if ctx.Err() == nil {
+			vc.noteError(err)
+		}
 	}
 }
 
@@ -320,6 +325,26 @@ func (vc *VinoCart) getStatus() string {
 	vc.statusLock.Lock()
 	defer vc.statusLock.Unlock()
 	return vc.status
+}
+
+func (vc *VinoCart) getLastError() string {
+	vc.statusLock.Lock()
+	defer vc.statusLock.Unlock()
+	return vc.lastError
+}
+
+// noteError records err so status polling can surface it; nil clears the previous error.
+func (vc *VinoCart) noteError(err error) {
+	if err != nil {
+		vc.logger.Errorf("noteError: %v", err)
+	}
+	vc.statusLock.Lock()
+	defer vc.statusLock.Unlock()
+	if err == nil {
+		vc.lastError = ""
+	} else {
+		vc.lastError = err.Error()
+	}
 }
 
 func (vc *VinoCart) setStatus(s string) {

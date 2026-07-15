@@ -39,6 +39,7 @@
     placing: { type: "teal", loading: true },
     waiting: { type: "green", icon: "checkmark--filled" },
     "manual mode": { type: "magenta", icon: "settings" },
+    error: { type: "red", icon: "warning--filled" },
   };
 
   $effect(() => {
@@ -132,6 +133,7 @@
     font-size: 1.2rem;
     color: #ffffff;
     letter-spacing: 0.05em;
+    overflow-wrap: anywhere;
   }
 
   .tag-wrapper :global(.bx--tag) {

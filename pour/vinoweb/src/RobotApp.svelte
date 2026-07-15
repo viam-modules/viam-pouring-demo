@@ -20,6 +20,7 @@
     | "waiting"
     | "manual mode";
   let status: StatusKey = $state("standby") as StatusKey;
+  let lastError = $state("");
 
   let objectCount = $state(0);
   let segmentedObjects: SegmentedObject[] = $state([]);
@@ -85,6 +86,7 @@
               const s = r.status;
               if ((Object.keys(statusMessages) as StatusKey[]).includes(s as StatusKey)) status = s as StatusKey;
             }
+            lastError = "error" in r && typeof r.error === "string" ? r.error : "";
           }
         } catch (_) {}
 
@@ -129,7 +131,11 @@
     {cupDetectionMetrics}
   >
     {#snippet statusBar()}
-      <Status message={statusMessages[status]} {objectCount} />
+      <Status
+        message={lastError || statusMessages[status]}
+        status={lastError ? "error" : status}
+        {objectCount}
+      />
     {/snippet}
   </MainContent>
 </div>
