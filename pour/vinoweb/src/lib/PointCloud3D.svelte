@@ -118,7 +118,8 @@
     const padding = 1.2;
     const vFov = camera.fov * (Math.PI / 180);
     const dist = (boundR * padding) / Math.sin(vFov / 2);
-    camera.position.set(center.x, center.y + dist * 0.35, center.z + dist * 0.82);
+    const dir = new THREE.Vector3(0, 0.35, 0.82).normalize().multiplyScalar(dist);
+    camera.position.copy(center).add(dir);
     camera.lookAt(center);
   }
 
@@ -229,19 +230,17 @@
     scene.add(pointsMesh);
   }
 
+  // setViewport/setScissor take CSS pixels; three.js applies the pixel ratio itself.
   function applySquareViewport() {
     if (!renderer || !containerRef) return;
     const w = containerRef.clientWidth;
     const h = containerRef.clientHeight;
-    const dpr = renderer.getPixelRatio();
-    const wPx = Math.floor(w * dpr);
-    const hPx = Math.floor(h * dpr);
-    const sidePx = Math.min(wPx, hPx);
-    const xPx = Math.floor((wPx - sidePx) / 2);
-    const yPx = Math.floor((hPx - sidePx) / 2);
+    const side = Math.min(w, h);
+    const x = Math.floor((w - side) / 2);
+    const y = Math.floor((h - side) / 2);
     renderer.setScissorTest(true);
-    renderer.setScissor(xPx, yPx, sidePx, sidePx);
-    renderer.setViewport(xPx, yPx, sidePx, sidePx);
+    renderer.setScissor(x, y, side, side);
+    renderer.setViewport(x, y, side, side);
     camera.aspect = 1;
     camera.updateProjectionMatrix();
   }
@@ -278,7 +277,7 @@
       renderer.setSize(w, h);
     }
     renderer.setScissorTest(false);
-    renderer.setViewport(0, 0, Math.floor(w * dpr), Math.floor(h * dpr));
+    renderer.setViewport(0, 0, w, h);
     renderer.clear();
 
     applySquareViewport();

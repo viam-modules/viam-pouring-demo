@@ -156,6 +156,7 @@
     height: 24px;
     line-height: 24px;
     font-weight: 600;
+    white-space: nowrap;
   }
 
   .detection-indicators {

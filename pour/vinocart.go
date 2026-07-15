@@ -320,9 +320,6 @@ func (vc *VinoCart) run(ctx context.Context) {
 	for ctx.Err() == nil {
 		vc.setStatus("standby")
 		err := vc.WaitForCupAndGo(ctx)
-		if err != nil {
-			vc.logger.Errorf("go error in run: %v", err)
-		}
 		if ctx.Err() == nil {
 			vc.noteError(err)
 		}
@@ -651,6 +648,9 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	}
 
 	vc.logger.Infof("found cup in %v: %v", time.Since(start), cup)
+
+	// A new attempt is underway, stop showing the previous failure.
+	vc.noteError(nil)
 
 	vc.setStatus("picking")
 
