@@ -1,0 +1,18 @@
+/*
+ * Styles for the embedded motion-tools viewer, mirroring visualization/src/app.css
+ * minus the standalone-app extras (skeleton, tweakpane tweaks). Loaded lazily by
+ * PlannerDebug.svelte so tailwind's preflight never touches the pour dashboard.
+ */
+@import 'tailwindcss';
+@config '../../tailwind.config.ts';
+
+@plugin '@tailwindcss/forms';
+
+@import '@viamrobotics/prime-core/prime.css';
+
+/* @tailwindcss/forms paints its own chevron on every <select>, doubling the one
+ * prime-core draws with a real element. Same fix as visualization/src/app.css. */
+select {
+  appearance: none !important;
+  background-image: none !important;
+}

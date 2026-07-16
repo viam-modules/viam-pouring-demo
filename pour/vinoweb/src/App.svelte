@@ -7,6 +7,12 @@
 
   let myState = $state({ error: "", machineId: "", host: "", credentials: {} });
 
+  // Debug view for motion plans: any URL with ?planner loads the embedded
+  // motion-tools visualizer (and its CSS) instead of the pour dashboard.
+  // Lazy import so tailwind preflight never touches the normal app, and no
+  // machine connection is required.
+  const showPlanner = new URLSearchParams(window.location.search).has("planner");
+
   function getHostAndCredentials() {
     const parts = window.location.pathname.split("/");
     if (parts && parts.length >= 3 && parts[1] == "machine") {
@@ -92,13 +98,18 @@
 </script>
 
 <main>
-  {#if myState.error}
-    <h1 style="color: red;">
-      {myState.error}
-    </h1>
-  {/if}
+  {#if showPlanner}
+    {#await import("./lib/PlannerDebug.svelte") then { default: PlannerDebug }}
+      <PlannerDebug />
+    {/await}
+  {:else}
+    {#if myState.error}
+      <h1 style="color: red;">
+        {myState.error}
+      </h1>
+    {/if}
 
-  {#if myState.host}
+    {#if myState.host}
     <Main host={myState.host} credentials={myState.credentials} />
     <!-- <ComponentPreview host={myState.host} credentials={myState.credentials} /> -->
   {:else}
@@ -118,6 +129,7 @@
       </div>
       <button onclick={saveHostInfo} class="save-button">Save</button>
     </div>
+    {/if}
   {/if}
 </main>
 
