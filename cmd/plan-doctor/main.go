@@ -95,8 +95,16 @@ func realMain() error {
 	}
 	sort.Slice(groups, func(i, j int) bool { return len(groups[i].candidates) > len(groups[j].candidates) })
 
-	trajectory := []referenceframe.FrameSystemInputs{}
-	stepCollisions := [][]string{}
+	// Contacts already present at the start state (arm bases on the table, cable
+	// runs) are planner-approved; only collisions beyond that baseline get marked.
+	baselinePairs := map[string][2]string{}
+	if req.StartState != nil && req.StartState.Configuration() != nil {
+		if pairs, berr := collidingPairs(req.FrameSystem, req.StartState.Configuration()); berr == nil {
+			baselinePairs = pairs
+		}
+	}
+
+	steps := []doctorStep{}
 	fmt.Printf("re-plan failed as expected: %d rejected IK candidates across %d constraint(s)\n", ikErr.Count, len(groups))
 	for _, g := range groups {
 		kept := min(len(g.candidates), *maxPerType)
@@ -110,17 +118,37 @@ func realMain() error {
 		distinct := dedupeCandidates(g.candidates, collidingComponents(collidingFrames))
 		fmt.Printf("         %d distinct configuration(s) after dedupe\n", len(distinct))
 		for _, candidate := range distinct[:min(len(distinct), kept)] {
-			trajectory = append(trajectory, candidate)
-			stepCollisions = append(stepCollisions, collidingFrames)
+			colliding := collidingFrames
+			if detected, derr := detectCollisions(req.FrameSystem, candidate, baselinePairs, collidingFrames); derr == nil {
+				colliding = detected
+			}
+			steps = append(steps, doctorStep{inputs: candidate, colliding: colliding, label: g.constraint})
 		}
 	}
 
+	trajectory := []referenceframe.FrameSystemInputs{}
+	stepCollisions := [][]string{}
+	for _, s := range steps {
+		trajectory = append(trajectory, s.inputs)
+		stepCollisions = append(stepCollisions, s.colliding)
+	}
 	if err := writeViewableFile(outFile, rawRequest, trajectory, stepCollisions); err != nil {
 		return err
 	}
 	fmt.Printf("wrote %d candidates to %s\n", len(trajectory), outFile)
-	fmt.Println("drop it into the motion-tools visualizer and scrub: each step is one rejected candidate.")
+
+	snapshotsFile := strings.TrimSuffix(in, ".json") + "-snapshots.json"
+	if err := writeSnapshotsFile(snapshotsFile, req, steps); err != nil {
+		return err
+	}
+	fmt.Printf("wrote per-candidate snapshots to %s\n", snapshotsFile)
 	return nil
+}
+
+type doctorStep struct {
+	inputs    referenceframe.FrameSystemInputs
+	colliding []string
+	label     string
 }
 
 // collidingComponents extracts component names ("left-arm") from colliding frame
