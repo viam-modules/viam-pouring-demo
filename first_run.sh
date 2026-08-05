@@ -16,6 +16,72 @@ write_if_changed() {
 	echo "wrote $target"
 }
 
+apt_update() {
+	if ! command -v apt-get >/dev/null 2>&1; then
+		return 1
+	fi
+	if ! sudo apt-get update; then
+		echo "WARNING: apt-get update failed" >&2
+		return 1
+	fi
+	return 0
+}
+
+is_gdm_installed() {
+	dpkg -s gdm3 >/dev/null 2>&1 || dpkg -s gdm >/dev/null 2>&1
+}
+
+gdm_service_name() {
+	local unit
+	for unit in gdm gdm3; do
+		if systemctl list-unit-files "${unit}.service" 2>/dev/null | grep -q "^${unit}.service"; then
+			echo "$unit"
+			return 0
+		fi
+	done
+	return 1
+}
+
+enable_graphical_login() {
+	local gdm_service
+	if ! gdm_service="$(gdm_service_name)"; then
+		echo "WARNING: GDM package is installed but no gdm systemd unit was found" >&2
+		return 1
+	fi
+
+	echo "enabling graphical login via ${gdm_service}.service"
+	sudo systemctl enable "$gdm_service"
+	sudo systemctl set-default graphical.target
+	sudo systemctl start "$gdm_service" || true
+}
+
+ensure_gdm() {
+	if [[ "$(uname -s)" != "Linux" ]]; then
+		echo "skipping GDM setup: not Linux"
+		return 0
+	fi
+
+	if is_gdm_installed; then
+		echo "GDM is installed"
+		enable_graphical_login || true
+		return 0
+	fi
+
+	if ! command -v apt-get >/dev/null 2>&1; then
+		echo "WARNING: GDM is not installed and apt-get is unavailable" >&2
+		return 0
+	fi
+
+	echo "GDM is not installed; installing ubuntu-desktop and gdm3..."
+	apt_update || true
+	if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ubuntu-desktop gdm3; then
+		enable_graphical_login || true
+		echo "NOTE: reboot required after installing GDM/ubuntu-desktop"
+	else
+		echo "WARNING: failed to install ubuntu-desktop/gdm3" >&2
+	fi
+}
+
 install_deps() {
 	if ! command -v apt-get >/dev/null 2>&1; then
 		return 0
@@ -27,9 +93,7 @@ install_deps() {
 	fi
 
 	# A broken third-party apt repo (e.g. missing GPG key) must not block kiosk setup.
-	if ! sudo apt-get update; then
-		echo "WARNING: apt-get update failed; trying to install libnlopt0 anyway" >&2
-	fi
+	apt_update || true
 
 	if sudo apt-get install -y libnlopt0; then
 		echo "installed libnlopt0"
@@ -40,6 +104,9 @@ install_deps() {
 
 is_linux_gnome() {
 	[[ "$(uname -s)" == "Linux" ]] || return 1
+	if is_gdm_installed; then
+		return 0
+	fi
 	if command -v gsettings >/dev/null 2>&1; then
 		return 0
 	fi
@@ -122,5 +189,6 @@ EOF
 	echo "kiosk setup complete"
 }
 
+ensure_gdm
 configure_kiosk
 install_deps

@@ -37,10 +37,11 @@ The following attributes must be specified:
 
 When this module is first installed or updated on a machine, Viam runs `first_run.sh` once per module version. On Linux the script:
 
-- Installs `libnlopt0` (required dependency)
+- Ensures GDM is installed and enabled for graphical login (`ubuntu-desktop` + `gdm3` if missing; otherwise `systemctl enable gdm` and `graphical.target`)
 - Configures the display to stay on: disables screen blanking, idle suspend, and sleep targets
+- Installs `libnlopt0` (required dependency)
 
-This is intended for the dedicated wine cart with a touch screen. On macOS or machines without GNOME/GDM the kiosk steps are skipped.
+This is intended for the dedicated wine cart with a touch screen. On macOS the script skips Linux-only steps.
 
 ### Prerequisites
 
@@ -59,6 +60,12 @@ If `apt-get update` fails due to an unrelated broken repository (for example Inf
 ```bash
 gsettings get org.gnome.desktop.session idle-delay
 # expected: uint32 0
+
+systemctl is-enabled gdm
+# expected: enabled
+
+systemctl get-default
+# expected: graphical.target
 
 systemctl is-enabled sleep.target
 # expected: masked
