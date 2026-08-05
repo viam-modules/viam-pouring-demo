@@ -3,13 +3,13 @@ package pour
 import (
 	"context"
 	"embed"
-	"encoding/json"
 	"fmt"
 	"image"
 	"image/png"
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -22,6 +22,7 @@ import (
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/camera"
 	toggleswitch "go.viam.com/rdk/components/switch"
+	"go.viam.com/rdk/data"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan/armplanning"
 	"go.viam.com/rdk/referenceframe"
@@ -44,6 +45,19 @@ var vinowebStaticFS embed.FS
 const bottleName = "bottle-top"
 const cupTopName = "cup-top"
 const gripperToCupCenterHack float64 = -35
+
+// planDir is where bad plan debug files are written.
+//
+// Data manager can be configured with this path in additional_sync_paths so
+// files are uploaded to Viam cloud and then deleted from disk.
+var planDir = func() string {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "/tmp/viam-plans"
+	}
+
+	return filepath.Join(cacheDir, "viam-plans")
+}()
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
 var noObjects = fmt.Errorf("no objects")
@@ -68,7 +82,18 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 		return nil, err
 	}
 
-	g, err := NewVinoCart(ctx, config, c, robotClient, nil, logger)
+	var viamClient *app.ViamClient
+	viamClient, err = app.CreateViamClientFromEnvVars(ctx, nil, logger)
+	if err != nil {
+		logger.Warnf("can't connect to app: %v", err)
+	}
+
+	// create directory where images for training data will live
+	if err := os.MkdirAll(trainingDataDirName, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	g, err := NewVinoCart(ctx, config, c, robotClient, viamClient, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -77,13 +102,19 @@ func newVinoCart(ctx context.Context, deps resource.Dependencies, conf resource.
 	return g, nil
 }
 
-func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client robot.Robot, dataClient *app.DataClient, logger logging.Logger) (*VinoCart, error) {
+func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client robot.Robot, viamClient *app.ViamClient, logger logging.Logger) (*VinoCart, error) {
 	vc := &VinoCart{
 		conf:        conf,
 		c:           c,
 		robotClient: client,
-		dataClient:  dataClient,
+		viamClient:  viamClient,
 		logger:      logger,
+		pourInspector: &pourInsepctor{
+			c.GlassFullnessService,
+			viamClient.DataClient(),
+			c.Cam.Name(),
+			logger,
+		},
 	}
 
 	vc.bottleTop = referenceframe.NewLinkInFrame(
@@ -96,7 +127,7 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -75, Z: -35},
+			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -75, Z: -15},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
@@ -141,7 +172,7 @@ type VinoCart struct {
 	conf   *Config
 
 	robotClient robot.Robot
-	dataClient  *app.DataClient
+	viamClient  *app.ViamClient
 
 	c *Pour1Components
 
@@ -156,6 +187,10 @@ type VinoCart struct {
 	statusLock sync.Mutex
 	status     string
 
+	latestPour    time.Time
+	pourInspector *pourInsepctor
+	cancelPour    context.CancelFunc
+
 	server *http.Server
 }
 
@@ -169,7 +204,16 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 		vc.loopWaitGroup.Wait()
 	}
 
-	return multierr.Combine(vc.robotClient.Close(ctx), vc.server.Close())
+	var viamClientErr error
+	if vc.viamClient != nil {
+		viamClientErr = vc.viamClient.Close()
+	}
+
+	return multierr.Combine(vc.robotClient.Close(ctx), vc.server.Close(), viamClientErr)
+}
+
+func (vc *VinoCart) Status(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{"status": vc.getStatus()}, nil
 }
 
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
@@ -229,6 +273,22 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 		}
 
 		return nil, vc.doAll(ctx, stage, step, 50)
+	}
+
+	if cmd["under-pour"] == true {
+		return nil, vc.pourInspector.labelPour(ctx, vc.latestPour, underPour)
+	}
+
+	if cmd["good-pour"] == true {
+		return nil, vc.pourInspector.labelPour(ctx, vc.latestPour, goodPour)
+	}
+
+	if cmd["over-pour"] == true {
+		return nil, vc.pourInspector.labelPour(ctx, vc.latestPour, overPour)
+	}
+
+	if cmd["stop-pour"] == true {
+		return nil, vc.CancelPour()
 	}
 
 	return nil, fmt.Errorf("need a command")
@@ -308,6 +368,12 @@ func (vc *VinoCart) FullDemo(ctx context.Context) error {
 }
 
 func (vc *VinoCart) Reset(ctx context.Context) error {
+	defer func() {
+		if err := cleanupImages(dirnameForPour(vc.latestPour)); err != nil {
+			vc.logger.Errorf("failed to cleanup images: %v\n", err)
+		}
+	}()
+
 	g := errgroup.Group{}
 
 	cupHoldingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
@@ -380,27 +446,19 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 
 	// Lastly, open both grippers in the case that they are fully closed (which is different than holding something)
 	g.Go(func() error {
-		var err error
-		err = vc.c.Gripper.Open(ctx, nil)
-		if err != nil {
-			return err
-		}
-		return nil
+		return vc.c.Gripper.Open(ctx, nil)
 	})
 
 	g.Go(func() error {
-		var err error
-		err = vc.c.BottleGripper.Open(ctx, nil)
-		if err != nil {
-			return err
-		}
-		return nil
+		return vc.c.BottleGripper.Open(ctx, nil)
 	})
 
 	err4 := g.Wait()
 	if err4 != nil {
 		return err4
 	}
+
+	vc.logger.Info("finished resetting")
 	return nil
 }
 
@@ -442,15 +500,19 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 		return err
 	}
 
-	if vc.dataClient != nil {
+	if vc.viamClient != nil {
 		vc.logger.Infof("uploading image to dataset for cup pick quality")
-		err := saveImageToDataset(ctx, vc.c.Cam.Name(), prepped, vc.dataClient, "683f8952383a821481d9b5c9")
+		err := saveImageToDataset(ctx, vc.c.Cam.Name(), prepped, vc.viamClient.DataClient(), "683f8952383a821481d9b5c9", nil)
 		if err != nil {
 			vc.logger.Warnf("can't saveCupImage: %v", err)
 		}
 	}
 
-	cs, err := vc.c.PickQualityService.Classifications(ctx, prepped, 1, nil)
+	namedPrepped, err := camera.NamedImageFromImage(prepped, "", utils.MimeTypeJPEG, data.Annotations{})
+	if err != nil {
+		return err
+	}
+	cs, err := vc.c.PickQualityService.Classifications(ctx, &namedPrepped, 1, nil)
 	if err != nil {
 		return err
 	}
@@ -494,10 +556,10 @@ func saveImageToDatasetFromCamera(ctx context.Context, cam camera.Camera, dataCl
 	if err != nil {
 		return err
 	}
-	return saveImageToDataset(ctx, cam.Name(), i, dataClient, dataSetId)
+	return saveImageToDataset(ctx, cam.Name(), i, dataClient, dataSetId, nil)
 }
 
-func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string) error {
+func saveImageToDataset(ctx context.Context, component resource.Name, img image.Image, dataClient *app.DataClient, dataSetId string, tags []string) error {
 	pid := os.Getenv("VIAM_MACHINE_PART_ID")
 	if pid == "" {
 		return fmt.Errorf("VIAM_MACHINE_PART_ID not defined")
@@ -516,6 +578,7 @@ func saveImageToDataset(ctx context.Context, component resource.Name, img image.
 		ComponentType: &ct,
 		ComponentName: &cn,
 		FileExtension: &pngString,
+		Tags:          tags,
 	}
 
 	id, err := dataClient.FileUploadFromBytes(ctx, pid, data, &opts)
@@ -565,6 +628,8 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	// -- setup world frame
 
 	obstacles := []*referenceframe.GeometriesInFrame{}
+	// Set a label on the cup geometry to avoid "unnamedWorldStateGeometry" collisions
+	obj.Geometry.SetLabel("cup")
 	obstacles = append(obstacles, referenceframe.NewGeometriesInFrame("world", []spatialmath.Geometry{obj.Geometry}))
 	vc.logger.Infof("add cup as obstacle %v", obj.Geometry)
 
@@ -615,7 +680,6 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 		} else if err == nil {
 			err = err2
 		}
-
 	}
 
 	if vc.conf.Handoff && err != nil {
@@ -807,7 +871,6 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	vc.setStatus("prepping")
-
 	holdingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
@@ -937,7 +1000,7 @@ type subImager interface {
 	SubImage(r image.Rectangle) image.Image
 }
 
-func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Rectangle, loopNumber int) (image.Image, string, error) {
+func (vc *VinoCart) GetGlassPourCamImage(ctx context.Context, box *image.Rectangle, loopNumber int) (image.Image, string, error) {
 	img, err := vc.PourGlassFindCroppedImage(ctx, box)
 	if err != nil {
 		return nil, "", err
@@ -945,7 +1008,7 @@ func (vc *VinoCart) DebugGetGlassPourCamImage(ctx context.Context, box *image.Re
 
 	fn := ""
 	if loopNumber >= 0 {
-		fn, err = saveImage(img, loopNumber)
+		fn, err = saveImage(img, dirnameForPour(vc.latestPour), loopNumber)
 		if err != nil {
 			return nil, "", err
 		}
@@ -1041,7 +1104,10 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		alignL2 := referenceframe.InputsL2Distance(alignJoints, alignGoalJoints)
 		vc.logger.Infof("[bottle-to-cup-align][try %d] InputsL2Distance: %v", try, alignL2)
 		if alignL2 > 1.3 {
-			fn := fmt.Sprintf("/tmp/align-plan-bad-try-%d.json", try)
+			if mkErr := os.MkdirAll(planDir, 0o755); mkErr != nil {
+				vc.logger.Errorf("[bottle-to-cup-align][try %d] failed to create %s: %v", try, planDir, mkErr)
+			}
+			fn := fmt.Sprintf("%s/align-plan-bad-try-%d-%d.json", planDir, try, time.Now().Unix())
 			debugErr := alignReq.WriteToFile(fn)
 			if debugErr != nil {
 				vc.logger.Errorf("[bottle-to-cup-align][try %d] failed to write debug: %v", try, debugErr)
@@ -1049,7 +1115,7 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 				vc.logger.Warnf("[bottle-to-cup-align][try %d] debug written to %s", try, fn)
 			}
 			lastErr = fmt.Errorf("[bottle-to-cup-align][try %d] pos too far: %v", try, alignL2)
-			// On all but the final try, replan 
+			// On all but the final try, replan
 			if try < maxAlignTries {
 				vc.logger.Warnf("[bottle-to-cup-align][try %d] L2 too high, replanning...", try)
 				alignPlan, _, err = armplanning.PlanMotion(ctx, vc.logger, alignReq)
@@ -1082,24 +1148,34 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 
 	time.Sleep(500 * time.Millisecond)
 
-	start := time.Now()
 	loopNumber := 0
+	start := time.Now()
+	vc.latestPour = start
+	if err := os.Mkdir(dirnameForPour(vc.latestPour), 0o755); err != nil {
+		return err
+	}
 
+	if vc.conf.UseGlassFullnessMLModel {
+		vc.logger.Info("*** using glass fullness ml model ***")
+	} else {
+		vc.logger.Info("*** using image delta logic ***")
+	}
 	var pd *pourDetector
 
 	totalTime := 15 * time.Second
 	markedDifferent := false
 
 	pourContext, cancelPour := context.WithCancel(ctx)
+	vc.cancelPour = cancelPour
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
-	if vc.dataClient != nil && vc.c.GlassPourCam != nil {
+	if vc.viamClient != nil && vc.c.GlassPourCam != nil {
 		vc.logger.Infof("uploading image to dataset for cup finding")
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.dataClient, "683d1210c83b3f3823ec70ff")
+			err := saveImageToDatasetFromCamera(context.Background(), vc.c.GlassPourCam, vc.viamClient.DataClient(), "683d1210c83b3f3823ec70ff")
 			if err != nil {
 				vc.logger.Errorf("error saving cup cam to data set: %v", err)
 			}
@@ -1136,21 +1212,31 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	for time.Since(start) < totalTime {
 		loopStart := time.Now()
 
-		img, fn, err := vc.DebugGetGlassPourCamImage(ctx /* loopNumber */, box, -1)
+		img, fn, err := vc.GetGlassPourCamImage(ctx, box, loopNumber)
 		if err != nil {
 			return err
 		}
 
-		if pd == nil {
-			pd = newPourDetector(img)
+		if vc.conf.UseGlassFullnessMLModel {
+			isGoodPour, err := vc.pourInspector.checkGoodPour(ctx, img)
+			if err != nil {
+				return err
+			}
+			if isGoodPour {
+				break
+			}
 		} else {
-			delta, _ := pd.differentDebug(img)
-			deltaMax := vc.conf.glassPourMotionThreshold()
-			vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
-			if delta >= deltaMax && !markedDifferent {
-				vc.logger.Infof(" **** motion detected *** ")
-				markedDifferent = true
-				totalTime = time.Since(start) + time.Second
+			if pd == nil {
+				pd = newPourDetector(img)
+			} else {
+				delta, _ := pd.differentDebug(img)
+				deltaMax := vc.conf.glassPourMotionThreshold()
+				vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
+				if delta >= deltaMax && !markedDifferent {
+					vc.logger.Infof(" **** motion detected *** ")
+					markedDifferent = true
+					totalTime = time.Since(start) + time.Second
+				}
 			}
 		}
 
@@ -1164,15 +1250,26 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 	return nil
 }
 
-func saveImage(img image.Image, loopNumber int) (string, error) {
-	fn := fmt.Sprintf("img-%d.png", loopNumber)
+func (vc *VinoCart) CancelPour() error {
+	if vc.cancelPour == nil {
+		return fmt.Errorf("no pour in progress")
+	}
 
-	file, err := os.Create(fn)
+	vc.logger.Info("CancelPour called - canceling pour")
+	vc.cancelPour()
+	return nil
+}
+
+func saveImage(img image.Image, dirName string, loopNumber int) (string, error) {
+	fn := fmt.Sprintf("img-%02d.png", loopNumber)
+	p := filepath.Join(dirName, fn)
+
+	file, err := os.Create(p)
 	if err != nil {
 		return fn, fmt.Errorf("couldn't create filename %w", err)
 	}
 	defer file.Close()
-	return fn, png.Encode(file, img)
+	return p, png.Encode(file, img)
 }
 
 func (vc *VinoCart) PutBack(ctx context.Context) error {
@@ -1249,6 +1346,11 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPosit
 		return err
 	}
 
+	// After moving through all joint positions, we wait for the caller to signal that the pour has been completed
+	select {
+	case <-pourContext.Done():
+	}
+
 	vc.logger.Infof("going back down")
 
 	cur, err := vc.c.Motion.GetPose(ctx, bottleName, "world", vc.pourExtraFrames, nil)
@@ -1272,22 +1374,6 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPosit
 	}
 
 	return vc.c.BottleArm.MoveThroughJointPositions(ctx, posesToDo, nil, nil)
-}
-
-func (vc *VinoCart) posConfig(ctx context.Context, pos resource.Resource) (*touch.ArmPositionSaverConfig, error) {
-	res, err := pos.DoCommand(ctx, map[string]interface{}{"cfg": true})
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get cfg from pos0 step %w", err)
-	}
-
-	posConfig := &touch.ArmPositionSaverConfig{}
-
-	err = json.Unmarshal([]byte(res["as_json"].(string)), posConfig)
-	if err != nil {
-		return nil, fmt.Errorf("bad json: %v %w", res, err)
-	}
-
-	return posConfig, nil
 }
 
 type PourPositions struct {
@@ -1360,7 +1446,10 @@ func (vc *VinoCart) SetupPourPositions(ctx context.Context) (*PourPositions, err
 			d := referenceframe.InputsL2Distance(startJoints, myJoints)
 			vc.logger.Infof("\t InputsL2Distance: %v", d)
 			if d > 0.2 {
-				fn := "/tmp/pour-plan-bad.json"
+				if mkErr := os.MkdirAll(planDir, 0o755); mkErr != nil {
+					vc.logger.Errorf("failed to create %s: %v", planDir, mkErr)
+				}
+				fn := fmt.Sprintf("%s/pour-plan-bad-%d.json", planDir, time.Now().Unix())
 				if writeErr := req.WriteToFile(fn); writeErr != nil {
 					vc.logger.Errorf("failed to write pour debug: %v", writeErr)
 				}
