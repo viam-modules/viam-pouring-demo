@@ -292,11 +292,12 @@ type CupConstraintResult struct {
 }
 
 // AnalyzeObject measures object extents against expected cup height/width (mm).
-// Point clouds from RDK camera PCD are meters; expected dims are mm.
+// viz.Object MetaData extents are already millimeters (same as geometry Dims).
+// Use Z-span for height so world-frame table cups validate correctly.
 func AnalyzeObject(o *viz.Object, correctHeight, correctWidth, goodDelta float64) CupConstraintResult {
 	md := o.MetaData()
-	heightMm := md.MaxZ * 1000
-	widthMm := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2 * 1000
+	heightMm := md.MaxZ - md.MinZ
+	widthMm := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
 	heightDelta := math.Abs(heightMm - correctHeight)
 	widthDelta := math.Abs(correctWidth - widthMm)
 	return CupConstraintResult{
@@ -312,6 +313,7 @@ func AnalyzeObject(o *viz.Object, correctHeight, correctWidth, goodDelta float64
 		GoodDelta:   goodDelta,
 	}
 }
+
 
 // FilterObjects returns only objects that pass height/width constraints.
 func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, logger logging.Logger) []*viz.Object {
