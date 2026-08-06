@@ -181,10 +181,6 @@
 
     const obj = objects.length > 0 ? objects[0] : null;
     if (!obj || obj.points_x.length === 0) {
-      console.info(
-        `[pcd] no points to render (objects=${objects.length} ` +
-          `pts0=${objects[0]?.points_x?.length ?? 0})`
-      );
       return;
     }
 
@@ -215,13 +211,6 @@
     cy /= n;
     const pcHeight = maxZ - minZ || 1;
     const valid = obj.valid !== false;
-
-    console.info(
-      `[pcd] rendering n=${n} valid=${valid} ` +
-        `x=[${minX.toFixed(1)},${maxX.toFixed(1)}] ` +
-        `y=[${minY.toFixed(1)},${maxY.toFixed(1)}] ` +
-        `z=[${minZ.toFixed(1)},${maxZ.toFixed(1)}] mm`
-    );
 
     const positions = new Float32Array(n * 3);
     const colors = new Float32Array(n * 3);

@@ -1488,9 +1488,7 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 	return err
 }
 
-// FindCups returns the single SAM2-segmented cup as one viz.Object whose
-// bounding-box center is the cup center. No height/width filtering: the
-// CroppedCupCamera is trusted to deliver a clean cup point cloud.
+// FindCups reads the SAM2 merged cup cloud and keeps only height/width-valid cups.
 func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 	cloud, err := vc.c.CroppedCupCamera.NextPointCloud(ctx, nil)
 	if err != nil {
@@ -1503,5 +1501,5 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []*viz.Object{obj}, nil
+	return FilterObjects([]*viz.Object{obj}, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
 }

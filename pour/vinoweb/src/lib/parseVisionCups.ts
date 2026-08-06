@@ -66,25 +66,10 @@ function centerPoint(geom: GeometryLike): { x: number; y: number; z: number } | 
 }
 
 function pointCloudBytes(obj: PointCloudObject): Uint8Array | null {
-  const anyObj = obj as {
-    pointCloud?: Uint8Array | ArrayBuffer | { type?: string; data?: number[] };
-    point_cloud?: Uint8Array | ArrayBuffer;
-  };
-  const raw = anyObj.pointCloud ?? anyObj.point_cloud;
-  if (!raw) return null;
-
-  if (raw instanceof Uint8Array) {
-    return raw.length > 0 ? raw : null;
-  }
-  if (raw instanceof ArrayBuffer) {
-    return raw.byteLength > 0 ? new Uint8Array(raw) : null;
-  }
-  // Some transports expose protobuf bytes as { type: "Buffer", data: number[] }.
-  if (typeof raw === "object" && Array.isArray((raw as { data?: number[] }).data)) {
-    const arr = new Uint8Array((raw as { data: number[] }).data);
-    return arr.length > 0 ? arr : null;
-  }
-  return null;
+  const raw = (obj as { pointCloud?: Uint8Array; point_cloud?: Uint8Array }).pointCloud
+    ?? (obj as { point_cloud?: Uint8Array }).point_cloud;
+  if (!raw || raw.length === 0) return null;
+  return raw;
 }
 
 function parseMetaSummary(obj: PointCloudObject): CupDetectionSummary | null {
@@ -152,20 +137,14 @@ function analyzeCup(
 
 function cupFromObject(obj: PointCloudObject, index: number): SegmentedObject | null {
   const label = objectLabel(obj);
-  if (isMetaLabel(label)) return null;
+  if (!label || isMetaLabel(label)) return null;
 
   const pc = pointCloudBytes(obj);
   if (!pc) return null;
 
   const parsed = parsePCD(pc);
-  if (parsed.x.length === 0) {
-    console.warn(
-      `[parseVisionCups] object ${index} label=${JSON.stringify(label)} pcdBytes=${pc.length} yielded 0 points`
-    );
-    return null;
-  }
+  if (parsed.x.length === 0) return null;
 
-  // Label is a weak signal — geometry metrics (same as the Valid pill) are applied later.
   const valid = label === "cup_valid";
 
   return {
@@ -236,24 +215,8 @@ export function parseVisionCupObjects(objects: PointCloudObject[]): ParsedCupDet
     cupIndex++;
   }
 
-  // Match PointCloud3D coloring to the Valid pill: both use height/width vs meta thresholds.
-  // Backend geometry labels (cup_valid / cup_invalid) can lag or disagree (units, old binary).
-  if (summary.cupHeightMm > 0 && summary.cupWidthMm > 0) {
-    for (const cup of cups) {
-      const m = analyzeCup(
-        cup.points_x,
-        cup.points_y,
-        cup.points_z,
-        summary.cupHeightMm,
-        summary.cupWidthMm,
-        summary.toleranceMm,
-      );
-      cup.valid = m.valid;
-    }
-  }
-
-  if (summary.objectCount === 0 || cups.length > 0) {
-    summary.objectCount = summary.objectCount || cups.length;
+  if (summary.objectCount === 0) {
+    summary.objectCount = cups.length;
     summary.invalidCups = cups.filter((c) => !c.valid).length;
     summary.validCups = cups.length - summary.invalidCups;
   }

@@ -4,68 +4,72 @@ export interface ParsedPointCloud {
   z: number[];
 }
 
-/** RDK / Viam PCD coordinates are meters; viewer uses millimeters. */
+/** RDK writes PCD coordinates in meters; internal vision math uses millimeters. */
 const METERS_TO_MM = 1000;
+
+function indexOfSubarray(haystack: Uint8Array, needle: Uint8Array): number {
+  if (needle.length === 0) return 0;
+  for (let i = 0; i <= haystack.length - needle.length; i++) {
+    let match = true;
+    for (let j = 0; j < needle.length; j++) {
+      if (haystack[i + j] !== needle[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return i;
+  }
+  return -1;
+}
 
 function parsePcdHeader(data: Uint8Array): {
   headerText: string;
   dataOffset: number;
   dataFormat: "ascii" | "binary";
 } | null {
-  // Scan a reasonable prefix for the DATA marker (headers are small).
-  const scanLen = Math.min(data.length, 8192);
-  const prefix = new TextDecoder("latin1").decode(data.slice(0, scanLen));
-  const match = prefix.match(/\nDATA\s+(ascii|binary)\s*\r?\n/i);
-  if (!match || match.index == null) {
-    // Some producers omit the leading newline on the first line after VERSION.
-    const match2 = prefix.match(/^DATA\s+(ascii|binary)\s*\r?\n/im);
-    if (!match2 || match2.index == null) return null;
-    const dataFormat = match2[1].toLowerCase() === "ascii" ? "ascii" : "binary";
-    const dataOffset = match2.index + match2[0].length;
-    return { headerText: prefix.slice(0, match2.index), dataOffset, dataFormat };
+  const binaryMarker = new TextEncoder().encode("\nDATA binary\n");
+  const asciiMarker = new TextEncoder().encode("\nDATA ascii\n");
+
+  let markerIdx = indexOfSubarray(data, binaryMarker);
+  let dataFormat: "ascii" | "binary" = "binary";
+  if (markerIdx === -1) {
+    markerIdx = indexOfSubarray(data, asciiMarker);
+    dataFormat = "ascii";
   }
-  const dataFormat = match[1].toLowerCase() === "ascii" ? "ascii" : "binary";
-  const dataOffset = match.index + match[0].length;
-  return { headerText: prefix.slice(0, match.index), dataOffset, dataFormat };
+  if (markerIdx === -1) return null;
+
+  const dataOffset = markerIdx + (dataFormat === "binary" ? binaryMarker.length : asciiMarker.length);
+  const headerText = new TextDecoder().decode(data.slice(0, markerIdx));
+  return { headerText, dataOffset, dataFormat };
 }
 
 export function parsePCD(data: Uint8Array): ParsedPointCloud {
   const result: ParsedPointCloud = { x: [], y: [], z: [] };
-  if (!data || data.length === 0) return result;
-
   const header = parsePcdHeader(data);
-  if (!header) {
-    console.warn("[parsePCD] no DATA ascii/binary header found; len=", data.length);
-    return result;
-  }
+  if (!header) return result;
 
-  const lines = header.headerText.split(/\r?\n/);
+  const lines = header.headerText.split("\n");
   let fields: string[] = [];
   let sizes: number[] = [];
-  let types: string[] = [];
   let pointCount = 0;
 
   for (const line of lines) {
     const parts = line.trim().split(/\s+/);
-    const key = (parts[0] || "").toUpperCase();
-    if (key === "FIELDS") fields = parts.slice(1).map((f) => f.toLowerCase());
+    const key = parts[0];
+    if (key === "FIELDS") fields = parts.slice(1);
     else if (key === "SIZE") sizes = parts.slice(1).map(Number);
-    else if (key === "TYPE") types = parts.slice(1).map((t) => t.toUpperCase());
-    else if (key === "POINTS") pointCount = parseInt(parts[1], 10) || 0;
-    else if (key === "WIDTH" && pointCount === 0) pointCount = parseInt(parts[1], 10) || 0;
+    else if (key === "POINTS") pointCount = parseInt(parts[1], 10);
+    else if (key === "WIDTH" && pointCount === 0) pointCount = parseInt(parts[1], 10);
   }
 
   const xIdx = fields.indexOf("x");
   const yIdx = fields.indexOf("y");
   const zIdx = fields.indexOf("z");
-  if (xIdx === -1 || yIdx === -1 || zIdx === -1) {
-    console.warn("[parsePCD] missing x/y/z fields:", fields);
-    return result;
-  }
+  if (xIdx === -1 || yIdx === -1 || zIdx === -1) return result;
 
   if (header.dataFormat === "ascii") {
     const text = new TextDecoder().decode(data.slice(header.dataOffset));
-    const pointLines = text.trim().split(/\r?\n/);
+    const pointLines = text.trim().split("\n");
     for (const pl of pointLines) {
       const vals = pl.trim().split(/\s+/).map(Number);
       if (vals.length > Math.max(xIdx, yIdx, zIdx)) {
@@ -77,47 +81,26 @@ export function parsePCD(data: Uint8Array): ParsedPointCloud {
     return result;
   }
 
-  // Default float sizes if SIZE is missing.
-  if (sizes.length < fields.length) {
-    sizes = fields.map(() => 4);
-  }
-
   const binaryData = data.slice(header.dataOffset);
-  // Copy into a fresh ArrayBuffer so DataView is always on a contiguous ArrayBuffer
-  // (not ArrayBufferLike / SharedArrayBuffer from some RPC stack views).
-  const copy = new Uint8Array(binaryData.byteLength);
-  copy.set(binaryData);
-  const view = new DataView(copy.buffer);
+  const stride = sizes.reduce((a, b) => a + b, 0);
+  if (stride <= 0) return result;
 
   const fieldOffsets: number[] = [];
   let offset = 0;
-  for (let i = 0; i < fields.length; i++) {
+  for (const s of sizes) {
     fieldOffsets.push(offset);
-    offset += sizes[i] || 4;
+    offset += s;
   }
-  const stride = offset;
-  if (stride <= 0) return result;
 
-  const readFloat = (base: number, fieldIdx: number): number => {
-    const off = base + fieldOffsets[fieldIdx];
-    const size = sizes[fieldIdx] || 4;
-    const typ = types[fieldIdx] || "F";
-    if (size === 8 || typ === "D") return view.getFloat64(off, true);
-    return view.getFloat32(off, true);
-  };
+  const view = new DataView(binaryData.buffer, binaryData.byteOffset, binaryData.byteLength);
 
-  const maxPts =
-    pointCount > 0
-      ? Math.min(pointCount, Math.floor(copy.length / stride))
-      : Math.floor(copy.length / stride);
-
-  for (let i = 0; i < maxPts; i++) {
+  for (let i = 0; i < pointCount && (i + 1) * stride <= binaryData.length; i++) {
     const base = i * stride;
-    if (base + stride > copy.length) break;
-    const px = readFloat(base, xIdx);
-    const py = readFloat(base, yIdx);
-    const pz = readFloat(base, zIdx);
-    if (Number.isFinite(px) && Number.isFinite(py) && Number.isFinite(pz)) {
+    const px = view.getFloat32(base + fieldOffsets[xIdx], true);
+    const py = view.getFloat32(base + fieldOffsets[yIdx], true);
+    const pz = view.getFloat32(base + fieldOffsets[zIdx], true);
+
+    if (isFinite(px) && isFinite(py) && isFinite(pz)) {
       result.x.push(px * METERS_TO_MM);
       result.y.push(py * METERS_TO_MM);
       result.z.push(pz * METERS_TO_MM);

@@ -54,8 +54,8 @@ type Config struct {
 	GlassPourCam             string  `json:"glass_pour_cam"`
 	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
-	// CroppedCupCamera is the SAM2 merged-cup camera. Its point cloud IS the
-	// cropped cup; FindCups trusts it without height/width filtering.
+	// CroppedCupCamera is the SAM2 merged-cup camera. FindCups still validates
+	// returned clouds against cup_height/cup_width (and good_delta tolerance).
 	CroppedCupCamera string `json:"cropped_cup_camera"`
 
 	Positions map[string]ConfigStatePostions
@@ -68,6 +68,7 @@ type Config struct {
 	// cup and bottle params, required
 	BottleHeight float64 `json:"bottle_height"`
 	CupHeight    float64 `json:"cup_height"`
+	CupWidth     float64 `json:"cup_width"`
 
 	// optional offset for gripper height when grabbing/placing cup
 	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
@@ -140,6 +141,13 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 
 	return deps, optionals, nil
+}
+
+func (c *Config) cupWidth() float64 {
+	if c.CupWidth > 0 {
+		return c.CupWidth
+	}
+	return c.CupHeight * .6
 }
 
 func (c *Config) glassPourMotionThreshold() float64 {
