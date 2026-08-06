@@ -1488,7 +1488,9 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 	return err
 }
 
-// FindCups reads the SAM2 merged cup cloud and keeps only height/width-valid cups.
+// FindCups reads the SAM2 merged cup cloud for pickup.
+// Dim validation is logged (and labeled on the cup-detection service for the UI)
+// but does not gate pickup: a tuned/partial cloud should still be graspable.
 func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 	cloud, err := vc.c.CroppedCupCamera.NextPointCloud(ctx, nil)
 	if err != nil {
@@ -1501,5 +1503,12 @@ func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	return FilterObjects([]*viz.Object{obj}, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+	// Log dimensions against cart cup height/width (same AnalyzeObject as UI).
+	analysis := AnalyzeObject(obj, vc.conf.CupHeight, vc.conf.cupWidth(), 25)
+	if vc.logger != nil {
+		vc.logger.Infof("FindCups height: %0.2f delta: %0.2f (%v) width: %0.2f delta: %0.2f (%v) valid=%v",
+			analysis.Height, analysis.HeightDelta, analysis.HeightPass,
+			analysis.Width, analysis.WidthDelta, analysis.WidthPass, analysis.Valid)
+	}
+	return []*viz.Object{obj}, nil
 }

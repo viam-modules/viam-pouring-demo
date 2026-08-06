@@ -215,11 +215,19 @@ export function parseVisionCupObjects(objects: PointCloudObject[]): ParsedCupDet
     cupIndex++;
   }
 
+  // Keep point-cloud coloring in sync with the Valid pill (both use geometry vs meta).
+  if (summary.cupHeightMm > 0 && summary.cupWidthMm > 0) {
+    for (const cup of cups) {
+      cup.valid = cupMetricsFromCup(cup, summary).valid;
+    }
+  }
+
   if (summary.objectCount === 0) {
     summary.objectCount = cups.length;
-    summary.invalidCups = cups.filter((c) => !c.valid).length;
-    summary.validCups = cups.length - summary.invalidCups;
   }
+  // Recount after metrics-driven valid (or fallback to label-based cups).
+  summary.invalidCups = cups.filter((c) => !c.valid).length;
+  summary.validCups = cups.length - summary.invalidCups;
 
   const bestCup = cups.find((c) => c.valid) ?? cups[0] ?? null;
 
