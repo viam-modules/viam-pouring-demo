@@ -7,6 +7,8 @@
   import Status from "./lib/status.svelte";
   import type { SegmentedObject, Joint, CupDetectionMetrics } from "./lib/types.js";
   import { parseVisionCupObjects } from "./lib/parseVisionCups.js";
+  import { acquireVisionPoll } from "./lib/visionPoll.js";
+  import { timeVisionCall } from "./lib/visionLatency.js";
 
   const CUP_VISION_SERVICE = "cup-detection";
 
@@ -49,6 +51,9 @@
     "placing",
   ]);
   const showStillImages = (s: StatusKey) => !demoRunningStatuses.has(s);
+
+  // Only poll cup PCD while the debug/detection UI is shown (matches MainContent).
+  const cupDetectionStatuses = new Set<StatusKey>(["manual mode", "standby", "looking"]);
 
   function handleKeydown(event: KeyboardEvent) {
     const keys = Object.keys(statusMessages) as StatusKey[];
@@ -100,53 +105,43 @@
   const robotClientStore = useRobotClient(() => "xxx");
   let cartClient: GenericServiceClient | null = null;
   let cupVisionClient: VisionClient | null = null;
-  let pollingHandle: ReturnType<typeof setInterval> | null = null;
-  let pollingInterval = 250;
-  let cupDetailLastFetch = 0;
-  const cupDetailRefreshMs = 1000;
+  let lightPollingHandle: ReturnType<typeof setInterval> | null = null;
+  const lightPollingIntervalMs = 250;
+
+  // Independent poll cadences (do not share one loop).
+  const stillCooldownMs = 300;
+  const cupCooldownMs = 1500;
 
   let leftArm: ArmClient | null = null;
   let rightArm: ArmClient | null = null;
 
-  // -- Vision (sam2 segmenters for still-image standby view) ---
   let visionClients: (VisionClient | null)[] = [null, null];
-  let imagePollingHandle: ReturnType<typeof setInterval> | null = null;
-  let imagePollingInterval = 1000; // ms; sam2 capture is relatively slow
-  let imageCaptureInFlight = [false, false];
-  // Per-pane failure tracking so a missing/disabled vision service doesn't
-  // get hammered forever. After ERROR_THRESHOLD consecutive errors we throttle
-  // retries to BACKOFF_MS; any successful call resets the counter.
   let consecutiveErrors = [0, 0];
   let nextRetryAt = [0, 0];
   const ERROR_THRESHOLD = 3;
   const BACKOFF_MS = 15000;
 
+  let releaseVisionPoll: (() => void) | null = null;
+
   async function captureStillImage(index: number) {
     const client = visionClients[index];
     if (!client) return;
-    if (imageCaptureInFlight[index]) return;
-    // Respect backoff window for a pane whose vision service keeps failing.
     if (
       consecutiveErrors[index] >= ERROR_THRESHOLD &&
       Date.now() < nextRetryAt[index]
     ) {
       return;
     }
-    imageCaptureInFlight[index] = true;
+    const label = `sam-still ${visionServiceNames[index]}`;
     try {
-      const result = await client.captureAllFromCamera(
-        // The vision service config already specifies its camera_name; passing
-        // an empty string lets the service use its own configured camera.
-        "",
-        {
+      const result = await timeVisionCall(label, () =>
+        client.captureAllFromCamera("", {
           returnImage: true,
-          // We ask for detections only so we can gate on their presence --
-          // they're never drawn on the image.
           returnDetections: true,
           returnClassifications: false,
           returnObjectPointClouds: false,
-        }
-      );
+        })
+      , (r) => `detections=${r.detections?.length ?? 0} hasImage=${!!r.image}`);
       consecutiveErrors[index] = 0;
       const hasDetection = (result.detections?.length ?? 0) > 0;
       if (hasDetection && result.image) {
@@ -156,7 +151,6 @@
           return;
         }
       }
-      // No detection (or no usable image) -> fall back to the live camera.
       if (stillImageUrls[index]) {
         setStillImageUrl(index, null);
       }
@@ -169,96 +163,118 @@
           err
         );
       }
-      // Fall back to the live camera stream whenever the vision call fails so
-      // the user never sees a stale overlay when the service is down.
       if (stillImageUrls[index]) {
         setStillImageUrl(index, null);
       }
-    } finally {
-      imageCaptureInFlight[index] = false;
     }
   }
 
-  $effect(() => {
-    if (!robotClientStore) return;
-    const robotClient = robotClientStore.current;
-    if (robotClient && !pollingHandle) {
-      if (!leftArm) leftArm = new ArmClient(robotClient, "left-arm");
-      if (!rightArm) rightArm = new ArmClient(robotClient, "right-arm");
-      if (!cartClient) cartClient = new GenericServiceClient(robotClient, "cart");
-      if (!cupVisionClient) cupVisionClient = new VisionClient(robotClient, CUP_VISION_SERVICE);
-      for (let i = 0; i < visionServiceNames.length; i++) {
-        if (!visionClients[i]) {
-          visionClients[i] = new VisionClient(
-            robotClient,
-            visionServiceNames[i]
-          );
-        }
-      }
+  async function fetchCupPointClouds() {
+    if (!cupVisionClient) return;
+    try {
+      const objects = await timeVisionCall(
+        "cup-detection getObjectPointClouds",
+        () => cupVisionClient!.getObjectPointClouds(""),
+        (objs) => `objects=${objs?.length ?? 0}`
+      );
+      const parsed = parseVisionCupObjects(objects);
+      cupHeightMm = parsed.summary.cupHeightMm;
+      cupWidthMm = parsed.summary.cupWidthMm;
+      objectCount = parsed.summary.objectCount;
 
-      // --- Still-image capture loop (when the demo isn't actively running) ---
-      if (!imagePollingHandle) {
-        imagePollingHandle = setInterval(() => {
-          if (!showStillImages(status)) return;
-          captureStillImage(0);
-          captureStillImage(1);
-        }, imagePollingInterval);
+      cupDetectionMetrics = parsed.metrics;
+      if (parsed.cups.length === 0) {
+        segmentedObjects = [];
+      } else {
+        const best = parsed.cups.find((c) => c.valid) ?? parsed.cups[0];
+        segmentedObjects = [best];
       }
+      console.info(
+        `[latency] cup-detection parse  cups=${parsed.cups.length} points=${parsed.bestCup?.totalPoints ?? 0} ` +
+          `valid=${parsed.summary.validCups} heightMm=${Math.round(cupHeightMm)} widthMm=${Math.round(cupWidthMm)} ` +
+          `rawObjs=${objects?.length ?? 0}`
+      );
+    } catch (_) {
+      // Latency FAIL line already logged by timeVisionCall; keep last PCD on screen.
+    }
+  }
 
-      pollingHandle = setInterval(async () => {
+  function wireClients(robotClient: NonNullable<typeof robotClientStore.current>) {
+    if (!leftArm) leftArm = new ArmClient(robotClient, "left-arm");
+    if (!rightArm) rightArm = new ArmClient(robotClient, "right-arm");
+    if (!cartClient) cartClient = new GenericServiceClient(robotClient, "cart");
+    if (!cupVisionClient) cupVisionClient = new VisionClient(robotClient, CUP_VISION_SERVICE);
+    for (let i = 0; i < visionServiceNames.length; i++) {
+      if (!visionClients[i]) {
+        visionClients[i] = new VisionClient(robotClient, visionServiceNames[i]);
+      }
+    }
+
+    if (!releaseVisionPoll) {
+      releaseVisionPoll = acquireVisionPoll({
+        shouldPollCup: () => cupDetectionStatuses.has(status),
+        shouldPollStills: () => showStillImages(status),
+        fetchCup: fetchCupPointClouds,
+        captureStill: captureStillImage,
+        stillCooldownMs,
+        cupCooldownMs,
+      });
+    }
+
+    if (!lightPollingHandle) {
+      lightPollingHandle = setInterval(async () => {
         try {
           const result = await cartClient!.doCommand(Struct.fromJson({ status: true }));
           if (result && typeof result === "object") {
             const r = result as any;
             if ("status" in r && typeof r.status === "string") {
               const s = r.status;
-              if ((Object.keys(statusMessages) as StatusKey[]).includes(s as StatusKey)) status = s as StatusKey;
+              if ((Object.keys(statusMessages) as StatusKey[]).includes(s as StatusKey)) {
+                status = s as StatusKey;
+              }
             }
           }
         } catch (_) {}
 
-        if (Date.now() - cupDetailLastFetch >= cupDetailRefreshMs) {
+        if (leftArm && rightArm) {
           try {
-            const objects = await cupVisionClient!.getObjectPointClouds("");
-            const parsed = parseVisionCupObjects(objects);
-            cupHeightMm = parsed.summary.cupHeightMm;
-            cupWidthMm = parsed.summary.cupWidthMm;
-            objectCount = parsed.summary.objectCount;
-
-            cupDetectionMetrics = parsed.metrics;
-            if (parsed.cups.length === 0) {
-              segmentedObjects = [];
-            } else {
-              const best = parsed.cups.find((c) => c.valid) ?? parsed.cups[0];
-              segmentedObjects = [best];
-            }
-            cupDetailLastFetch = Date.now();
+            const lj = await leftArm.getJointPositions();
+            leftJoints = lj.values.map((position, index) => ({ index, position }));
+          } catch (_) {}
+          try {
+            const rj = await rightArm.getJointPositions();
+            rightJoints = rj.values.map((position, index) => ({ index, position }));
           } catch (_) {}
         }
-
-        if (leftArm && rightArm) {
-          try { const lj = await leftArm.getJointPositions(); leftJoints = lj.values.map((position, index) => ({ index, position })); } catch (_) {}
-          try { const rj = await rightArm.getJointPositions(); rightJoints = rj.values.map((position, index) => ({ index, position })); } catch (_) {}
-        }
-      }, pollingInterval);
+      }, lightPollingIntervalMs);
     }
+  }
 
-    return () => {
-      if (pollingHandle) {
-        clearInterval(pollingHandle);
-        pollingHandle = null;
+  // Only react to robot client identity becoming available — do not restart
+  // vision polls on every store tick.
+  $effect(() => {
+    if (!robotClientStore) return;
+    const robotClient = robotClientStore.current;
+    if (robotClient) {
+      wireClients(robotClient);
+    }
+  });
+
+  onDestroy(() => {
+    if (releaseVisionPoll) {
+      releaseVisionPoll();
+      releaseVisionPoll = null;
+    }
+    if (lightPollingHandle) {
+      clearInterval(lightPollingHandle);
+      lightPollingHandle = null;
+    }
+    for (let i = 0; i < stillImageUrls.length; i++) {
+      if (stillImageUrls[i]) {
+        URL.revokeObjectURL(stillImageUrls[i] as string);
+        stillImageUrls[i] = null;
       }
-      if (imagePollingHandle) {
-        clearInterval(imagePollingHandle);
-        imagePollingHandle = null;
-      }
-      for (let i = 0; i < stillImageUrls.length; i++) {
-        if (stillImageUrls[i]) {
-          URL.revokeObjectURL(stillImageUrls[i] as string);
-          stillImageUrls[i] = null;
-        }
-      }
-    };
+    }
   });
 
   // Drop the still images as soon as the demo begins running so the live
