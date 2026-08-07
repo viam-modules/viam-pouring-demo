@@ -378,9 +378,8 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		return err
 	}
 
-	// Move arms sequentially. Builtin motion cancels any in-flight Move when
-	// another Move starts (single "motion-service" op label), so parallel left/
-	// right motion races end in context.Canceled for one arm.
+	// Move arms sequentially during reset. Parallel left/right Moves through
+	// builtin motion cancel each other (shared op label) and return context.Canceled.
 	if cupHoldingStatus.IsHoldingSomething {
 		if err := vc.doAll(ctx, "reset", "left-holding-pre", 50); err != nil {
 			return err
@@ -416,12 +415,26 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		}
 	}
 
-	if err := vc.doAll(ctx, "touch", "prep", 100); err != nil {
+	// Move touch/prep positions one arm at a time (same motion cancel issue).
+	if err := SetXarmSpeed(ctx, vc.c.Arm, 100, 100); err != nil {
 		return err
+	}
+	if err := SetXarmSpeed(ctx, vc.c.BottleArm, 100, 100); err != nil {
+		return err
+	}
+	prepPositions, err := vc.getPositions("touch", "prep")
+	if err != nil {
+		return err
+	}
+	for _, group := range prepPositions {
+		for _, pos := range group {
+			if err := pos.SetPosition(ctx, 2, nil); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Lastly, open both grippers in the case that they are fully closed (which is different than holding something).
-	// Gripper opens do not go through the motion service, so parallel is safe.
 	g := errgroup.Group{}
 	g.Go(func() error {
 		return vc.c.Gripper.Open(ctx, nil)
@@ -874,16 +887,36 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 }
 
 func (vc *VinoCart) goTo(ctx context.Context, poss ...toggleswitch.Switch) error {
-	// Sequential on purpose: arm-position-saver often uses motion.Move, and
-	// builtin motion cancels other in-flight Moves (shared "motion-service"
-	// op). Parallel left/right SetPosition races caused context.Canceled on
-	// one arm during reset.
-	for _, p := range poss {
-		if err := p.SetPosition(ctx, 2, nil); err != nil {
-			return err
-		}
+	if len(poss) == 0 {
+		return nil
 	}
-	return nil
+
+	if len(poss) == 1 {
+		return poss[0].SetPosition(ctx, 2, nil)
+	}
+
+	var errorLock sync.Mutex
+	errors := []error{}
+
+	wg := sync.WaitGroup{}
+
+	for _, p := range poss {
+		wg.Add(1)
+		go func(pp toggleswitch.Switch) {
+			defer wg.Done()
+			err := pp.SetPosition(ctx, 2, nil)
+			if err != nil {
+				errorLock.Lock()
+				errors = append(errors, err)
+				errorLock.Unlock()
+			}
+		}(p)
+
+	}
+
+	wg.Wait()
+
+	return multierr.Combine(errors...)
 }
 
 func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
