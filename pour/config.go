@@ -54,7 +54,9 @@ type Config struct {
 	GlassPourCam             string  `json:"glass_pour_cam"`
 	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
-	CupFinderService string `json:"cup_finder_service"` // find the cups on the table
+	// CroppedCupCamera is the SAM2 merged-cup camera. FindCups still validates
+	// returned clouds against cup_height/cup_width (and good_delta tolerance).
+	CroppedCupCamera string `json:"cropped_cup_camera"`
 
 	Positions map[string]ConfigStatePostions
 
@@ -70,6 +72,12 @@ type Config struct {
 
 	// optional offset for gripper height when grabbing/placing cup
 	CupGripHeightOffset float64 `json:"cup_grip_height_offset"`
+
+	// optional offsets (mm) applied to the cup-top frame relative to the gripper.
+	// Defaults: X = cupGripHeightOffset(), Y = -75, Z = -25.
+	CupTopOffsetX float64 `json:"cup_top_offset_x"`
+	CupTopOffsetY float64 `json:"cup_top_offset_y"`
+	CupTopOffsetZ float64 `json:"cup_top_offset_z"`
 
 	PickQualityService   string `json:"pick_quality_service"`
 	PourGlassFindService string `json:"pour_glass_find_service"`
@@ -118,9 +126,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	optionals := []string{}
 
-	if cfg.CupFinderService != "" {
-		optionals = append(optionals, cfg.CupFinderService)
+	if cfg.CroppedCupCamera == "" {
+		return nil, nil, fmt.Errorf("cropped_cup_camera cannot be unset")
 	}
+	deps = append(deps, cfg.CroppedCupCamera)
 
 	if cfg.BottleGripper != "" {
 		deps = append(deps, cfg.BottleGripper)
@@ -161,6 +170,27 @@ func (c *Config) cupGripHeightOffset() float64 {
 	return 25
 }
 
+func (c *Config) cupTopOffsetX() float64 {
+	if c.CupTopOffsetX != 0 {
+		return c.CupTopOffsetX
+	}
+	return c.cupGripHeightOffset()
+}
+
+func (c *Config) cupTopOffsetY() float64 {
+	if c.CupTopOffsetY != 0 {
+		return c.CupTopOffsetY
+	}
+	return -75
+}
+
+func (c *Config) cupTopOffsetZ() float64 {
+	if c.CupTopOffsetZ != 0 {
+		return c.CupTopOffsetZ
+	}
+	return -25
+}
+
 type StagePositions map[string][][]toggleswitch.Switch
 
 type Pour1Components struct {
@@ -173,7 +203,7 @@ type Pour1Components struct {
 	Motion motion.Service
 	Rfs    framesystem.Service
 
-	CupFinder vision.Service
+	CroppedCupCamera camera.Camera
 
 	Positions map[string]StagePositions
 
@@ -235,11 +265,9 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	if config.CupFinderService != "" {
-		c.CupFinder, err = vision.FromProvider(deps, config.CupFinderService)
-		if err != nil {
-			return nil, err
-		}
+	c.CroppedCupCamera, err = camera.FromProvider(deps, config.CroppedCupCamera)
+	if err != nil {
+		return nil, err
 	}
 
 	if config.BottleGripper != "" {
