@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -1181,11 +1182,32 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 	}
 	var pd *pourDetector
 
-	totalTime := 15 * time.Second
-	markedDifferent := false
-	// Signal when the forward tilt trajectory has fully executed so the monitor
-	// can pull the bottle back immediately if vision never fires.
-	tiltDone := make(chan struct{}, 1)
+	// Single stop signal for the pour monitor. Vision (with grace), tilt
+	// completion, and the absolute timeout all call requestStop; the first
+	// wins. Leaving the monitor always hits the defer that cancelPour + returns the bottle.
+	const pourTimeout = 15 * time.Second
+	const pourGraceAfterDetect = time.Second
+
+	stopCh := make(chan struct{})
+	var stopOnce sync.Once
+	var visionFired atomic.Bool
+	requestStop := func(reason string) {
+		stopOnce.Do(func() {
+			vc.logger.Infof("pour stop: %s", reason)
+			close(stopCh)
+		})
+	}
+	timeoutTimer := time.AfterFunc(pourTimeout, func() {
+		requestStop("timeout")
+	})
+	defer timeoutTimer.Stop()
+
+	// Forward tilt finished: if vision never fired, stop immediately (no post-tilt hold).
+	onForwardTiltDone := func() {
+		if !visionFired.Load() {
+			requestStop("tilt complete without motion")
+		}
+	}
 
 	pourContext, cancelPour := context.WithCancel(ctx)
 	vc.cancelPour = cancelPour
@@ -1206,7 +1228,7 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 
 	go func() {
 		defer wg.Done()
-		err := vc.doPourMotion(ctx, pourContext, pp, tiltDone)
+		err := vc.doPourMotion(ctx, pourContext, pp, onForwardTiltDone)
 		if err != nil {
 			vc.logger.Infof("error pouring: %v", err)
 		}
@@ -1224,10 +1246,9 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 		}
 	}()
 
-	// pour-max: no vision loop; block until forward tilt finishes then pull back.
+	// pour-max: same stop path, no vision source — only tilt-complete or timeout.
 	if simulateNoVision {
-		<-tiltDone
-		vc.logger.Infof("pour-max: tilt complete, stopping pour immediately")
+		<-stopCh
 		return nil
 	}
 
@@ -1238,8 +1259,13 @@ func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 
 	vc.logger.Infof("got box for crop %v", box)
 
-pourMonitor:
-	for time.Since(start) < totalTime {
+	for {
+		select {
+		case <-stopCh:
+			return nil
+		default:
+		}
+
 		loopStart := time.Now()
 
 		img, fn, err := vc.GetGlassPourCamImage(ctx, box, loopNumber)
@@ -1252,11 +1278,12 @@ pourMonitor:
 			if err != nil {
 				return err
 			}
-			if isGoodPour && !markedDifferent {
+			if isGoodPour && visionFired.CompareAndSwap(false, true) {
 				vc.logger.Infof(" **** good pour detected *** ")
-				markedDifferent = true
 				// Keep pouring briefly so the cup finishes filling.
-				totalTime = time.Since(start) + time.Second
+				time.AfterFunc(pourGraceAfterDetect, func() {
+					requestStop("vision grace")
+				})
 			}
 		} else {
 			if pd == nil {
@@ -1265,11 +1292,12 @@ pourMonitor:
 				delta, _ := pd.differentDebug(img)
 				deltaMax := vc.conf.glassPourMotionThreshold()
 				vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
-				if delta >= deltaMax && !markedDifferent {
+				if delta >= deltaMax && visionFired.CompareAndSwap(false, true) {
 					vc.logger.Infof(" **** motion detected *** ")
-					markedDifferent = true
 					// Keep pouring briefly so the cup finishes filling.
-					totalTime = time.Since(start) + time.Second
+					time.AfterFunc(pourGraceAfterDetect, func() {
+						requestStop("vision grace")
+					})
 				}
 			}
 		}
@@ -1278,24 +1306,13 @@ pourMonitor:
 		if sleepTime < 0 {
 			sleepTime = 0
 		}
-		if !markedDifferent {
-			// No motion yet: wake immediately when forward tilt finishes so we
-			// do not sit at max tilt for the rest of totalTime (overpour risk).
-			select {
-			case <-tiltDone:
-				vc.logger.Infof("tilt complete without motion detected, stopping pour immediately")
-				break pourMonitor
-			case <-time.After(sleepTime):
-			}
-		} else {
-			vc.logger.Debugf("going to sleep for %v", sleepTime)
-			time.Sleep(sleepTime)
+		select {
+		case <-stopCh:
+			return nil
+		case <-time.After(sleepTime):
 		}
 		loopNumber++
 	}
-
-	// cleanup done in defer above
-	return nil
 }
 
 func (vc *VinoCart) CancelPour() error {
@@ -1381,7 +1398,10 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context, pp *PourPositions) error
 	return nil
 }
 
-func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPositions, tiltDone chan struct{}) error {
+// onForwardTiltDone is called after the forward tilt trajectory finishes
+// successfully (nil if the caller does not care). The pour monitor uses it to
+// request a stop when vision never fires.
+func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPositions, onForwardTiltDone func()) error {
 	err := SetXarmSpeed(ctx, vc.c.BottleArm, 20, 50)
 	if err != nil {
 		return err
@@ -1394,9 +1414,8 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPosit
 		return err
 	}
 
-	// Forward tilt trajectory finished; notify the pour monitor.
-	if tiltDone != nil && err == nil {
-		tiltDone <- struct{}{}
+	if onForwardTiltDone != nil && err == nil {
+		onForwardTiltDone()
 	}
 
 	// After moving through all joint positions, we wait for the caller to signal that the pour has been completed
