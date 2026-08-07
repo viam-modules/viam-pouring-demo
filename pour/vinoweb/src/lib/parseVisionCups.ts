@@ -95,15 +95,17 @@ function boundsFromPoints(x: number[], y: number[], z: number[]) {
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
+  let minZ = Infinity;
   let maxZ = -Infinity;
   for (let i = 0; i < x.length; i++) {
     minX = Math.min(minX, x[i]);
     maxX = Math.max(maxX, x[i]);
     minY = Math.min(minY, y[i]);
     maxY = Math.max(maxY, y[i]);
+    minZ = Math.min(minZ, z[i]);
     maxZ = Math.max(maxZ, z[i]);
   }
-  return { minX, maxX, minY, maxY, maxZ };
+  return { minX, maxX, minY, maxY, minZ, maxZ };
 }
 
 function analyzeCup(
@@ -115,7 +117,10 @@ function analyzeCup(
   toleranceMm: number,
 ): CupDetectionMetrics {
   const b = boundsFromPoints(x, y, z);
-  const observedHeight = b.maxZ;
+  // Match pour.AnalyzeObject: height is the Z span (maxZ-minZ), not world maxZ.
+  // Using maxZ alone marks elevated/world-frame clouds invalid even when extent
+  // matches cup_height and the backend labels cup_valid / still picks up.
+  const observedHeight = b.maxZ - b.minZ;
   const observedWidth = (b.maxY - b.minY + (b.maxX - b.minX)) / 2;
   const heightDelta = Math.abs(observedHeight - expectedHeight);
   const widthDelta = Math.abs(expectedWidth - observedWidth);
