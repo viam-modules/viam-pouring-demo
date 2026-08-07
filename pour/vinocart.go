@@ -369,8 +369,6 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 		}
 	}()
 
-	g := errgroup.Group{}
-
 	cupHoldingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
@@ -379,78 +377,60 @@ func (vc *VinoCart) Reset(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	g.Go(func() error {
-		var err error
-		if cupHoldingStatus.IsHoldingSomething {
-			err = vc.doAll(ctx, "reset", "left-holding-pre", 50)
-			if err != nil {
-				return err
-			}
 
-			err = vc.moveToCurrentXYAtCupHeight(ctx)
-			if err != nil {
-				return err
-			}
-
-			err = vc.c.Gripper.Open(ctx, nil)
-			if err != nil {
-				return err
-			}
-
-			time.Sleep(time.Millisecond * 500)
-			err = vc.doAll(ctx, "reset", "left-holding-post", 50)
-			if err != nil {
-				return err
-			}
+	// Move arms sequentially. Builtin motion cancels any in-flight Move when
+	// another Move starts (single "motion-service" op label), so parallel left/
+	// right motion races end in context.Canceled for one arm.
+	if cupHoldingStatus.IsHoldingSomething {
+		if err := vc.doAll(ctx, "reset", "left-holding-pre", 50); err != nil {
+			return err
 		}
-		return nil
-	})
 
-	g.Go(func() error {
-		var err error
-		if bottleHoldingStatus.IsHoldingSomething {
-			err = vc.doAll(ctx, "reset", "right-holding-pre", 50)
-			if err != nil {
-				return err
-			}
-
-			err = vc.c.BottleGripper.Open(ctx, nil)
-			if err != nil {
-				return err
-			}
-
-			time.Sleep(time.Millisecond * 500)
-
-			err = vc.doAll(ctx, "reset", "right-holding-post", 50)
-			if err != nil {
-				return err
-			}
-
+		if err := vc.moveToCurrentXYAtCupHeight(ctx); err != nil {
+			return err
 		}
-		return nil
-	})
 
-	err2 := g.Wait()
-	if err2 != nil {
-		return err2
-	}
-	err3 := vc.doAll(ctx, "touch", "prep", 100)
-	if err3 != nil {
-		return err3
+		if err := vc.c.Gripper.Open(ctx, nil); err != nil {
+			return err
+		}
+
+		time.Sleep(time.Millisecond * 500)
+		if err := vc.doAll(ctx, "reset", "left-holding-post", 50); err != nil {
+			return err
+		}
 	}
 
-	// Lastly, open both grippers in the case that they are fully closed (which is different than holding something)
+	if bottleHoldingStatus.IsHoldingSomething {
+		if err := vc.doAll(ctx, "reset", "right-holding-pre", 50); err != nil {
+			return err
+		}
+
+		if err := vc.c.BottleGripper.Open(ctx, nil); err != nil {
+			return err
+		}
+
+		time.Sleep(time.Millisecond * 500)
+
+		if err := vc.doAll(ctx, "reset", "right-holding-post", 50); err != nil {
+			return err
+		}
+	}
+
+	if err := vc.doAll(ctx, "touch", "prep", 100); err != nil {
+		return err
+	}
+
+	// Lastly, open both grippers in the case that they are fully closed (which is different than holding something).
+	// Gripper opens do not go through the motion service, so parallel is safe.
+	g := errgroup.Group{}
 	g.Go(func() error {
 		return vc.c.Gripper.Open(ctx, nil)
 	})
-
 	g.Go(func() error {
 		return vc.c.BottleGripper.Open(ctx, nil)
 	})
-
-	err4 := g.Wait()
-	if err4 != nil {
-		return err4
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	vc.logger.Info("finished resetting")
@@ -894,36 +874,16 @@ func (vc *VinoCart) PourPrep(ctx context.Context) error {
 }
 
 func (vc *VinoCart) goTo(ctx context.Context, poss ...toggleswitch.Switch) error {
-	if len(poss) == 0 {
-		return nil
-	}
-
-	if len(poss) == 1 {
-		return poss[0].SetPosition(ctx, 2, nil)
-	}
-
-	var errorLock sync.Mutex
-	errors := []error{}
-
-	wg := sync.WaitGroup{}
-
+	// Sequential on purpose: arm-position-saver often uses motion.Move, and
+	// builtin motion cancels other in-flight Moves (shared "motion-service"
+	// op). Parallel left/right SetPosition races caused context.Canceled on
+	// one arm during reset.
 	for _, p := range poss {
-		wg.Add(1)
-		go func(pp toggleswitch.Switch) {
-			defer wg.Done()
-			err := pp.SetPosition(ctx, 2, nil)
-			if err != nil {
-				errorLock.Lock()
-				errors = append(errors, err)
-				errorLock.Unlock()
-			}
-		}(p)
-
+		if err := p.SetPosition(ctx, 2, nil); err != nil {
+			return err
+		}
 	}
-
-	wg.Wait()
-
-	return multierr.Combine(errors...)
+	return nil
 }
 
 func (vc *VinoCart) moveToCurrentXYAtCupHeight(ctx context.Context) error {
