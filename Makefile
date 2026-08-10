@@ -50,6 +50,9 @@ pour/vinoweb/dist/index.html: pour/vinoweb/*.json pour/vinoweb/*.html pour/vinow
 bin/tool: cmd/tools/*.go pour/*.go
 	go build -o bin/tool cmd/tools/*.go
 
+bin/cup-heatmap: cmd/cup-heatmap/*.go pour/*.go
+	go build -o bin/cup-heatmap cmd/cup-heatmap/*.go
+
 # vlagen runs training on a remote CUDA box reachable via ssh.
 #   VLA_HOST       required, e.g. VLA_HOST=user@gpu-box
 #   VLA_REMOTE_DIR remote workspace, default ~/viam-pouring-demo-vla
