@@ -643,14 +643,17 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 
 	var o *spatialmath.OrientationVectorDegrees
 
+	// Prefer side approaches (OY) before forward (OX). Forward is more sensitive to
+	// lateral center error, and left-zone cups often only have a forward plan when OX
+	// is tried first — which confounds vision flakiness with approach direction.
 	choices := []*spatialmath.OrientationVectorDegrees{
-		{OX: 1, Theta: 180},
 		{OY: 1, Theta: 180},
+		{OY: -1, Theta: 180},
 		{OX: .5, OY: 1, Theta: 180},
 		{OX: 1, OY: 1, Theta: 180},
 		{OX: 1, OY: -1, Theta: 180},
-		{OY: -1, Theta: 180},
 		{OX: -.5, OY: -1, Theta: 180},
+		{OX: 1, Theta: 180},
 	}
 
 	approaches := []*referenceframe.PoseInFrame{}
