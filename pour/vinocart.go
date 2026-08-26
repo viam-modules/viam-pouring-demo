@@ -876,9 +876,6 @@ func (vc *VinoCart) PourPrepGrab(ctx context.Context) error {
 
 func (vc *VinoCart) PourPrep(ctx context.Context) error {
 	vc.setStatus("prepping")
-	// Work around a ufactory module race where IsHoldingSomething can briefly
-	// report false right after grab.
-	time.Sleep(100 * time.Millisecond)
 	holdingStatus, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
 	if err != nil {
 		return err
