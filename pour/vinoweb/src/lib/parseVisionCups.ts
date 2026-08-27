@@ -95,15 +95,17 @@ function boundsFromPoints(x: number[], y: number[], z: number[]) {
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
+  let minZ = Infinity;
   let maxZ = -Infinity;
   for (let i = 0; i < x.length; i++) {
     minX = Math.min(minX, x[i]);
     maxX = Math.max(maxX, x[i]);
     minY = Math.min(minY, y[i]);
     maxY = Math.max(maxY, y[i]);
+    minZ = Math.min(minZ, z[i]);
     maxZ = Math.max(maxZ, z[i]);
   }
-  return { minX, maxX, minY, maxY, maxZ };
+  return { minX, maxX, minY, maxY, minZ, maxZ };
 }
 
 function analyzeCup(
@@ -115,7 +117,10 @@ function analyzeCup(
   toleranceMm: number,
 ): CupDetectionMetrics {
   const b = boundsFromPoints(x, y, z);
-  const observedHeight = b.maxZ;
+  // Match pour.AnalyzeObject: height is the Z span (maxZ-minZ), not world maxZ.
+  // Using maxZ alone marks elevated/world-frame clouds invalid even when extent
+  // matches cup_height and the backend labels cup_valid / still picks up.
+  const observedHeight = b.maxZ - b.minZ;
   const observedWidth = (b.maxY - b.minY + (b.maxX - b.minX)) / 2;
   const heightDelta = Math.abs(observedHeight - expectedHeight);
   const widthDelta = Math.abs(expectedWidth - observedWidth);
@@ -215,11 +220,19 @@ export function parseVisionCupObjects(objects: PointCloudObject[]): ParsedCupDet
     cupIndex++;
   }
 
+  // Keep point-cloud coloring in sync with the Valid pill (both use geometry vs meta).
+  if (summary.cupHeightMm > 0 && summary.cupWidthMm > 0) {
+    for (const cup of cups) {
+      cup.valid = cupMetricsFromCup(cup, summary).valid;
+    }
+  }
+
   if (summary.objectCount === 0) {
     summary.objectCount = cups.length;
-    summary.invalidCups = cups.filter((c) => !c.valid).length;
-    summary.validCups = cups.length - summary.invalidCups;
   }
+  // Recount after metrics-driven valid (or fallback to label-based cups).
+  summary.invalidCups = cups.filter((c) => !c.valid).length;
+  summary.validCups = cups.length - summary.invalidCups;
 
   const bestCup = cups.find((c) => c.valid) ?? cups[0] ?? null;
 

@@ -54,7 +54,9 @@ type Config struct {
 	GlassPourCam             string  `json:"glass_pour_cam"`
 	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
-	CupFinderService string `json:"cup_finder_service"` // find the cups on the table
+	// CroppedCupCamera is the SAM2 merged-cup camera. FindCups still validates
+	// returned clouds against cup_height/cup_width (and good_delta tolerance).
+	CroppedCupCamera string `json:"cropped_cup_camera"`
 
 	Positions map[string]ConfigStatePostions
 
@@ -118,9 +120,10 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 	optionals := []string{}
 
-	if cfg.CupFinderService != "" {
-		optionals = append(optionals, cfg.CupFinderService)
+	if cfg.CroppedCupCamera == "" {
+		return nil, nil, fmt.Errorf("cropped_cup_camera cannot be unset")
 	}
+	deps = append(deps, cfg.CroppedCupCamera)
 
 	if cfg.BottleGripper != "" {
 		deps = append(deps, cfg.BottleGripper)
@@ -173,7 +176,7 @@ type Pour1Components struct {
 	Motion motion.Service
 	Rfs    framesystem.Service
 
-	CupFinder vision.Service
+	CroppedCupCamera camera.Camera
 
 	Positions map[string]StagePositions
 
@@ -235,11 +238,9 @@ func Pour1ComponentsFromDependencies(config *Config, deps resource.Dependencies)
 		}
 	}
 
-	if config.CupFinderService != "" {
-		c.CupFinder, err = vision.FromProvider(deps, config.CupFinderService)
-		if err != nil {
-			return nil, err
-		}
+	c.CroppedCupCamera, err = camera.FromProvider(deps, config.CroppedCupCamera)
+	if err != nil {
+		return nil, err
 	}
 
 	if config.BottleGripper != "" {

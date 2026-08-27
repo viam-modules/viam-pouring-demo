@@ -180,13 +180,19 @@
     clearPointsOnly();
 
     const obj = objects.length > 0 ? objects[0] : null;
-    if (!obj || obj.points_x.length === 0) return;
+    if (!obj || obj.points_x.length === 0) {
+      return;
+    }
 
     const px = obj.points_x,
       py = obj.points_y,
       pz = obj.points_z;
     const n = px.length;
 
+    let minX = Infinity,
+      maxX = -Infinity;
+    let minY = Infinity,
+      maxY = -Infinity;
     let minZ = Infinity,
       maxZ = -Infinity;
     let cx = 0,
@@ -194,6 +200,10 @@
     for (let i = 0; i < n; i++) {
       cx += px[i];
       cy += py[i];
+      if (px[i] < minX) minX = px[i];
+      if (px[i] > maxX) maxX = px[i];
+      if (py[i] < minY) minY = py[i];
+      if (py[i] > maxY) maxY = py[i];
       if (pz[i] < minZ) minZ = pz[i];
       if (pz[i] > maxZ) maxZ = pz[i];
     }
@@ -222,11 +232,26 @@
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geom.computeBoundingSphere();
     pointsMesh = new THREE.Points(
       geom,
       new THREE.PointsMaterial({ size: 4, vertexColors: true, sizeAttenuation: false }),
     );
     scene.add(pointsMesh);
+
+    // If cup dims are unknown, frame the camera on the point cloud extents.
+    if (cupHeightMm <= 0 || cupWidthMm <= 0) {
+      const extentX = Math.max(maxX - minX, 1);
+      const extentY = Math.max(maxY - minY, 1);
+      const extentZ = Math.max(maxZ - minZ, 1);
+      const boundR = Math.max(extentX, extentY, extentZ) * 0.6;
+      const padding = 1.4;
+      const vFov = camera.fov * (Math.PI / 180);
+      const dist = (boundR * padding) / Math.sin(vFov / 2);
+      const centerY = extentZ / 2;
+      camera.position.set(0, centerY + dist * 0.35, dist * 0.82);
+      camera.lookAt(0, centerY, 0);
+    }
   }
 
   function applySquareViewport() {
