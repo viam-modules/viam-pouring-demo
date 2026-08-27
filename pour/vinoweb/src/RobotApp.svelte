@@ -71,8 +71,8 @@
   // SAM still-image URLs for left/right camera panes
   let stillImageUrls = $state<[string | null, string | null]>([null, null]);
 
-  // --- Vision services for standby still images (sam2 segmenters) ---
-  const visionServiceNames = ["sam2-segmenter-left", "sam2-segmenter-right"];
+  // --- Vision services for standby still images (sam3 segmenters) ---
+  const visionServiceNames = ["sam3-segmenter-left", "sam3-segmenter-right"];
   // Format enum values from viam.component.camera.v1.Format
   const FORMAT_JPEG = 3;
   const FORMAT_PNG = 4;
@@ -103,15 +103,19 @@
   let pollingHandle: ReturnType<typeof setInterval> | null = null;
   let pollingInterval = 250;
   let cupDetailLastFetch = 0;
-  const cupDetailRefreshMs = 1000;
+  // Must be slower than a cold dual merge. Faster polling without an in-flight
+  // guard stacks GetObjectPointClouds until the robot hits the 100 concurrent
+  // request limit and starves Touch/FindCups.
+  const cupDetailRefreshMs = 2000;
+  let cupDetailInFlight = false;
 
   let leftArm: ArmClient | null = null;
   let rightArm: ArmClient | null = null;
 
-  // -- Vision (sam2 segmenters for still-image standby view) ---
+  // -- Vision (sam3 segmenters for still-image standby view) ---
   let visionClients: (VisionClient | null)[] = [null, null];
   let imagePollingHandle: ReturnType<typeof setInterval> | null = null;
-  let imagePollingInterval = 1000; // ms; sam2 capture is relatively slow
+  let imagePollingInterval = 1000; // ms; segmenter capture cadence
   let imageCaptureInFlight = [false, false];
   // Per-pane failure tracking so a missing/disabled vision service doesn't
   // get hammered forever. After ERROR_THRESHOLD consecutive errors we throttle
@@ -217,7 +221,14 @@
           }
         } catch (_) {}
 
-        if (Date.now() - cupDetailLastFetch >= cupDetailRefreshMs) {
+        // Pause heavy PCD polling while Touch/demo owns the merge camera.
+        if (
+          showStillImages(status) &&
+          !cupDetailInFlight &&
+          Date.now() - cupDetailLastFetch >= cupDetailRefreshMs
+        ) {
+          cupDetailInFlight = true;
+          cupDetailLastFetch = Date.now();
           try {
             const objects = await cupVisionClient!.getObjectPointClouds("");
             const parsed = parseVisionCupObjects(objects);
@@ -232,8 +243,10 @@
               const best = parsed.cups.find((c) => c.valid) ?? parsed.cups[0];
               segmentedObjects = [best];
             }
-            cupDetailLastFetch = Date.now();
-          } catch (_) {}
+          } catch (_) {
+          } finally {
+            cupDetailInFlight = false;
+          }
         }
 
         if (leftArm && rightArm) {

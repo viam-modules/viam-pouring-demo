@@ -35,11 +35,14 @@ The following attributes must be specified:
 
 ## Wine cart kiosk setup
 
-When this module is first installed or updated on a machine, Viam runs `first_run.sh` once per module version. On Linux the script:
+When this module is first installed or updated on a machine, Viam runs `first_run.sh` once per module version (including each hot-reload package). On Linux the script:
 
 - Ensures GDM is installed and enabled for graphical login (`ubuntu-desktop` + `gdm3` if missing; otherwise `systemctl enable gdm` and `graphical.target`)
 - Configures the display to stay on: disables screen blanking, idle suspend, and sleep targets
+- Suppresses OS update popups and Chrome update/relaunch reminders
 - Installs `libnlopt0` (required dependency)
+
+The script is idempotent and safe to re-run: it does **not** restart GDM or `systemd-logind` when config is already applied (restarting those on every hot reload would kill the desktop session).
 
 This is intended for the dedicated wine cart with a touch screen. On macOS the script skips Linux-only steps.
 
@@ -55,6 +58,20 @@ Without passwordless sudo, first run fails and the module will not load.
 
 If `apt-get update` fails due to an unrelated broken repository (for example InfluxData missing a GPG key), the script logs a warning and continues with kiosk setup. Fix or disable the broken repo separately if `libnlopt0` fails to install.
 
+### Popup suppression
+
+On Linux the script also:
+
+- Disables apt periodic / unattended-upgrade checks (`/etc/apt/apt.conf.d/99vino-kiosk-no-auto-upgrades`)
+- Hides `update-notifier` and GNOME Software autostart entries
+- Sets dconf to block GNOME Software updates and Ubuntu update-notifier notifications
+- Masks apt daily / unattended-upgrades / PackageKit units (best-effort)
+- Writes Chrome managed policies under `/etc/opt/chrome/policies/managed/vino-kiosk.json` (`RelaunchNotification: 0`, component updates off, no promo tabs)
+- Sets `/etc/default/google-chrome` so the Chrome apt repo is not re-enabled
+- `apt-mark hold`s installed Chrome/Chromium packages
+
+Chrome must be relaunched once after first_run for policies to apply (`chrome://policy`).
+
 ### Verify
 
 ```bash
@@ -69,6 +86,9 @@ systemctl get-default
 
 systemctl is-enabled sleep.target
 # expected: masked
+
+test -f /etc/opt/chrome/policies/managed/vino-kiosk.json && echo chrome policies ok
+test -f /etc/apt/apt.conf.d/99vino-kiosk-no-auto-upgrades && echo apt auto-upgrades disabled
 ```
 
 ### If the screen still goes black
