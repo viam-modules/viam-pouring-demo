@@ -54,8 +54,9 @@ type Config struct {
 	GlassPourCam             string  `json:"glass_pour_cam"`
 	GlassPourMotionThreshold float64 `json:"glass_pour_motion_threshold"`
 
-	// CroppedCupCamera is the SAM2 merged-cup camera. FindCups still validates
-	// returned clouds against cup_height/cup_width (and good_delta tolerance).
+	// CroppedCupCamera is the SAM merged-cup camera. FindCups does not reject
+	// a cloud for height/width. An empty cloud, or a merge error such as
+	// min_objects failing on a dead camera, means there is nothing to pick.
 	CroppedCupCamera string `json:"cropped_cup_camera"`
 
 	Positions map[string]ConfigStatePostions
