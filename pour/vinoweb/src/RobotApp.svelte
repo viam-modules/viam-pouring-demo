@@ -71,8 +71,17 @@
   // SAM still-image URLs for left/right camera panes
   let stillImageUrls = $state<[string | null, string | null]>([null, null]);
 
-  // --- Vision services for standby still images (sam2 segmenters) ---
-  const visionServiceNames = ["sam2-segmenter-left", "sam2-segmenter-right"];
+  // Standby stills. Carts have been on both SAM2 and SAM3; prefer a service
+  // that is actually on the machine, with SAM3 first because that is what
+  // vino3 was configured with. Fall back to the SAM2 names from PR 45.
+  const segmenterCandidates = [
+    ["sam3-segmenter-left", "sam2-segmenter-left"],
+    ["sam3-segmenter-right", "sam2-segmenter-right"],
+  ] as const;
+  let visionServiceNames = [
+    segmenterCandidates[0][1],
+    segmenterCandidates[1][1],
+  ];
   // Format enum values from viam.component.camera.v1.Format
   const FORMAT_JPEG = 3;
   const FORMAT_PNG = 4;
@@ -108,8 +117,23 @@
   let leftArm: ArmClient | null = null;
   let rightArm: ArmClient | null = null;
 
-  // -- Vision (sam2 segmenters for still-image standby view) ---
+  // -- Vision (segmenters for still-image standby view) ---
   let visionClients: (VisionClient | null)[] = [null, null];
+
+  async function resolveSegmenterNames(
+    robotClient: NonNullable<typeof robotClientStore.current>,
+  ): Promise<string[]> {
+    try {
+      const resources = await robotClient.resourceNames();
+      const present = new Set(resources.map((resource) => resource.name));
+      return segmenterCandidates.map((candidates, index) => {
+        return candidates.find((name) => present.has(name)) ?? visionServiceNames[index];
+      });
+    } catch (err) {
+      console.warn("segmenter lookup failed; using sam2 names", err);
+      return [...visionServiceNames];
+    }
+  }
   let imagePollingHandle: ReturnType<typeof setInterval> | null = null;
   let imagePollingInterval = 1000; // ms; sam2 capture is relatively slow
   let imageCaptureInFlight = [false, false];
@@ -182,19 +206,20 @@
   $effect(() => {
     if (!robotClientStore) return;
     const robotClient = robotClientStore.current;
+    let segmentersReady = false;
     if (robotClient && !pollingHandle) {
       if (!leftArm) leftArm = new ArmClient(robotClient, "left-arm");
       if (!rightArm) rightArm = new ArmClient(robotClient, "right-arm");
       if (!cartClient) cartClient = new GenericServiceClient(robotClient, "cart");
       if (!cupVisionClient) cupVisionClient = new VisionClient(robotClient, CUP_VISION_SERVICE);
-      for (let i = 0; i < visionServiceNames.length; i++) {
-        if (!visionClients[i]) {
-          visionClients[i] = new VisionClient(
-            robotClient,
-            visionServiceNames[i]
-          );
+      void (async () => {
+        const names = await resolveSegmenterNames(robotClient);
+        if (segmentersReady) return;
+        visionServiceNames = names;
+        for (let i = 0; i < names.length; i++) {
+          visionClients[i] = new VisionClient(robotClient, names[i]);
         }
-      }
+      })();
 
       // --- Still-image capture loop (when the demo isn't actively running) ---
       if (!imagePollingHandle) {
@@ -244,6 +269,8 @@
     }
 
     return () => {
+      segmentersReady = true;
+      visionClients = [null, null];
       if (pollingHandle) {
         clearInterval(pollingHandle);
         pollingHandle = null;
