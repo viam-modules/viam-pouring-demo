@@ -15,6 +15,8 @@
     cupHeightMm?: number;
     cupWidthMm?: number;
     cupDetectionMetrics: CupDetectionMetrics | null;
+    leftStillImageUrl?: string | null;
+    rightStillImageUrl?: string | null;
   }
 
   let {
@@ -26,6 +28,8 @@
     cupHeightMm = 0,
     cupWidthMm = 0,
     cupDetectionMetrics = null,
+    leftStillImageUrl = null,
+    rightStillImageUrl = null,
   }: Props = $props();
 
   /** Stats panel below the viewer; closed by default so the canvas keeps space */
@@ -43,10 +47,20 @@
   {#if demoActive}
     <section class="content-area cameras-only">
       <div class="cam-area cam-full-top">
-        <CameraFeed name="left-cam" partID="xxx" label="Left Camera" />
+        <CameraFeed
+          name="left-cam"
+          partID="xxx"
+          label="Left Camera"
+          stillImageUrl={leftStillImageUrl}
+        />
       </div>
       <div class="cam-area cam-full-bottom">
-        <CameraFeed name="right-cam" partID="xxx" label="Right Camera" />
+        <CameraFeed
+          name="right-cam"
+          partID="xxx"
+          label="Right Camera"
+          stillImageUrl={rightStillImageUrl}
+        />
       </div>
     </section>
   {:else}
@@ -78,7 +92,12 @@
         {/if}
       </div>
       <div class="cam-area cam-top">
-        <CameraFeed name="left-cam" partID="xxx" label="Left Camera" />
+        <CameraFeed
+          name="left-cam"
+          partID="xxx"
+          label="Left Camera"
+          stillImageUrl={leftStillImageUrl}
+        />
       </div>
       <div class="table-area">
         <table class="joint-table">
@@ -101,7 +120,12 @@
         </table>
       </div>
       <div class="cam-area cam-bottom">
-        <CameraFeed name="right-cam" partID="xxx" label="Right Camera" />
+        <CameraFeed
+          name="right-cam"
+          partID="xxx"
+          label="Right Camera"
+          stillImageUrl={rightStillImageUrl}
+        />
       </div>
     </section>
   {/if}

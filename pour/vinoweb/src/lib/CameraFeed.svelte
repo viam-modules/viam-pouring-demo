@@ -8,9 +8,10 @@
     partID: string;
     label: string;
     overlay?: Snippet;
+    stillImageUrl?: string | null;
   }
 
-  let { name, partID, label, overlay }: Props = $props();
+  let { name, partID, label, overlay, stillImageUrl }: Props = $props();
 
   let streamKey = $state(0);
   let reconnecting = $state(false);
@@ -22,6 +23,8 @@
 
   $effect(() => {
     void streamKey;
+    // Still-image overlay replaces the live stream; skip reconnect health checks.
+    if (stillImageUrl) return;
 
     let healthTimer: ReturnType<typeof setInterval> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,15 +98,19 @@
 </script>
 
 <div class="camera-feed" bind:this={containerRef}>
-  {#key streamKey}
-    <CameraStream {name} {partID} />
-  {/key}
+  {#if stillImageUrl}
+    <img class="still-image" src={stillImageUrl} alt={label} />
+  {:else}
+    {#key streamKey}
+      <CameraStream {name} {partID} />
+    {/key}
 
-  {#if reconnecting}
-    <div class="reconnect-overlay">
-      <div class="reconnect-spinner"></div>
-      <span class="reconnect-text">Reconnecting...</span>
-    </div>
+    {#if reconnecting}
+      <div class="reconnect-overlay">
+        <div class="reconnect-spinner"></div>
+        <span class="reconnect-text">Reconnecting...</span>
+      </div>
+    {/if}
   {/if}
 
   {#if overlay}
@@ -111,8 +118,8 @@
       {@render overlay()}
     </div>
   {/if}
-  <div class="camera-label" class:disconnected={reconnecting}>
-    <Tag type={reconnecting ? "red" : "blue"} size="sm">{label}</Tag>
+  <div class="camera-label" class:disconnected={reconnecting && !stillImageUrl}>
+    <Tag type={reconnecting && !stillImageUrl ? "red" : "blue"} size="sm">{label}</Tag>
   </div>
 </div>
 
@@ -135,6 +142,13 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+
+  .still-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   .camera-label {

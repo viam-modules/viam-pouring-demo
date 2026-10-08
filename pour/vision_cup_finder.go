@@ -19,8 +19,11 @@ import (
 	"go.viam.com/rdk/vision/viscapture"
 )
 
-// CupDetectionMetaLabel marks the first GetObjectPointClouds object carrying service summary.
-// Config is encoded in the meta box dimensions (mm); detection counts in the box center pose.
+// CupDetectionMetaLabel marks the first GetObjectPointClouds object carrying
+// the service summary. The frontend reads it to render expected cup dimensions
+// and the valid/invalid counters in the 3D viewer.
+// Box dimensions (mm): X=expected cup height, Y=expected cup width, Z=tolerance (good_delta).
+// Box center pose: X=total cup objects, Y=valid cups, Z=invalid cups.
 const CupDetectionMetaLabel = "__cup_detection_meta__"
 
 const (
@@ -39,6 +42,12 @@ func init() {
 		})
 }
 
+// VisionCupFinderConfig configures the diagnostic cup finder used by the demo UI.
+//
+// Input is the name of a camera whose NextPointCloud returns the already-segmented
+// cup (e.g. a SAM2 merged-cup camera). The service may still filter/validate by
+// height_mm, width_mm, and good_delta. MaxPoints downsamples the returned cloud
+// for frontend transport.
 type VisionCupFinderConfig struct {
 	Input     string  `json:"input"`
 	HeightMM  float64 `json:"height_mm"`
@@ -75,7 +84,7 @@ func newVisionCupFinder(ctx context.Context, deps resource.Dependencies, conf re
 		logger: logger,
 	}
 
-	cf.input, err = vision.FromDependencies(deps, config.Input)
+	cf.input, err = camera.FromProvider(deps, config.Input)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +100,7 @@ type visionCupFinder struct {
 	cfg    *VisionCupFinderConfig
 	logger logging.Logger
 
-	input vision.Service
+	input camera.Camera
 }
 
 func (vcf *visionCupFinder) Name() resource.Name {
@@ -113,12 +122,28 @@ func (vcf *visionCupFinder) maxPoints() int {
 }
 
 func (vcf *visionCupFinder) GetObjectPointClouds(ctx context.Context, cameraName string, extra map[string]interface{}) ([]*viz.Object, error) {
-	objects, err := vcf.input.GetObjectPointClouds(ctx, cameraName, extra)
+	cloud, err := vcf.input.NextPointCloud(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	goodDelta := vcf.goodDelta()
+
+	// No cup observed: still emit meta so the frontend can clear counters.
+	if cloud == nil || cloud.Size() == 0 {
+		metaObj, err := metaSummaryObject(vcf.cfg.HeightMM, vcf.cfg.WidthMM, goodDelta, 0, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		return []*viz.Object{metaObj}, nil
+	}
+
+	obj, err := viz.NewObject(cloud)
+	if err != nil {
+		return nil, err
+	}
+
+	objects := []*viz.Object{obj}
 	validCups := FilterObjects(objects, vcf.cfg.HeightMM, vcf.cfg.WidthMM, goodDelta, vcf.logger)
 
 	out := make([]*viz.Object, 0, len(objects)+1)
@@ -146,12 +171,10 @@ func (vcf *visionCupFinder) GetObjectPointClouds(ctx context.Context, cameraName
 	if err != nil {
 		return nil, err
 	}
+
 	return append([]*viz.Object{metaObj}, out...), nil
 }
 
-// metaSummaryObject is the first object in GetObjectPointClouds responses.
-// Box dimensions (mm): X=expected cup height, Y=expected cup width, Z=tolerance (good_delta).
-// Box center position: X=total cup objects, Y=valid cups, Z=invalid cups.
 func metaSummaryObject(cupHeight, cupWidth, goodDelta float64, total, valid, invalid int) (*viz.Object, error) {
 	geom, err := spatialmath.NewBox(
 		spatialmath.NewPose(
@@ -258,31 +281,31 @@ func (vcf *visionCupFinder) Status(ctx context.Context) (map[string]interface{},
 	return map[string]interface{}{}, nil
 }
 
+// CupConstraintResult is the per-axis breakdown of cup dimensions (mm).
 type CupConstraintResult struct {
-	Height      float64
-	ExpHeight   float64
-	HeightDelta float64
-	HeightPass  bool
-	Width       float64
-	ExpWidth    float64
-	WidthDelta  float64
-	WidthPass   bool
-	Valid       bool
-	GoodDelta   float64
+	Height, ExpHeight, HeightDelta float64
+	HeightPass                     bool
+	Width, ExpWidth, WidthDelta    float64
+	WidthPass                      bool
+	Valid                          bool
+	GoodDelta                      float64
 }
 
+// AnalyzeObject measures object extents against expected cup height/width (mm).
+// viz.Object MetaData extents are already millimeters (same as geometry Dims).
+// Use Z-span for height so world-frame table cups validate correctly.
 func AnalyzeObject(o *viz.Object, correctHeight, correctWidth, goodDelta float64) CupConstraintResult {
 	md := o.MetaData()
-	height := md.MaxZ
-	width := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
-	heightDelta := math.Abs(height - correctHeight)
-	widthDelta := math.Abs(correctWidth - width)
+	heightMm := md.MaxZ - md.MinZ
+	widthMm := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
+	heightDelta := math.Abs(heightMm - correctHeight)
+	widthDelta := math.Abs(correctWidth - widthMm)
 	return CupConstraintResult{
-		Height:      height,
+		Height:      heightMm,
 		ExpHeight:   correctHeight,
 		HeightDelta: heightDelta,
 		HeightPass:  heightDelta <= goodDelta,
-		Width:       width,
+		Width:       widthMm,
 		ExpWidth:    correctWidth,
 		WidthDelta:  widthDelta,
 		WidthPass:   widthDelta <= goodDelta,
@@ -291,6 +314,8 @@ func AnalyzeObject(o *viz.Object, correctHeight, correctWidth, goodDelta float64
 	}
 }
 
+
+// FilterObjects returns only objects that pass height/width constraints.
 func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, logger logging.Logger) []*viz.Object {
 	good := []*viz.Object{}
 
@@ -299,26 +324,17 @@ func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta
 			continue
 		}
 
-		md := o.MetaData()
-
-		height := md.MaxZ
-		width := ((md.MaxY - md.MinY) + (md.MaxX - md.MinX)) / 2
-
-		heightDelta := math.Abs(height - correctHeight)
-		widthDelta := math.Abs(correctWidth - width)
-
+		analysis := AnalyzeObject(o, correctHeight, correctWidth, goodDelta)
 		if logger != nil {
 			logger.Infof("FindCups %d %v height: %0.2f heightDelta: %0.2f (%v) width: %0.2f widthDelta: %0.2f (%v)",
 				idx, o,
-				height, heightDelta, heightDelta <= goodDelta,
-				width, widthDelta, widthDelta <= goodDelta,
+				analysis.Height, analysis.HeightDelta, analysis.HeightPass,
+				analysis.Width, analysis.WidthDelta, analysis.WidthPass,
 			)
 		}
-
-		if heightDelta > goodDelta || widthDelta > goodDelta {
+		if !analysis.Valid {
 			continue
 		}
-
 		good = append(good, o)
 	}
 
