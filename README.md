@@ -35,7 +35,7 @@ The following attributes must be specified:
 
 ## Wine cart kiosk setup
 
-When this module is first installed or updated on a machine, Viam runs `first_run.sh` once per module version. On Linux the script:
+When this module is first installed or updated on a machine, Viam runs `first_run.sh` once per unpacked module directory. A hot reload unpacks a new directory, so the script runs again. It does not restart `systemd-logind` or an already-running GDM; restarting logind kills the graphical session. On Linux the script:
 
 - Ensures GDM is installed and enabled for graphical login (`ubuntu-desktop` + `gdm3` if missing; otherwise `systemctl enable gdm` and `graphical.target`)
 - Configures the display to stay on: disables screen blanking, idle suspend, and sleep targets

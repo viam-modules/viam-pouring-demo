@@ -9,11 +9,13 @@ write_if_changed() {
 	if [[ -f "$target" ]] && cmp -s "$tmp" "$target"; then
 		echo "already configured: $target"
 		rm -f "$tmp"
+		WROTE=0
 		return 0
 	fi
 	sudo install -D -m 644 "$tmp" "$target"
 	rm -f "$tmp"
 	echo "wrote $target"
+	WROTE=1
 }
 
 apt_update() {
@@ -52,6 +54,10 @@ enable_graphical_login() {
 	echo "enabling graphical login via ${gdm_service}.service"
 	sudo systemctl enable "$gdm_service"
 	sudo systemctl set-default graphical.target
+	if systemctl is-active --quiet "$gdm_service"; then
+		echo "${gdm_service} is already active; not starting it"
+		return 0
+	fi
 	sudo systemctl start "$gdm_service" || true
 }
 
@@ -134,7 +140,11 @@ HandleLidSwitch=ignore
 HandleLidSwitchExternalPower=ignore
 HandleLidSwitchDocked=ignore
 EOF
-	sudo systemctl restart systemd-logind || true
+	# Restarting systemd-logind kills the graphical session. Hot reload runs
+	# this script on every unpack, so leave logind alone and apply on reboot.
+	if [[ "${WROTE:-0}" == 1 ]]; then
+		echo "NOTE: logind idle settings written. Reboot for IdleAction to apply. Not restarting systemd-logind."
+	fi
 
 	sudo mkdir -p /etc/dconf/db/local.d
 	write_if_changed /etc/dconf/db/local.d/01-vino-kiosk <<'EOF'
