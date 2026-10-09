@@ -70,8 +70,9 @@
   // SAM still-image URLs for left/right camera panes
   let stillImageUrls = $state<[string | null, string | null]>([null, null]);
 
-  // --- Vision services for standby still images (sam2 segmenters) ---
-  const visionServiceNames = ["sam2-segmenter-left", "sam2-segmenter-right"];
+  // Standby stills. These resource names are hardcoded; they are not module
+  // attributes. The machine's vision services must use these names.
+  const visionServiceNames = ["sam3-segmenter-left", "sam3-segmenter-right"];
   // Format enum values from viam.component.camera.v1.Format
   const FORMAT_JPEG = 3;
   const FORMAT_PNG = 4;
@@ -107,10 +108,10 @@
   let leftArm: ArmClient | null = null;
   let rightArm: ArmClient | null = null;
 
-  // -- Vision (sam2 segmenters for still-image standby view) ---
+  // -- Vision (sam3 segmenters for still-image standby view) ---
   let visionClients: (VisionClient | null)[] = [null, null];
   let imagePollingHandle: ReturnType<typeof setInterval> | null = null;
-  let imagePollingInterval = 1000; // ms; sam2 capture is relatively slow
+  let imagePollingInterval = 1000; // ms; segmenter capture cadence
   let imageCaptureInFlight = [false, false];
   // Per-pane failure tracking so a missing/disabled vision service doesn't
   // get hammered forever. After ERROR_THRESHOLD consecutive errors we throttle
