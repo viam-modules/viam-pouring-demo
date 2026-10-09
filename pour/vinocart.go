@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -22,6 +23,7 @@ import (
 	"go.viam.com/rdk/app"
 	"go.viam.com/rdk/components/camera"
 	toggleswitch "go.viam.com/rdk/components/switch"
+	"go.viam.com/rdk/data"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan/armplanning"
 	"go.viam.com/rdk/referenceframe"
@@ -126,7 +128,8 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	vc.cupTop = referenceframe.NewLinkInFrame(
 		vc.conf.GripperName,
 		spatialmath.NewPose(
-			r3.Vector{X: vc.conf.cupGripHeightOffset(), Y: -75, Z: -15},
+			// Shared cup-top pose for both carts, millimeters from the cup gripper.
+			r3.Vector{X: 45, Y: -55, Z: -10},
 			&spatialmath.OrientationVectorDegrees{OX: 1},
 		),
 		cupTopName,
@@ -211,6 +214,10 @@ func (vc *VinoCart) Close(ctx context.Context) error {
 	return multierr.Combine(vc.robotClient.Close(ctx), vc.server.Close(), viamClientErr)
 }
 
+func (vc *VinoCart) Status(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{"status": vc.getStatus()}, nil
+}
+
 func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	if cmd["status"] == true {
 		return map[string]interface{}{"status": vc.getStatus()}, nil
@@ -242,6 +249,10 @@ func (vc *VinoCart) DoCommand(ctx context.Context, cmd map[string]interface{}) (
 
 	if cmd["pour"] == true {
 		return nil, vc.Pour(ctx)
+	}
+
+	if cmd["pour-max"] == true {
+		return nil, vc.PourMax(ctx)
 	}
 
 	if cmd["put-back"] == true {
@@ -496,7 +507,11 @@ func (vc *VinoCart) checkPickQuality(ctx context.Context) error {
 		}
 	}
 
-	cs, err := vc.c.PickQualityService.Classifications(ctx, prepped, 1, nil)
+	namedPrepped, err := camera.NamedImageFromImage(prepped, "", utils.MimeTypeJPEG, data.Annotations{})
+	if err != nil {
+		return err
+	}
+	cs, err := vc.c.PickQualityService.Classifications(ctx, &namedPrepped, 1, nil)
 	if err != nil {
 		return err
 	}
@@ -1002,6 +1017,16 @@ func (vc *VinoCart) GetGlassPourCamImage(ctx context.Context, box *image.Rectang
 }
 
 func (vc *VinoCart) Pour(ctx context.Context) error {
+	return vc.pour(ctx, false)
+}
+
+// PourMax runs the pour with vision detection bypassed. When forward tilt
+// finishes, the bottle is pulled back immediately (no 15s post-tilt hold).
+func (vc *VinoCart) PourMax(ctx context.Context) error {
+	return vc.pour(ctx, true)
+}
+
+func (vc *VinoCart) pour(ctx context.Context, simulateNoVision bool) error {
 	vc.setStatus("pouring")
 
 	isHoldingCup, err := vc.c.Gripper.IsHoldingSomething(ctx, nil)
@@ -1139,15 +1164,41 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		return err
 	}
 
-	if vc.conf.UseGlassFullnessMLModel {
+	if simulateNoVision {
+		vc.logger.Warn("*** pour-max: vision detection BYPASSED ***")
+	} else if vc.conf.UseGlassFullnessMLModel {
 		vc.logger.Info("*** using glass fullness ml model ***")
 	} else {
 		vc.logger.Info("*** using image delta logic ***")
 	}
 	var pd *pourDetector
 
-	totalTime := 15 * time.Second
-	markedDifferent := false
+	// Single stop signal for the pour monitor. Vision (with grace), tilt
+	// completion, and the absolute timeout all call requestStop; the first
+	// wins. Leaving the monitor always hits the defer that cancelPour + returns the bottle.
+	const pourTimeout = 15 * time.Second
+	const pourGraceAfterDetect = time.Second
+
+	stopCh := make(chan struct{})
+	var stopOnce sync.Once
+	var visionFired atomic.Bool
+	requestStop := func(reason string) {
+		stopOnce.Do(func() {
+			vc.logger.Infof("pour stop: %s", reason)
+			close(stopCh)
+		})
+	}
+	timeoutTimer := time.AfterFunc(pourTimeout, func() {
+		requestStop("timeout")
+	})
+	defer timeoutTimer.Stop()
+
+	// Forward tilt finished: if vision never fired, stop immediately (no post-tilt hold).
+	onForwardTiltDone := func() {
+		if !visionFired.Load() {
+			requestStop("tilt complete without motion")
+		}
+	}
 
 	pourContext, cancelPour := context.WithCancel(ctx)
 	vc.cancelPour = cancelPour
@@ -1166,16 +1217,9 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		}()
 	}
 
-	box, err := vc.PourGlassFindCroppedRect(ctx)
-	if err != nil {
-		return err
-	}
-
-	vc.logger.Infof("got box for crop %v", box)
-
 	go func() {
 		defer wg.Done()
-		err := vc.doPourMotion(ctx, pourContext, pp)
+		err := vc.doPourMotion(ctx, pourContext, pp, onForwardTiltDone)
 		if err != nil {
 			vc.logger.Infof("error pouring: %v", err)
 		}
@@ -1193,7 +1237,26 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 		}
 	}()
 
-	for time.Since(start) < totalTime {
+	// pour-max: same stop path, no vision source — only tilt-complete or timeout.
+	if simulateNoVision {
+		<-stopCh
+		return nil
+	}
+
+	box, err := vc.PourGlassFindCroppedRect(ctx)
+	if err != nil {
+		return err
+	}
+
+	vc.logger.Infof("got box for crop %v", box)
+
+	for {
+		select {
+		case <-stopCh:
+			return nil
+		default:
+		}
+
 		loopStart := time.Now()
 
 		img, fn, err := vc.GetGlassPourCamImage(ctx, box, loopNumber)
@@ -1206,8 +1269,12 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if isGoodPour {
-				break
+			if isGoodPour && visionFired.CompareAndSwap(false, true) {
+				vc.logger.Infof(" **** good pour detected *** ")
+				// Keep pouring briefly so the cup finishes filling.
+				time.AfterFunc(pourGraceAfterDetect, func() {
+					requestStop("vision grace")
+				})
 			}
 		} else {
 			if pd == nil {
@@ -1216,22 +1283,27 @@ func (vc *VinoCart) Pour(ctx context.Context) error {
 				delta, _ := pd.differentDebug(img)
 				deltaMax := vc.conf.glassPourMotionThreshold()
 				vc.logger.Infof("fn: %v delta: %0.2f (%f)", fn, delta, deltaMax)
-				if delta >= deltaMax && !markedDifferent {
+				if delta >= deltaMax && visionFired.CompareAndSwap(false, true) {
 					vc.logger.Infof(" **** motion detected *** ")
-					markedDifferent = true
-					totalTime = time.Since(start) + time.Second
+					// Keep pouring briefly so the cup finishes filling.
+					time.AfterFunc(pourGraceAfterDetect, func() {
+						requestStop("vision grace")
+					})
 				}
 			}
 		}
 
 		sleepTime := (100 * time.Millisecond) - time.Since(loopStart)
-		vc.logger.Debugf("going to sleep for %v", sleepTime)
-		time.Sleep(sleepTime)
+		if sleepTime < 0 {
+			sleepTime = 0
+		}
+		select {
+		case <-stopCh:
+			return nil
+		case <-time.After(sleepTime):
+		}
 		loopNumber++
 	}
-
-	// cleanup done in defer above
-	return nil
 }
 
 func (vc *VinoCart) CancelPour() error {
@@ -1300,7 +1372,7 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context, pp *PourPositions) error
 
 	go func() {
 		defer wg.Done()
-		err := vc.doPourMotion(ctx, pourContext, pp)
+		err := vc.doPourMotion(ctx, pourContext, pp, nil)
 		if err != nil {
 			vc.logger.Infof("eliot: %v", err)
 		}
@@ -1317,7 +1389,10 @@ func (vc *VinoCart) PourMotionDemo(ctx context.Context, pp *PourPositions) error
 	return nil
 }
 
-func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPositions) error {
+// onForwardTiltDone is called after the forward tilt trajectory finishes
+// successfully (nil if the caller does not care). The pour monitor uses it to
+// request a stop when vision never fires.
+func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPositions, onForwardTiltDone func()) error {
 	err := SetXarmSpeed(ctx, vc.c.BottleArm, 20, 50)
 	if err != nil {
 		return err
@@ -1328,6 +1403,10 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPosit
 
 	if err != nil && err != context.Canceled && pourContext.Err() != context.Canceled {
 		return err
+	}
+
+	if onForwardTiltDone != nil && err == nil {
+		onForwardTiltDone()
 	}
 
 	// After moving through all joint positions, we wait for the caller to signal that the pour has been completed
@@ -1472,11 +1551,27 @@ func moveWithLinearConstraint(ctx context.Context, m motion.Service, n resource.
 	return err
 }
 
+// FindCups reads the SAM2 merged cup cloud for pickup.
+// Dim validation is logged (and labeled on the cup-detection service for the UI)
+// but does not gate pickup: a tuned/partial cloud should still be graspable.
 func (vc *VinoCart) FindCups(ctx context.Context) ([]*viz.Object, error) {
-	objects, err := vc.c.CupFinder.GetObjectPointClouds(ctx, "", nil)
+	cloud, err := vc.c.CroppedCupCamera.NextPointCloud(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-
-	return FilterObjects(objects, vc.conf.CupHeight, vc.conf.cupWidth(), 25, vc.logger), nil
+	if cloud == nil || cloud.Size() == 0 {
+		return nil, nil
+	}
+	obj, err := viz.NewObjectWithLabel(cloud, "cup", nil)
+	if err != nil {
+		return nil, err
+	}
+	// Log dimensions against cart cup height/width (same AnalyzeObject as UI).
+	analysis := AnalyzeObject(obj, vc.conf.CupHeight, vc.conf.cupWidth(), 25)
+	if vc.logger != nil {
+		vc.logger.Infof("FindCups height: %0.2f delta: %0.2f (%v) width: %0.2f delta: %0.2f (%v) valid=%v",
+			analysis.Height, analysis.HeightDelta, analysis.HeightPass,
+			analysis.Width, analysis.WidthDelta, analysis.WidthPass, analysis.Valid)
+	}
+	return []*viz.Object{obj}, nil
 }

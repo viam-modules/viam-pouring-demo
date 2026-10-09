@@ -131,6 +131,10 @@ func (ws *WeightSmoother) DoCommand(ctx context.Context, cmd map[string]interfac
 	return nil, nil
 }
 
+func (ws *WeightSmoother) Status(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{}, nil
+}
+
 func getBestNumberForWeight(raw []float64) float64 {
 
 	if len(raw) == 0 {

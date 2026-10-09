@@ -24,6 +24,7 @@ type exportOptions struct {
 	instruction  string
 	locationID   string
 	partID       string
+	datasetID    string
 }
 
 type session struct {
@@ -45,6 +46,10 @@ type binaryRow struct {
 }
 
 func runExport(ctx context.Context, dc *app.DataClient, opts exportOptions, logger logging.Logger) error {
+	if opts.datasetID != "" {
+		return exportDataset(ctx, dc, opts, logger)
+	}
+
 	sessions, err := readSessions(opts.sessionsPath)
 	if err != nil {
 		return fmt.Errorf("reading sessions: %w", err)
@@ -91,6 +96,78 @@ func runExport(ctx context.Context, dc *app.DataClient, opts exportOptions, logg
 		}
 	}
 	return nil
+}
+
+func exportDataset(ctx context.Context, dc *app.DataClient, opts exportOptions, logger logging.Logger) error {
+	logger.Infof("exporting dataset: %s", opts.datasetID)
+	if err := os.MkdirAll(opts.outDir, 0o755); err != nil {
+		return err
+	}
+
+	const pageSize = 50
+	page, err := dc.SequencesByDatasetID(ctx, opts.datasetID, pageSize)
+	if err != nil {
+		return fmt.Errorf("listing sequences for dataset %s: %w", opts.datasetID, err)
+	}
+
+	total := 0
+	for len(page.Sequences) > 0 {
+		for _, seq := range page.Sequences {
+			if seq == nil {
+				continue
+			}
+			if err := exportSequence(ctx, dc, opts, seq, logger); err != nil {
+				return fmt.Errorf("sequence %s: %w", seq.ID, err)
+			}
+			total++
+		}
+		page, err = page.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("paging sequences for dataset %s: %w", opts.datasetID, err)
+		}
+	}
+
+	logger.Infof("exported %d sequence(s) from dataset %s", total, opts.datasetID)
+	return nil
+}
+
+func exportSequence(ctx context.Context, dc *app.DataClient, opts exportOptions, seq *app.Sequence, logger logging.Logger) error {
+	partID := seq.PartID
+	if partID == "" {
+		partID = opts.partID
+	}
+	scope := scopeFilter{locationID: opts.locationID, partID: partID}
+
+	logger.Infof("exporting sequence %s part=%s interval=[%s,%s] tags=%v resources=%d",
+		seq.ID, seq.PartID,
+		seq.StartTime.Format(time.RFC3339), seq.EndTime.Format(time.RFC3339),
+		seq.SequenceTags, len(seq.Resources))
+
+	var arm []tabularRow
+	var cam []binaryRow
+	for _, r := range seq.Resources {
+		switch r.MethodName {
+		case "GetImages":
+			rows, err := fetchBinaryInRange(ctx, dc, seq.StartTime, seq.EndTime, r.ResourceName, r.MethodName, scope, logger)
+			if err != nil {
+				return fmt.Errorf("fetching binary %s/%s: %w", r.ResourceName, r.MethodName, err)
+			}
+			cam = append(cam, rows...)
+		case "JointPositions":
+			rows, err := fetchTabularInRange(ctx, dc, seq.StartTime, seq.EndTime, r.ResourceName, r.MethodName, scope, logger)
+			if err != nil {
+				return fmt.Errorf("fetching tabular %s/%s: %w", r.ResourceName, r.MethodName, err)
+			}
+			arm = append(arm, rows...)
+		default:
+			logger.Warnf("sequence %s: skipping unsupported resource %s/%s", seq.ID, r.ResourceName, r.MethodName)
+		}
+	}
+
+	sort.Slice(cam, func(i, j int) bool { return cam[i].t.Before(cam[j].t) })
+	sort.Slice(arm, func(i, j int) bool { return arm[i].t.Before(arm[j].t) })
+
+	return writeEpisode(opts.outDir, seq.ID, arm, cam, opts.instruction, logger)
 }
 
 type scopeFilter struct {

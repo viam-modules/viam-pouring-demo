@@ -34,6 +34,7 @@
         }
     ],
     "entrypoint": "bin/viam-pouring-demo",
+    "first_run": "first_run.sh",
     "build": {
         "build": "make module.tar.gz",
         "setup": "make setup",
