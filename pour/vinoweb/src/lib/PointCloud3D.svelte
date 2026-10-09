@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import * as THREE from "three";
   import type { SegmentedObject } from "./types.js";
-  import { PC_INVALID_T0, PC_INVALID_T1, PC_VALID_T0, PC_VALID_T1 } from "./pcGradientColors.js";
+  import { PC_VALID_T0, PC_VALID_T1 } from "./pcGradientColors.js";
 
   let {
     objects = [],
@@ -41,7 +41,7 @@
 
   function objKey(obj: SegmentedObject): string {
     const px = obj.points_x;
-    return `${obj.index}:${px.length}:${px[0]}:${px[px.length - 1]}:${obj.valid}`;
+    return `${obj.index}:${px.length}:${px[0]}:${px[px.length - 1]}`;
   }
 
   function clearPointsOnly() {
@@ -210,7 +210,6 @@
     cx /= n;
     cy /= n;
     const pcHeight = maxZ - minZ || 1;
-    const valid = obj.valid !== false;
 
     const positions = new Float32Array(n * 3);
     const colors = new Float32Array(n * 3);
@@ -219,15 +218,9 @@
       positions[i * 3 + 1] = pz[i] - minZ;
       positions[i * 3 + 2] = py[i] - cy;
       const t = (pz[i] - minZ) / pcHeight;
-      if (valid) {
-        colors[i * 3] = (PC_VALID_T0.r + t * (PC_VALID_T1.r - PC_VALID_T0.r)) / 255;
-        colors[i * 3 + 1] = (PC_VALID_T0.g + t * (PC_VALID_T1.g - PC_VALID_T0.g)) / 255;
-        colors[i * 3 + 2] = (PC_VALID_T0.b + t * (PC_VALID_T1.b - PC_VALID_T0.b)) / 255;
-      } else {
-        colors[i * 3] = (PC_INVALID_T0.r + t * (PC_INVALID_T1.r - PC_INVALID_T0.r)) / 255;
-        colors[i * 3 + 1] = (PC_INVALID_T0.g + t * (PC_INVALID_T1.g - PC_INVALID_T0.g)) / 255;
-        colors[i * 3 + 2] = (PC_INVALID_T0.b + t * (PC_INVALID_T1.b - PC_INVALID_T0.b)) / 255;
-      }
+      colors[i * 3] = (PC_VALID_T0.r + t * (PC_VALID_T1.r - PC_VALID_T0.r)) / 255;
+      colors[i * 3 + 1] = (PC_VALID_T0.g + t * (PC_VALID_T1.g - PC_VALID_T0.g)) / 255;
+      colors[i * 3 + 2] = (PC_VALID_T0.b + t * (PC_VALID_T1.b - PC_VALID_T0.b)) / 255;
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));

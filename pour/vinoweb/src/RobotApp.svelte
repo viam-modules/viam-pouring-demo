@@ -5,7 +5,7 @@
   import { Struct } from "@bufbuild/protobuf";
   import MainContent from "./lib/MainContent.svelte";
   import Status from "./lib/status.svelte";
-  import type { SegmentedObject, Joint, CupDetectionMetrics } from "./lib/types.js";
+  import type { SegmentedObject, Joint } from "./lib/types.js";
   import { parseVisionCupObjects } from "./lib/parseVisionCups.js";
 
   const CUP_VISION_SERVICE = "cup-detection";
@@ -25,7 +25,6 @@
   let segmentedObjects: SegmentedObject[] = $state([]);
   let cupHeightMm = $state(0);
   let cupWidthMm = $state(0);
-  let cupDetectionMetrics = $state<CupDetectionMetrics | null>(null);
 
   const statusMessages: Record<StatusKey, string> = {
     standby: "Ready to pour!",
@@ -225,13 +224,7 @@
             cupWidthMm = parsed.summary.cupWidthMm;
             objectCount = parsed.summary.objectCount;
 
-            cupDetectionMetrics = parsed.metrics;
-            if (parsed.cups.length === 0) {
-              segmentedObjects = [];
-            } else {
-              const best = parsed.cups.find((c) => c.valid) ?? parsed.cups[0];
-              segmentedObjects = [best];
-            }
+            segmentedObjects = parsed.cups.length === 0 ? [] : [parsed.cups[0]];
             cupDetailLastFetch = Date.now();
           } catch (_) {}
         }
@@ -283,7 +276,6 @@
     {status}
     {cupHeightMm}
     {cupWidthMm}
-    {cupDetectionMetrics}
     leftStillImageUrl={stillImageUrls[0]}
     rightStillImageUrl={stillImageUrls[1]}
   >
