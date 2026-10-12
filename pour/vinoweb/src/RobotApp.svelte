@@ -103,7 +103,11 @@
   let pollingHandle: ReturnType<typeof setInterval> | null = null;
   let pollingInterval = 250;
   let cupDetailLastFetch = 0;
-  const cupDetailRefreshMs = 1000;
+  // Must be slower than a cold dual merge. Faster polling without an in-flight
+  // guard stacks GetObjectPointClouds until the robot hits the 100 concurrent
+  // request limit and starves Touch/FindCups.
+  const cupDetailRefreshMs = 2000;
+  let cupDetailInFlight = false;
 
   let leftArm: ArmClient | null = null;
   let rightArm: ArmClient | null = null;
@@ -217,7 +221,14 @@
           }
         } catch (_) {}
 
-        if (Date.now() - cupDetailLastFetch >= cupDetailRefreshMs) {
+        // Pause heavy PCD polling while Touch/demo owns the merge camera.
+        if (
+          showStillImages(status) &&
+          !cupDetailInFlight &&
+          Date.now() - cupDetailLastFetch >= cupDetailRefreshMs
+        ) {
+          cupDetailInFlight = true;
+          cupDetailLastFetch = Date.now();
           try {
             const objects = await cupVisionClient!.getObjectPointClouds("");
             const parsed = parseVisionCupObjects(objects);
@@ -226,8 +237,10 @@
             objectCount = parsed.summary.objectCount;
 
             segmentedObjects = parsed.cups.length === 0 ? [] : [parsed.cups[0]];
-            cupDetailLastFetch = Date.now();
-          } catch (_) {}
+          } catch (_) {
+          } finally {
+            cupDetailInFlight = false;
+          }
         }
 
         if (leftArm && rightArm) {
