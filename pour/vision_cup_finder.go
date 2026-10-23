@@ -314,7 +314,6 @@ func AnalyzeObject(o *viz.Object, correctHeight, correctWidth, goodDelta float64
 	}
 }
 
-
 // FilterObjects returns only objects that pass height/width constraints.
 func FilterObjects(objects []*viz.Object, correctHeight, correctWidth, goodDelta float64, logger logging.Logger) []*viz.Object {
 	good := []*viz.Object{}
