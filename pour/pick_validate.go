@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/jpeg"
 	"image/png"
 	"math"
-	"os"
 )
 
 const pick_expectedX = 1280
@@ -18,18 +16,6 @@ const pick_ySize = 250
 const pick_xOffset = 550
 const pick_yOffset = pick_expectedY - pick_ySize
 
-var pick_x = 1
-
-func writeImage(img image.Image, fn string) error {
-	f, err := os.Create(fn)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	return jpeg.Encode(f, img, nil)
-}
-
 func encodePNG(img image.Image) ([]byte, error) {
 	var buf bytes.Buffer
 	err := png.Encode(&buf, img)
@@ -37,22 +23,6 @@ func encodePNG(img image.Image) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-func checkPick(img image.Image) (bool, error) {
-	pick_x++
-
-	edges, err := prepPickImage(img)
-	if err != nil {
-		return false, err
-	}
-
-	err = writeImage(edges, fmt.Sprintf("temp-edges-%d.jpg", pick_x))
-	if err != nil {
-		return false, err
-	}
-
-	return false, nil
 }
 
 func prepPickImage(img image.Image) (*image.Gray, error) {

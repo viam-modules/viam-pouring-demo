@@ -193,7 +193,7 @@ func readSessions(path string) ([]session, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	r := csv.NewReader(f)
 	r.FieldsPerRecord = -1
@@ -394,7 +394,7 @@ func writeEpisode(outDir, id string, arm []tabularRow, cam []binaryRow, instruct
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	enc := json.NewEncoder(f)
 
 	stateAt := func(t time.Time) []float64 {
