@@ -64,7 +64,7 @@ func realMain() error {
 		if err != nil {
 			return err
 		}
-		defer client.Close(ctx)
+		defer func() { _ = client.Close(ctx) }()
 
 		vc, err := generic.FromProvider(client, *cartName)
 		if err != nil {
@@ -114,7 +114,7 @@ func realMain() error {
 			if ac, err := app.ConnectFromCLIToken(ctx, logger); err != nil {
 				logger.Errorf("saving to sequences needs viam cli credentials (run `viam login` first): %w", err)
 			} else {
-				defer ac.Close()
+				defer func() { _ = ac.Close() }()
 				dc := ac.DataClient()
 
 				seqID, err := dc.CreateSequence(
@@ -151,7 +151,7 @@ func realMain() error {
 		if err != nil {
 			return err
 		}
-		defer client.Close(ctx)
+		defer func() { _ = client.Close(ctx) }()
 
 		vc, err := generic.FromProvider(client, *cartName)
 		if err != nil {
@@ -173,17 +173,17 @@ func realMain() error {
 		}
 		md, err := machine.CloudMetadata(ctx)
 		if err != nil {
-			machine.Close(ctx)
+			_ = machine.Close(ctx)
 			return fmt.Errorf("CloudMetadata: %w", err)
 		}
-		machine.Close(ctx)
+		_ = machine.Close(ctx)
 		logger.Infof("cloud metadata for %s: org=%s location=%s part=%s", *host, md.PrimaryOrgID, md.LocationID, md.MachinePartID)
 
 		appClient, err := app.ConnectFromCLIToken(ctx, logger)
 		if err != nil {
 			return fmt.Errorf("export needs viam cli credentials (run `viam login` first): %w", err)
 		}
-		defer appClient.Close()
+		defer func() { _ = appClient.Close() }()
 
 		return runExport(ctx, appClient.DataClient(), exportOptions{
 			sessionsPath: sessionsPath,
@@ -225,7 +225,7 @@ func appendSession(path string, start, end time.Time) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	w := csv.NewWriter(f)
 	defer w.Flush()

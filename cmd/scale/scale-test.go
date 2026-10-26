@@ -32,9 +32,9 @@ func realMain() error {
 	if err != nil {
 		return err
 	}
-	defer client.Close(ctx)
+	defer func() { _ = client.Close(ctx) }()
 
-	scale, err := sensor.FromRobot(client, "scale1")
+	scale, err := sensor.FromProvider(client, "scale1")
 	if err != nil {
 		return err
 	}
