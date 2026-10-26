@@ -177,7 +177,7 @@ func realMain() error {
 			return fmt.Errorf("CloudMetadata: %w", err)
 		}
 		machine.Close(ctx)
-		logger.Infof("cloud metadata for %s: location=%s part=%s", *host, md.LocationID, md.MachinePartID)
+		logger.Infof("cloud metadata for %s: org=%s location=%s part=%s", *host, md.PrimaryOrgID, md.LocationID, md.MachinePartID)
 
 		appClient, err := app.ConnectFromCLIToken(ctx, logger)
 		if err != nil {
@@ -192,6 +192,7 @@ func realMain() error {
 			armName:      *armName,
 			camName:      *camName,
 			instruction:  *instruction,
+			orgID:        md.PrimaryOrgID,
 			locationID:   md.LocationID,
 			partID:       md.MachinePartID,
 			datasetID:    *sequenceDatasetID,
