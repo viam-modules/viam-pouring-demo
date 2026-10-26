@@ -44,7 +44,7 @@ func newWeightSensor(ctx context.Context, deps resource.Dependencies, conf resou
 		return nil, err
 	}
 
-	s, err := sensor.FromDependencies(deps, config.Scale)
+	s, err := sensor.FromProvider(deps, config.Scale)
 	if err != nil {
 		return nil, err
 	}

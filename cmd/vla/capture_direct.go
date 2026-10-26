@@ -39,7 +39,7 @@ func runCaptureDirect(ctx context.Context, client robot.Robot, vc resource.Resou
 		return fmt.Errorf("-hz must be positive, got %d", opts.hz)
 	}
 
-	camComp, err := camera.FromRobot(client, opts.camName)
+	camComp, err := camera.FromProvider(client, opts.camName)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func writeOpenVLAEpisode(epDir string, cam []camSample, poses []poseSample, inst
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	enc := json.NewEncoder(f)
 
 	for i, c := range cam {

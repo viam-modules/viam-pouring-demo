@@ -3,6 +3,7 @@ package pour
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -61,7 +62,7 @@ var planDir = func() string {
 }()
 
 var VinoCartModel = NamespaceFamily.WithModel("vinocart")
-var noObjects = fmt.Errorf("no objects")
+var errNoObjects = fmt.Errorf("no objects")
 
 func init() {
 	resource.RegisterService(generic.API, VinoCartModel, resource.Registration[resource.Resource, *Config]{Constructor: newVinoCart})
@@ -160,7 +161,9 @@ func NewVinoCart(ctx context.Context, conf *Config, c *Pour1Components, client r
 	go func() {
 		vc.server.Addr = ":9999"
 		vc.logger.Infof("web listening on %s", vc.server.Addr)
-		vc.server.ListenAndServe()
+		if err := vc.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			vc.logger.Errorf("web server on %s stopped: %v", vc.server.Addr, err)
+		}
 	}()
 
 	return vc, nil
@@ -181,7 +184,6 @@ type VinoCart struct {
 	bottleTop       *referenceframe.LinkInFrame
 	cupTop          *referenceframe.LinkInFrame
 	pourExtraFrames []*referenceframe.LinkInFrame
-	pourWorldState  *referenceframe.WorldState
 
 	loopCancel    context.CancelFunc
 	loopWaitGroup sync.WaitGroup
@@ -330,7 +332,7 @@ func (vc *VinoCart) WaitForCupAndGo(ctx context.Context) error {
 		if err == nil {
 			break
 		}
-		if err != noObjects {
+		if err != errNoObjects {
 			return err
 		}
 		vc.logger.Infof("got %v, looping", err)
@@ -620,7 +622,7 @@ func (vc *VinoCart) Touch(ctx context.Context) error {
 	}
 
 	if len(objects) == 0 {
-		return noObjects
+		return errNoObjects
 	}
 
 	if len(objects) > 1 {
@@ -1331,7 +1333,7 @@ func saveImage(img image.Image, dirName string, loopNumber int) (string, error) 
 	if err != nil {
 		return fn, fmt.Errorf("couldn't create filename %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return p, png.Encode(file, img)
 }
 
@@ -1417,9 +1419,7 @@ func (vc *VinoCart) doPourMotion(ctx, pourContext context.Context, pp *PourPosit
 	}
 
 	// After moving through all joint positions, we wait for the caller to signal that the pour has been completed
-	select {
-	case <-pourContext.Done():
-	}
+	<-pourContext.Done()
 
 	vc.logger.Infof("going back down")
 
