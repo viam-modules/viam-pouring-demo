@@ -15,6 +15,7 @@ import (
 	"go.viam.com/rdk/spatialmath"
 	viz "go.viam.com/rdk/vision"
 	"go.viam.com/rdk/vision/classification"
+	"go.viam.com/rdk/vision/detection3d"
 	"go.viam.com/rdk/vision/objectdetection"
 	"go.viam.com/rdk/vision/viscapture"
 )
@@ -227,6 +228,10 @@ func downsamplePointCloud(o *viz.Object, total, maxPoints int) pointcloud.PointC
 
 func IsCupDetectionMetaObject(o *viz.Object) bool {
 	return o != nil && o.Geometry != nil && o.Geometry.Label() == CupDetectionMetaLabel
+}
+
+func (vcf *visionCupFinder) GetDetections3D(ctx context.Context, cameraName string, extra map[string]interface{}) ([]*detection3d.Detection, error) {
+	return nil, fmt.Errorf("no 3D detection support")
 }
 
 func (vcf *visionCupFinder) DetectionsFromCamera(ctx context.Context, cameraName string, extra map[string]interface{}) ([]objectdetection.Detection, error) {
