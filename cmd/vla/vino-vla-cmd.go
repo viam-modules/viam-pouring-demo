@@ -109,10 +109,10 @@ func realMain() error {
 		if useSequences {
 			md, err := client.CloudMetadata(ctx)
 			if err != nil {
-				logger.Errorf("CloudMetadata: %w", err)
+				logger.Errorf("CloudMetadata: %v", err)
 			}
 			if ac, err := app.ConnectFromCLIToken(ctx, logger); err != nil {
-				logger.Errorf("saving to sequences needs viam cli credentials (run `viam login` first): %w", err)
+				logger.Errorf("saving to sequences needs viam cli credentials (run `viam login` first): %v", err)
 			} else {
 				defer ac.Close()
 				dc := ac.DataClient()
