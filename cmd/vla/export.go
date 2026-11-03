@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +23,7 @@ type exportOptions struct {
 	armName      string
 	camName      string
 	instruction  string
+	orgID        string
 	locationID   string
 	partID       string
 	datasetID    string
@@ -76,7 +78,7 @@ func runExport(ctx context.Context, dc *app.DataClient, opts exportOptions, logg
 		return err
 	}
 
-	scope := scopeFilter{locationID: opts.locationID, partID: opts.partID}
+	scope := scopeFilter{orgID: opts.orgID, locationID: opts.locationID, partID: opts.partID}
 
 	for _, s := range sessions {
 		cam, err := fetchBinaryInRange(ctx, dc, s.start, s.end, opts.camName, "GetImages", scope, logger)
@@ -136,7 +138,7 @@ func exportSequence(ctx context.Context, dc *app.DataClient, opts exportOptions,
 	if partID == "" {
 		partID = opts.partID
 	}
-	scope := scopeFilter{locationID: opts.locationID, partID: partID}
+	scope := scopeFilter{orgID: opts.orgID, locationID: opts.locationID, partID: partID}
 
 	logger.Infof("exporting sequence %s part=%s interval=[%s,%s] tags=%v resources=%d",
 		seq.ID, seq.PartID,
@@ -171,6 +173,8 @@ func exportSequence(ctx context.Context, dc *app.DataClient, opts exportOptions,
 }
 
 type scopeFilter struct {
+	// orgID is the organization TabularDataByMQL queries; it is not applied to binary filters.
+	orgID      string
 	locationID string
 	partID     string
 }
@@ -309,40 +313,68 @@ func hydrateBinary(ctx context.Context, dc *app.DataClient, rows []binaryRow, lo
 	return nil
 }
 
-func fetchTabularInRange(ctx context.Context, dc *app.DataClient, start, end time.Time, name, method string, scope scopeFilter, logger logging.Logger) ([]tabularRow, error) {
-	var out []tabularRow
-	last := ""
-	pages := 0
-	for {
-		filter := &app.Filter{
-			ComponentName: name,
-			Method:        method,
-			Interval:      app.CaptureInterval{Start: start, End: end},
-		}
-		scope.apply(filter)
-		logger.Infof("TabularDataByFilter component=%s method=%s interval=[%s,%s] location=%v part=%s last=%q",
-			filter.ComponentName,
-			filter.Method,
-			filter.Interval.Start.Format(time.RFC3339Nano),
-			filter.Interval.End.Format(time.RFC3339Nano),
-			filter.LocationIDs,
-			filter.PartID,
-			last,
-		)
-		resp, err := dc.TabularDataByFilter(ctx, &app.DataByFilterOptions{Filter: filter, Last: last})
-		if err != nil {
-			return nil, err
-		}
-		for _, td := range resp.TabularData {
-			out = append(out, tabularRow{t: td.TimeRequested, data: td.Data})
-		}
-		pages++
-		if resp.Last == "" || resp.Last == last || len(resp.TabularData) == 0 {
-			break
-		}
-		last = resp.Last
+// tabularMatch builds the $match stage for rows of one resource method captured
+// in [start, end], scoped to the configured location and part. Empty name,
+// method, location, or part and zero bounds are left unconstrained.
+func (s scopeFilter) tabularMatch(start, end time.Time, name, method string) map[string]any {
+	match := map[string]any{}
+	if name != "" {
+		match["component_name"] = name
 	}
-	logger.Infof("fetched tabular: %s/%s in [%s, %s] — %d pages, %d rows", name, method, start.Format(time.RFC3339), end.Format(time.RFC3339), pages, len(out))
+	if method != "" {
+		match["method_name"] = method
+	}
+	if s.locationID != "" {
+		match["location_id"] = s.locationID
+	}
+	if s.partID != "" {
+		match["part_id"] = s.partID
+	}
+	interval := map[string]any{}
+	if !start.IsZero() {
+		interval["$gte"] = start
+	}
+	if !end.IsZero() {
+		interval["$lte"] = end
+	}
+	if len(interval) > 0 {
+		match["time_requested"] = interval
+	}
+	return match
+}
+
+func fetchTabularInRange(ctx context.Context, dc *app.DataClient, start, end time.Time, name, method string, scope scopeFilter, logger logging.Logger) ([]tabularRow, error) {
+	if scope.orgID == "" {
+		return nil, errors.New("querying tabular data needs an organization ID")
+	}
+	match := scope.tabularMatch(start, end, name, method)
+	logger.Infof("TabularDataByMQL org=%s component=%s method=%s interval=[%s,%s] location=%s part=%s",
+		scope.orgID,
+		name,
+		method,
+		start.Format(time.RFC3339Nano),
+		end.Format(time.RFC3339Nano),
+		scope.locationID,
+		scope.partID,
+	)
+	docs, err := dc.TabularDataByMQL(ctx, scope.orgID, []map[string]any{
+		{"$match": match},
+		{"$sort": map[string]any{"time_requested": 1}},
+		{"$project": map[string]any{"_id": 0, "time_requested": 1, "data": 1}},
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tabularRow, 0, len(docs))
+	for _, doc := range docs {
+		t, ok := doc["time_requested"].(time.Time)
+		if !ok {
+			return nil, fmt.Errorf("tabular row has no time_requested timestamp: %v", doc["time_requested"])
+		}
+		data, _ := doc["data"].(map[string]any)
+		out = append(out, tabularRow{t: t, data: data})
+	}
+	logger.Infof("fetched tabular: %s/%s in [%s, %s] — %d rows", name, method, start.Format(time.RFC3339), end.Format(time.RFC3339), len(out))
 	return out, nil
 }
 
@@ -444,9 +476,13 @@ func extractJointPositions(data map[string]any) []float64 {
 		return nil
 	}
 	out := make([]float64, len(vals))
+	// BSON decoding yields int for whole numbers stored as integers.
 	for i, v := range vals {
-		if f, ok := v.(float64); ok {
-			out[i] = f
+		switch n := v.(type) {
+		case float64:
+			out[i] = n
+		case int:
+			out[i] = float64(n)
 		}
 	}
 	return out
