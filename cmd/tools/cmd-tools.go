@@ -65,7 +65,7 @@ func realMain() error {
 	if err != nil {
 		return err
 	}
-	defer client.Close(ctx)
+	defer func() { _ = client.Close(ctx) }()
 
 	deps, err := vmodutils.MachineToDependencies(client)
 	if err != nil {
@@ -81,7 +81,7 @@ func realMain() error {
 	if err != nil {
 		logger.Warnf("can't connect to app: %v", err)
 	} else {
-		defer viamClient.Close()
+		defer func() { _ = viamClient.Close() }()
 	}
 
 	vc, err := pour.NewVinoCart(ctx, cfg, p1c, client, viamClient, logger)
@@ -181,7 +181,7 @@ func realMain() error {
 		if err != nil {
 			return fmt.Errorf("couldn't create file %v", err)
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		return png.Encode(file, img)
 	default:
 		return fmt.Errorf("unknown command: %v", cmd)
@@ -189,7 +189,7 @@ func realMain() error {
 }
 
 func getAPose(ctx context.Context, client robot.Robot, poseTracker, name string) (*referenceframe.PoseInFrame, error) {
-	pt, err := posetracker.FromRobot(client, poseTracker)
+	pt, err := posetracker.FromProvider(client, poseTracker)
 	if err != nil {
 		return nil, err
 	}
